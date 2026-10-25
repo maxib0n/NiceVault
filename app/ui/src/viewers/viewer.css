@@ -1,0 +1,230 @@
+/* Shared look of the in-app viewers (src/viewers/*.svelte): sheets of paper laid on the
+   quick look's stage, a paper strip of controls at the foot, data in the mono. Only design
+   tokens; motion is transform/opacity only. Every rule is under .vw so nothing leaks out. */
+
+.vw {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+}
+.vw-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-5) var(--space-4) calc(var(--space-7) + 24px);
+  overscroll-behavior: contain;
+}
+/* a sheet of paper on the stage */
+.vw-sheet {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-7);
+  border-radius: 3px;
+  background: var(--paper-hi);
+  box-shadow:
+    0 0 0 1px rgb(var(--cast) / 0.08),
+    0 2px 4px rgb(var(--cast) / 0.08),
+    0 18px 36px -16px rgb(var(--cast) / 0.36);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.vw-sheet.wide {
+  max-width: 1040px;
+}
+/* the strip of controls, floating at the foot of the stage */
+.vw-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--space-4);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  margin: 0 auto;
+  padding: 4px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-hi);
+  color: var(--ink-2);
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    0 0 0 1px var(--key-edge),
+    var(--lift-key-hover);
+  /* entrance through motion.css (class nv-enter): never opacity/transform themselves */
+  animation: nv-enter var(--dur-ui) var(--ease-out) backwards;
+  --enter-from: translateY(6px);
+  --enter-to: translateY(0);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .vw-bar {
+    animation: none;
+  }
+}
+.vw-bar .btn {
+  min-height: 30px;
+}
+.vw-bar .btn.icon {
+  width: 30px;
+}
+.vw-bar-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--paper-rule);
+}
+.vw-bar-label {
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.vw-bar input.vw-page {
+  width: 4.2em;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--paper-sunk);
+  color: var(--ink);
+  box-shadow: inset 0 1px 2px var(--field-shade);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+.vw-bar input.vw-page:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+/* centred states: loading, too big, cannot show */
+.vw-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  text-align: center;
+}
+.vw-state .hint {
+  max-width: 440px;
+}
+.vw-plate {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--paper-hi);
+  box-shadow:
+    0 0 0 1px var(--paper-rule),
+    0 2px 4px rgb(var(--cast) / 0.12),
+    0 10px 20px -10px rgb(var(--cast) / 0.3);
+}
+.vw-plate svg * {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.5px;
+}
+.vw-state-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.vw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+/* a field of glyphs only after a blink (fast files never flash it); class nv-enter */
+.vw-loading {
+  animation: nv-enter 1ms linear 300ms backwards;
+}
+.vw-skeleton {
+  display: block;
+  font-size: var(--text-md);
+  --ascii-skeleton: var(--ink-4);
+}
+/* key/value facts (info panel, document properties) */
+.vw-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px var(--space-5);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.vw-facts dt {
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  letter-spacing: var(--label-track);
+  text-transform: uppercase;
+  padding-top: 2px;
+}
+.vw-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.vw-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.vw-eyebrow {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  letter-spacing: var(--label-track);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.vw-rule {
+  height: 1px;
+  margin: var(--space-5) 0;
+  border: 0;
+  background: var(--paper-rule);
+}
+/* a ledger table (archive listing, spreadsheets, CSV) */
+.vw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.vw-table th,
+.vw-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--paper-rule);
+  text-align: left;
+  vertical-align: top;
+}
+.vw-table th {
+  position: sticky;
+  top: 0;
+  background: var(--paper-hi);
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--label-track);
+  text-transform: uppercase;
+}
+.vw-table td.num,
+.vw-table th.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.vw-note {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-3);
+}

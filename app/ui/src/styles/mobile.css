@@ -1,0 +1,1609 @@
+/* NiceVault in the hand ("Pocket edition"). Responsive CSS only, on top of
+   the components' own styles; nothing here reaches the desktop app (its window is never under
+   900 px, and every rule for a wider screen is scoped to html[data-platform=mobile]):
+   - `:root[data-platform='mobile']` (lib/mobile.ts: the mobile webviews, or ?platform=mobile) hides
+     what a phone can't do (mount as drive, Crea dispositivo, updater, keyboard hints) and sizes
+     every control for a finger;
+   - `@media (max-width: 640px)` is the phone held upright: the cover folds down into the wallet's
+     flap (the bottom navigation, with the clasp in the middle), master/detail show one column at a
+     time, menus and pickers are slips drawn up from the flap, real work gets a page of its own;
+   - the phone on its side (`max-height: 500px`, landscape): the flap becomes a rail at the left;
+   - the tablet keeps the desktop's book, with touch-sized keys and rows.
+   Selectors start with `:root:root` so they outrank the components' scoped classes.
+   Motion: only transform / opacity, through --nv-t / --nv-o (styles/motion.css). */
+
+/* ---- the board's and the page's grain, in one paint ---------------------------- */
+/* On the desktop the nap / grain is a ::before laid over the board with mix-blend-mode. iOS
+   (WKWebView) paints a scroller's contents and a fixed layer on layers of their own, and a blend
+   across layers does not happen there: the felt came out as itself, a light grey veil over
+   Benvenuto, Impostazioni, Nuovo volume (2026-10-25). Here the grain is the board's own top
+   background layer (background-blend-mode, one element, one paint) with the strength baked into
+   the texture's alpha (= the desktop's opacity at 2x and up, --tex-k 1): same pixels, no layers. */
+:root[data-platform='mobile'] {
+  --board-tex-m: url('../assets/textures/board-grain-a20.webp');
+  --sheet-tex-m: url('../assets/textures/paper-grain-a26.webp');
+  --cloth-tex-m: url('../assets/textures/cloth-weave-a42.webp');
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-platform='mobile']:not([data-theme='light']) {
+    --board-tex-m: url('../assets/textures/felt-board-a62.webp');
+    --sheet-tex-m: url('../assets/textures/suede-nap-a16.webp');
+    --cloth-tex-m: var(--tex-nap);
+  }
+}
+:root[data-platform='mobile'][data-theme='dark'] {
+  --board-tex-m: url('../assets/textures/felt-board-a62.webp');
+  --sheet-tex-m: url('../assets/textures/suede-nap-a16.webp');
+  --cloth-tex-m: var(--tex-nap);
+}
+:where(:root[data-platform='mobile']) .ground::before,
+:where(:root[data-platform='mobile']) .sheet::before,
+:where(:root[data-platform='mobile']) .cloth::before {
+  display: none;
+}
+:where(:root[data-platform='mobile']) .ground {
+  background-image:
+    var(--board-tex-m),
+    radial-gradient(in oklab 140% 110% at 0% 0%, var(--ground-hi) 0%, color-mix(in oklab, var(--ground-hi) 74%, transparent) 18%,
+      color-mix(in oklab, var(--ground-hi) 42%, transparent) 38%, color-mix(in oklab, var(--ground-hi) 14%, transparent) 56%, transparent 74%),
+    linear-gradient(in oklab 158deg, transparent 38%, color-mix(in oklab, var(--ground-lo) 22%, transparent) 56%,
+      color-mix(in oklab, var(--ground-lo) 62%, transparent) 78%, var(--ground-lo) 100%),
+    var(--tex-dither);
+  background-size: var(--board-tex-size) var(--board-tex-size), auto, auto, var(--dither-px) var(--dither-px);
+  background-blend-mode: soft-light, normal, normal, soft-light;
+}
+:where(:root[data-platform='mobile']) .sheet {
+  background-image:
+    var(--sheet-tex-m),
+    linear-gradient(in oklab 162deg, var(--paper-hi) 0%, color-mix(in oklab, var(--paper-hi) 45%, transparent) 20%, transparent 42%,
+      color-mix(in oklab, var(--paper-lo) 45%, transparent) 70%, var(--paper-lo) 100%),
+    var(--tex-dither);
+  background-size: var(--sheet-tex-size) var(--sheet-tex-size), auto, var(--dither-px) var(--dither-px);
+  background-blend-mode: soft-light, normal, soft-light;
+}
+
+:where(:root[data-platform='mobile']) .cloth {
+  background-image:
+    var(--cloth-tex-m),
+    radial-gradient(in oklab 130% 90% at 8% -6%, var(--cloth-hi) 0%, color-mix(in oklab, var(--cloth-hi) 60%, transparent) 22%,
+      color-mix(in oklab, var(--cloth-hi) 22%, transparent) 42%, transparent 60%),
+    linear-gradient(in oklab 176deg, transparent 30%, color-mix(in oklab, var(--cloth-lo) 50%, transparent) 68%, var(--cloth-lo) 100%),
+    var(--tex-dither);
+  background-size: var(--cloth-tex-size) var(--cloth-tex-size), auto, auto, var(--dither-px) var(--dither-px);
+  background-blend-mode: var(--cloth-tex-blend), normal, normal, soft-light;
+}
+
+/* ---- what a phone can't do ------------------------------------------------ */
+:root[data-platform='mobile'] {
+  /* the system bars (edge-to-edge on Android 15+, the notch on iOS) */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--nv-inset-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--nv-inset-bottom, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--nv-inset-left, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--nv-inset-right, 0px));
+  /* a finger: the least a key may be, the flap's height, a sheet's corner */
+  --tap: 44px;
+  --flap-h: 62px;
+  --sheet-r: 18px;
+  /* the slip drawn up from the flap: the page's own paper, its lip catching the light */
+  --slip-lip: color-mix(in oklab, var(--paper-hi) 70%, #fff 30%);
+  --grabber: color-mix(in oklab, var(--ink) 22%, transparent);
+  -webkit-tap-highlight-color: transparent;
+}
+:root[data-platform='mobile'] .sidebar .mount,
+:root[data-platform='mobile'] .sidebar .keys,
+:root[data-platform='mobile'] [data-screen='welcome'] footer.hint,
+:root[data-platform='mobile'] [data-testid='open-device'],
+:root[data-platform='mobile'] [data-testid='settings-device'],
+:root[data-platform='mobile'] [data-testid='settings-drives'],
+:root[data-platform='mobile'] [data-testid='settings-updates'],
+:root[data-platform='mobile'] [data-testid='settings-startup'],
+:root[data-platform='mobile'] [data-testid='settings-app'] :is(#set-startup, #set-startup ~ *),
+:root[data-platform='mobile'] [data-testid='settings-app'] #set-scale ~ .hint,
+:root[data-platform='mobile'] .details .card.backends,
+:root[data-platform='mobile'] kbd,
+:root[data-platform='mobile'] .passwords .status:not(:has(.copied)),
+:root[data-platform='mobile'] .quick-look .ql-actions .btn:has(.lucide-chevron-left, .lucide-chevron-right) {
+  display: none !important;
+}
+:root[data-platform='mobile'] .imprint {
+  padding-bottom: calc(var(--safe-bottom, 0px) + 12px);
+}
+/* the pages whose head had no room for the status bar / the notch (2026-10-25: "sta proprio
+   dentro"): the board runs under it, the content starts below it */
+:root[data-platform='mobile'] main[data-testid='device-wizard'] {
+  padding-top: var(--safe-top, 0px);
+  padding-bottom: var(--safe-bottom, 0px);
+}
+/* a finger leaves no hover behind: nothing lifts on a touch that is already over */
+:root[data-platform='mobile'] body {
+  overscroll-behavior: none;
+}
+:root[data-platform='mobile'] :is(input, textarea, select) {
+  /* 16 px: iOS zooms into anything smaller when it takes the caret */
+  font-size: max(16px, 1em);
+}
+
+/* ---- a hand, not a pointer --------------------------------------------------- */
+/* the page never zooms (double tap, pinch: index.html's viewport, lib/touch.ts); only the picture
+   viewer does, with its own pointer handling (touch-action: none there) */
+:root[data-platform='mobile'] {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+/* a long press is our sheet (lib/touch.ts): no iOS callout, no text picked up, no picture lifted */
+:root[data-platform='mobile'] :is(.file-item, .sidebar, .btn, button, a, img, [role='option'], [role='treeitem'], [role='menuitem'], [data-longpress]) {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+:root[data-platform='mobile'] img {
+  -webkit-user-drag: none;
+}
+/* the row / tile under a resting finger sinks a little: the press is being heard */
+@keyframes nv-press {
+  to {
+    --nv-s: 0.965;
+  }
+}
+:root[data-platform='mobile'] .file-item[data-pressing] {
+  scale: var(--nv-s);
+  animation: nv-press 460ms cubic-bezier(0.3, 0, 0.2, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-platform='mobile'] .file-item[data-pressing] {
+    animation: none;
+  }
+}
+/* picking several (MobileSelectBar): a round check on each piece, struck in the volume's ink */
+:root[data-platform='mobile'] .file-item > .pick {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--key-accent-ink);
+  background: color-mix(in oklab, var(--paper-hi) 70%, transparent);
+  box-shadow:
+    inset 0 0 0 1.5px var(--ink-3),
+    0 1px 2px rgb(var(--cast) / 0.3);
+  pointer-events: none;
+}
+:root[data-platform='mobile'] .file-item[data-layout='grid'] > .pick {
+  top: 6px;
+  left: 6px;
+}
+:root[data-platform='mobile'] .file-item[data-layout='list'] > .pick {
+  top: 50%;
+  left: 2px;
+  margin-top: -12px;
+}
+:root[data-platform='mobile'] .file-item.selected > .pick {
+  background: linear-gradient(180deg, var(--key-accent-hi), var(--key-accent-lo));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.25),
+    0 0 0 1.5px var(--paper-hi),
+    0 1px 3px rgb(var(--cast) / 0.4);
+}
+:root[data-platform='mobile'] .file-view:has(.pick) .file-item[data-layout='list'] {
+  padding-left: 30px;
+}
+/* while several are picked the slip covers the flap (the clasp too): Importa waits */
+:root[data-platform='mobile'] .vault-screen:has(.m-select) .folder-head .actions .btn.primary,
+:root[data-platform='mobile'] .vault-screen:has(.m-select) .sidebar {
+  visibility: hidden;
+}
+/* a sheet's head: what it acts on (Menu `title`) */
+:root[data-platform='mobile'] .menu .sheet-title {
+  margin: 0 0 6px;
+  padding: 2px 14px 10px;
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  border-bottom: 1px solid var(--paper-rule);
+}
+
+/* ---- every touch screen: keys, fields and rows sized for a finger ---------- */
+:root[data-platform='mobile'] :is(.btn, .view-toggle .seg, .segmented > *, .filter, .opt, .item):not(.sm, .icon) {
+  min-height: var(--tap);
+}
+:root[data-platform='mobile'] .btn.sm {
+  min-height: var(--tap);
+}
+/* small marks that stay small to the eye (a tag's ink, a chip, the eye in a password field, a
+   column's name, the cross on a passport): a finger's worth of hit area round them */
+/* (the eye in a password field, a search's cross and a passport's cross are already placed
+   absolutely: that holds their ::after too, and they must stay where they are) */
+:root[data-platform='mobile'] :is(.chip-key, .ink-key, .manage, .list-header .col, .scope .seg, .segmented.small > *, .view-toggle .seg, .passwords .filters .filter, :is(.kinds, .looks) .kind, label.check, .vw-bar input.vw-page) {
+  position: relative;
+}
+:root[data-platform='mobile'] :is(.chip-key, .ink-key, .forget, .password-field .toggle, .search-box .close, .manage, .list-header .col, .scope .seg, .segmented.small > *, .view-toggle .seg, .passwords .filters .filter, :is(.kinds, .looks) .kind, label.check, .vw-bar input.vw-page)::after {
+  content: '';
+  position: absolute;
+  top: min(0px, calc(50% - 22px));
+  bottom: min(0px, calc(50% - 22px));
+  left: min(0px, calc(50% - 22px));
+  right: min(0px, calc(50% - 22px));
+}
+:root[data-platform='mobile'] .btn.icon {
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+:root[data-platform='mobile'] :is(input.input:not([type='checkbox'], [type='radio'], [type='range']), .password-field .control, select.input) {
+  min-height: var(--tap);
+}
+/* a slider's track is thin; the finger's band round it is not */
+:root[data-platform='mobile'] input[type='range'] {
+  min-height: var(--tap);
+}
+:root[data-platform='mobile'] .switch {
+  /* the knob stays its size; the hit area grows round it */
+  position: relative;
+}
+:root[data-platform='mobile'] .switch::after {
+  content: '';
+  position: absolute;
+  inset: -11px -6px;
+}
+
+/* a menu taller than the glass (a phone on its side) scrolls inside itself */
+:root[data-platform='mobile'] :is(.menu, .popover) {
+  max-height: calc(100dvh - 8px - var(--safe-top, 0px) - var(--safe-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* the menus and pickers: rows a finger can hit */
+:root[data-platform='mobile'] .menu .item,
+:root[data-platform='mobile'] .popover .opt {
+  min-height: 46px;
+  font-size: var(--text-base);
+}
+
+/* ---- the preview: the whole glass, nothing of the app around it ------------------------------
+   Always full screen on a phone or tablet (QuickLook data-full): the dialog covers the status bar
+   and the home bar too (viewport-fit=cover); the file sits on a dark stage, the head is a shade
+   falling from the top edge with the name and three keys, the dock a strip at the foot; both
+   leave after two seconds and come back on a tap (QuickLook `chrome`). Pinch and double tap zoom
+   the picture only (the page itself never zooms). */
+:root[data-platform='mobile'] .quick-look[data-full] {
+  --ql-ink: #f4f1ea;
+  --ql-stage: color-mix(in oklab, var(--stage) 22%, #050505);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  max-height: none;
+  margin: 0;
+  background: var(--ql-stage);
+  box-shadow: none;
+}
+:root[data-platform='mobile'] .quick-look[data-full]::backdrop {
+  background: var(--ql-stage);
+}
+:root[data-platform='mobile'] .quick-look[data-full] .ql-head {
+  min-height: 0;
+  gap: 2px;
+  padding: calc(var(--safe-top, 0px) + 6px) max(6px, var(--safe-right, 0px)) 28px max(6px, var(--safe-left, 0px));
+  border: 0;
+  color: var(--ql-ink);
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.62), rgb(0 0 0 / 0.34) 55%, rgb(0 0 0 / 0));
+  backdrop-filter: none;
+  pointer-events: none;
+}
+:root[data-platform='mobile'] .quick-look[data-full] .ql-head > * {
+  pointer-events: auto;
+}
+:root[data-platform='mobile'] .quick-look .ql-glyph {
+  display: none;
+}
+:root[data-platform='mobile'] .quick-look .ql-title {
+  order: 1;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'name' 'meta';
+  padding-inline: 2px;
+  text-align: center;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+}
+:root[data-platform='mobile'] .quick-look .ql-name {
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+:root[data-platform='mobile'] .quick-look .ql-meta {
+  color: color-mix(in oklab, var(--ql-ink) 68%, transparent);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the keys: close on the left (where the way back is), the file's own on the right */
+:root[data-platform='mobile'] .quick-look .ql-actions {
+  display: contents;
+}
+:root[data-platform='mobile'] .quick-look .ql-actions .btn {
+  order: 2;
+  flex: none;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+  padding: 0;
+  gap: 0;
+  font-size: 0;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--ql-ink);
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-platform='mobile'] .quick-look .ql-actions .btn:last-child {
+  order: 0;
+}
+:root[data-platform='mobile'] .quick-look .ql-actions .btn svg {
+  width: 21px;
+  height: 21px;
+  color: inherit;
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+}
+:root[data-platform='mobile'] .quick-look .ql-actions .btn:active {
+  background: rgb(255 255 255 / 0.14);
+}
+/* the stage: edge to edge, dark, the picture as large as the glass */
+:root[data-platform='mobile'] .quick-look[data-full] .ql-body {
+  background: var(--ql-stage);
+  box-shadow: none;
+}
+:root[data-platform='mobile'] .quick-look[data-full] .image-vw .stage {
+  padding: 0;
+}
+:root[data-platform='mobile'] .quick-look[data-full] .image-vw .print {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+:root[data-platform='mobile'] .quick-look[data-full] .image-vw img {
+  max-width: 100vw;
+  max-height: 100dvh;
+}
+/* pictures zoom with two fingers / a double tap: their toolbar is a desktop's */
+:root[data-platform='mobile'] .quick-look .image-vw .vw-bar {
+  display: none;
+}
+/* documents keep their strip (pages, zoom): above the dock, and away with the head */
+:root[data-platform='mobile'] .quick-look[data-full] .vw-bar {
+  bottom: calc(14px + var(--safe-bottom, 0px));
+  max-width: calc(100% - 20px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+:root[data-platform='mobile'] .quick-look[data-chrome='shown']:has(.ql-dock) .vw-bar {
+  --nv-dy: -82px;
+}
+:root[data-platform='mobile'] .quick-look .vw-bar .btn.icon {
+  width: var(--tap);
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+/* the first line clear of the head's keys and title (its fade may lie over the margin) */
+:root[data-platform='mobile'] .quick-look .vw-scroll {
+  padding: calc(var(--ql-head-h, calc(var(--safe-top, 0px) + 78px)) - 10px) 10px calc(var(--safe-bottom, 0px) + 150px);
+  scroll-padding-top: calc(var(--ql-head-h, 0px) - 10px);
+}
+:root[data-platform='mobile'] .quick-look .vw-sheet {
+  padding: 22px 18px 28px;
+}
+:root[data-platform='mobile'] .quick-look .ql-dock {
+  bottom: calc(10px + var(--safe-bottom, 0px));
+  max-width: calc(100% - 20px);
+  padding: 0 2px 2px;
+}
+:root[data-platform='mobile'] .quick-look[data-chrome='hidden'] .ql-dock {
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   The phone, upright
+   ========================================================================== */
+@media (max-width: 640px) {
+  :root {
+    --sidebar-w: 0px;
+  }
+
+  /* ---- the open volume: the page above, the flap below ---------------------- */
+  :root:root .vault-screen {
+    flex-direction: column;
+  }
+  :root:root .vault-screen > .gutter,
+  :root:root .vault-screen > .seam {
+    display: none;
+  }
+  /* the page under the bar takes the rest of the height and scrolls inside itself */
+  :root:root .vault-screen > :not(.sidebar, .gutter, .seam) {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* The flap: the cover's cloth folded down under the page, saddle-stitched along its fold.
+     File · Password · [clasp: Blocca] · Dettagli · Impostazioni, five equal places for the thumb. */
+  :root:root .vault-screen .sidebar {
+    order: 1;
+    position: relative;
+    width: 100%;
+    height: calc(var(--flap-h) + var(--safe-bottom, 0px));
+    flex: none;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0;
+    padding: 0 max(4px, var(--safe-left, 0px)) var(--safe-bottom, 0px) max(4px, var(--safe-right, 0px));
+    overflow: visible;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.09),
+      inset 0 2px 0 var(--cloth-edge),
+      0 -1px 0 rgb(0 0 0 / 0.28),
+      0 -6px 14px -6px rgb(var(--cast) / 0.45);
+  }
+  /* the stitches along the fold: tone on tone, each with its shadow */
+  :root:root .vault-screen .sidebar::before {
+    content: '';
+    position: absolute;
+    top: 6px;
+    left: 10px;
+    right: 10px;
+    height: 1.5px;
+    border-radius: 1px;
+    background: repeating-linear-gradient(90deg, var(--stitch-cloth) 0 4px, transparent 4px 7px);
+    opacity: 0.9;
+    filter: drop-shadow(0 1px 0 rgb(0 0 0 / 0.45));
+    pointer-events: none;
+  }
+  :root:root .vault-screen .sidebar :is(.identity, .vault-list, .mount, .autolock, .update-notice) {
+    display: none;
+  }
+  :root:root .vault-screen .sidebar :is(.nav, .bottom, .clasp) {
+    display: contents;
+  }
+  :root:root .vault-screen .sidebar .bottom > :not(.clasp, .settings-row) {
+    display: none;
+  }
+  :root:root .vault-screen .sidebar [data-testid='nav-files'] {
+    order: 1;
+  }
+  :root:root .vault-screen .sidebar [data-testid='nav-passwords'] {
+    order: 2;
+  }
+  :root:root .vault-screen .sidebar .lock {
+    order: 3;
+  }
+  :root:root .vault-screen .sidebar [data-testid='nav-details'] {
+    order: 4;
+  }
+  :root:root .vault-screen .sidebar .settings-row {
+    order: 5;
+  }
+  :root:root .vault-screen .sidebar :is(.nav-btn, .settings-row, .lock) {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 9px 0 6px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 3px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
+    white-space: nowrap;
+    color: var(--cloth-ink-3);
+    text-shadow: none;
+    transform: none;
+  }
+  :root:root .vault-screen .sidebar .settings-row .row-name {
+    display: block;
+    flex: none;
+    overflow: hidden;
+    text-overflow: clip;
+    max-width: 100%;
+    line-height: 1.1;
+  }
+  /* the icon sits in a bed pressed into the cloth when its page is open */
+  :root:root .vault-screen .sidebar :is(.nav-btn, .settings-row) svg {
+    box-sizing: content-box;
+    width: 20px;
+    height: 20px;
+    padding: 5px 18px;
+    border-radius: 999px;
+    color: var(--cloth-ink-3);
+    transition:
+      background-color var(--dur-micro) var(--ease-out),
+      box-shadow var(--dur-micro) var(--ease-out);
+  }
+  :root:root .vault-screen .sidebar .nav-btn[aria-current='page'] {
+    color: var(--cloth-ink);
+    font-weight: 600;
+  }
+  :root:root .vault-screen .sidebar .nav-btn[aria-current='page'] svg {
+    /* the foil, toned toward the cloth's ink: it reads on the anthracite and on the ivory */
+    color: color-mix(in oklab, var(--foil) 62%, var(--cloth-ink));
+    background: var(--cloth-bed);
+    box-shadow:
+      inset 0 1px 3px rgb(0 0 0 / 0.45),
+      inset 0 0 0 1px rgb(0 0 0 / 0.14),
+      0 1px 0 rgb(255 255 255 / 0.08);
+  }
+  :root:root .vault-screen .sidebar :is(.nav-btn, .settings-row):active svg {
+    background: color-mix(in oklab, var(--cloth-ink) 10%, transparent);
+  }
+  :root:root .vault-screen .sidebar :is(.nav-btn, .settings-row, .lock):focus-visible {
+    outline: none;
+  }
+  :root:root .vault-screen .sidebar :is(.nav-btn, .settings-row, .lock):focus-visible svg {
+    outline: 2px solid var(--focus, var(--accent));
+    outline-offset: 2px;
+  }
+  /* the clasp: a struck foil button standing proud of the flap, the lock in relief */
+  :root:root .vault-screen .sidebar .lock {
+    position: relative;
+    color: var(--cloth-ink-2);
+    font-weight: 600;
+    padding-top: 0;
+  }
+  /* the disc stands 15 px proud of the flap; its label on the same line as the others' */
+  :root:root .vault-screen .sidebar .lock svg {
+    margin-bottom: 11px;
+  }
+  :root:root .vault-screen .sidebar .lock svg {
+    box-sizing: content-box;
+    width: 19px;
+    height: 19px;
+    margin-top: -15px;
+    padding: 12px;
+    border-radius: 50%;
+    /* the key of the volume's ink (Carta valori, as Importa): dark edge, no light ring or glint */
+    color: var(--key-accent-ink);
+    background: linear-gradient(180deg, var(--key-accent-hi), var(--key-accent-lo));
+    /* a clean circle: one thin edge in the ink's dark, and a soft shadow centred under it
+       (negative spread keeps it inside the silhouette at the sides). No rim, no inner shading:
+       those read as an odd shadow at the bottom corners. */
+    box-shadow:
+      0 0 0 1px var(--key-accent-edge),
+      0 5px 9px -5px rgb(var(--cast) / 0.7);
+    stroke-width: 1.7;
+  }
+  :root:root .vault-screen .sidebar .lock:active svg {
+    background: var(--key-accent-lo);
+    box-shadow:
+      inset 0 2px 4px rgb(0 0 0 / 0.35),
+      0 0 0 1px var(--key-accent-edge),
+      0 2px 3px -3px rgb(var(--cast) / 0.6);
+    transform: translateY(1px);
+  }
+
+  /* ---- toasts and the transfers ride just above the flap --------------------- */
+  :root:root .toasts {
+    left: 12px !important;
+    right: 12px;
+    width: auto !important;
+    bottom: calc(12px + var(--safe-bottom, 0px));
+  }
+  :root:root .vault-screen ~ .toasts,
+  :root:root .app:has(.vault-screen) .toasts {
+    bottom: calc(var(--flap-h) + 14px + var(--safe-bottom, 0px));
+  }
+  :root:root .vault-screen .job-tray {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    bottom: calc(var(--flap-h) + 10px + var(--safe-bottom, 0px));
+    max-height: 52dvh;
+  }
+  /* the toasts stack above a folded tray; over an open one they drop from the top instead */
+  :root:root .app:has(.job-tray) .toasts {
+    bottom: calc(var(--flap-h) + 74px + var(--safe-bottom, 0px));
+  }
+  :root:root .app:has(.job-tray.open) .toasts {
+    top: calc(var(--safe-top, 0px) + 10px);
+    bottom: auto;
+  }
+
+  /* ---- the file browser ------------------------------------------------------ */
+  /* the head: a search field the width of the thumb's reach, the way up, the view keys */
+  :root:root .folder-head {
+    padding: var(--safe-top, 0px) 12px 0 12px;
+    /* the band runs to the screen's edge, not past it (a narrow window / 150% UI size) */
+    --bleed-start: 12px;
+    --bleed-end: 12px;
+  }
+  :root:root .folder-head .nav-line {
+    height: 56px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow: visible;
+  }
+  :root:root .folder-head .nav-line > :is(.spacer, .sizes, .breadcrumb) {
+    display: none;
+  }
+  :root:root .folder-head .nav-line .up {
+    width: var(--tap);
+    height: var(--tap);
+    margin-left: -6px;
+  }
+  :root:root .folder-head .nav-line .up:disabled {
+    display: none;
+  }
+  :root:root .folder-head .nav-line .shelf {
+    width: var(--tap);
+    height: var(--tap);
+    margin-left: -6px;
+    color: var(--ink-2);
+  }
+  :root:root .folder-head .search-box {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+  }
+  :root:root .folder-head .search-box .input {
+    text-overflow: ellipsis;
+    height: 42px;
+    border-radius: 21px;
+    padding-left: 38px;
+  }
+  /* the room kept for the clear key only while there is one */
+  :root:root .folder-head .search-box:not(:has(.close)) .input {
+    padding-right: 12px;
+  }
+  :root:root .folder-head .search-box > .lens {
+    left: 14px;
+  }
+  :root:root .folder-head .search-box .close {
+    width: 36px;
+    height: 36px;
+    right: 3px;
+    border-radius: 50%;
+  }
+  :root:root .folder-head .view-toggle .seg {
+    width: 38px;
+    min-height: 38px;
+  }
+  :root:root .folder-head .sort {
+    width: var(--tap);
+    min-height: var(--tap);
+    padding: 0;
+    justify-content: center;
+    margin-right: -6px;
+  }
+  :root:root .folder-head .sort :is(.label-text, .caret) {
+    display: none;
+  }
+  /* the name of the folder, set large; its three keys beside it */
+  :root:root .folder-head .title-line {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0 14px 2px;
+  }
+  :root:root .folder-head .title-block {
+    flex: 1 1 auto;
+  }
+  :root:root .folder-head .folder-title {
+    font-size: 32px;
+  }
+  :root:root .folder-head .actions {
+    gap: 2px;
+    margin-right: -6px;
+    padding: 0;
+  }
+  :root:root .folder-head .actions .btn:not(.primary) {
+    width: var(--tap);
+    height: var(--tap);
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--ink-2);
+  }
+  :root:root .folder-head .actions .btn:not(.primary):active:not(:disabled) {
+    background: color-mix(in oklab, var(--ink) 8%, transparent);
+  }
+  :root:root .folder-head .actions .btn:not(.primary):disabled {
+    color: var(--ink-4);
+    background: none;
+  }
+  /* Importa: the one key a phone needs most, under the thumb, struck in the volume's ink */
+  :root:root .folder-head .actions .btn.primary {
+    position: fixed;
+    right: calc(8px + var(--safe-right, 0px));
+    bottom: calc(var(--flap-h) + 40px + var(--safe-bottom, 0px));
+    z-index: 4;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border-radius: 50%;
+    box-shadow:
+      inset 0 1px 0 var(--key-accent-hi),
+      inset 0 0 0 1px var(--key-accent-edge),
+      0 2px 3px rgb(var(--cast) / 0.35),
+      0 12px 22px -8px rgb(var(--cast) / 0.65);
+  }
+  :root:root .folder-head .actions .btn.primary svg {
+    width: 22px;
+    height: 22px;
+  }
+  /* the key floats over the page (no gutter kept for it): the list scrolls on under it, and its
+     end clears it (the key stands 40 px over the flap, 48 px tall, above the status line) */
+  :root:root .file-view {
+    padding-inline: 12px;
+    padding-bottom: 96px;
+    scroll-padding-bottom: 96px;
+  }
+  :root:root .file-view-wrap .status-bar {
+    padding-inline: 16px;
+  }
+
+  /* the file list: picture, name, tags, size (no date, type, place) */
+  :root:root .file-view-wrap,
+  :root:root .file-view-wrap[data-results] {
+    --list-cols: var(--row-vis-w, 40px) minmax(0, 1fr) auto 72px;
+  }
+  :root:root .file-view-wrap .list-header .col:is([data-col='mtime'], [data-col='type'], [data-col='place']),
+  :root:root .file-item[data-layout='list'] > :is(.mtime, .type, .place) {
+    display: none;
+  }
+  /* the heads over the rows' columns: the scroller's 12 px and the row's own 12 px on the left */
+  :root:root .file-view-wrap .list-header {
+    padding-inline: 24px 12px;
+  }
+  :root:root .folder-head .nav-line {
+    scrollbar-width: none;
+  }
+
+  /* ---- slips drawn up from the flap: menus and pickers ------------------------ */
+  :root:root .menu,
+  :root:root .popover {
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    width: auto !important;
+    min-width: 0;
+    max-width: none;
+    max-height: min(78dvh, 640px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 26px max(10px, var(--safe-right, 0px)) calc(12px + var(--safe-bottom, 0px)) max(10px, var(--safe-left, 0px));
+    border-radius: var(--sheet-r) var(--sheet-r) 0 0;
+    box-shadow:
+      inset 0 1px 0 var(--slip-lip),
+      0 -10px 30px -6px rgb(var(--cast) / 0.5),
+      /* the page behind dims: one cheap ring of scrim, painted once */
+      0 0 0 100vmax var(--scrim);
+    /* it rises from the flap (--nv-t, styles/motion.css: never transform itself) */
+    transform: var(--nv-t);
+    animation: nv-enter 240ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+    --enter-from: translate3d(0, 56px, 0);
+    --enter-to: translate3d(0, 0, 0);
+  }
+  /* a slip is drawn over the flap too (the flap otherwise stands above the page) */
+  :root:root .vault-screen:has(.menu, .popover) .sidebar {
+    z-index: 0;
+  }
+  /* a slip drawn from the head (Importa's, the sort's) lives in the head's stacking context:
+     the flap (and its clasp) steps away under it rather than over it */
+  :root:root .vault-screen:has(.file-browser .menu, .file-browser .popover) .sidebar {
+    visibility: hidden;
+  }
+  /* the grabber: a groove pressed into the slip's top edge */
+  :root:root .menu::before,
+  :root:root .popover::before {
+    content: '';
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    width: 38px;
+    height: 4px;
+    margin-left: -19px;
+    border-radius: 2px;
+    background: var(--grabber);
+    box-shadow: 0 1px 0 var(--slip-lip);
+  }
+  :root:root .menu .item {
+    min-height: 50px;
+    padding-inline: 14px 12px;
+    gap: 14px;
+    border-radius: 10px;
+  }
+  :root:root .menu .item .icon {
+    width: 20px;
+  }
+  :root:root .menu .item .icon svg {
+    width: 19px;
+    height: 19px;
+  }
+  :root:root .menu .label {
+    white-space: normal;
+  }
+  :root:root .popover .opt {
+    min-height: 48px;
+    padding-inline: 12px;
+  }
+  :root:root .popover :is(.input, input[type='text'], input[type='search']) {
+    height: 44px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :root:root .menu,
+    :root:root .popover {
+      animation: none;
+    }
+  }
+
+  /* ---- dialogs: a form is a page of its own; a confirmation or any other dialog with
+     nothing to type is a slip from the bottom, as tall as what it says (2026-10-25: a short
+     question on a whole page read as "una riga invisibile" under the text) ------ */
+  :root:root dialog.dialog:not([data-variant='danger']):has(input:not([type='hidden']), textarea, select) {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    overscroll-behavior: contain;
+    --enter-from: translate3d(0, 28px, 0);
+    --enter-to: translate3d(0, 0, 0);
+  }
+  :root:root dialog.dialog:not([data-variant='danger']):has(input:not([type='hidden']), textarea, select) > .panel {
+    --bleed-start: 18px;
+    --bleed-end: 18px;
+    min-height: 100%;
+    padding: var(--safe-top, 0px) max(18px, var(--safe-right, 0px)) 0 max(18px, var(--safe-left, 0px));
+    gap: 18px;
+  }
+  :root:root dialog.dialog {
+    overflow-x: hidden;
+  }
+  /* the title stays at the top of the page as it scrolls, over the band */
+  :root:root dialog.dialog:not([data-variant='danger']):has(input:not([type='hidden']), textarea, select) > .panel > .title {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin: 0 -18px;
+    padding: 14px 18px 12px;
+    font-size: 28px;
+    background: var(--paper-hi);
+    box-shadow: 0 1px 0 var(--paper-rule);
+  }
+  /* the two keys at the foot, the width of the page, under the thumb */
+  :root:root dialog.dialog:not([data-variant='danger']):has(input:not([type='hidden']), textarea, select) .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: auto -18px 0;
+    padding: 12px 18px calc(12px + var(--safe-bottom, 0px));
+    background: linear-gradient(180deg, color-mix(in oklab, var(--paper-hi) 92%, transparent), var(--paper-hi) 18px);
+    border-top: 1px solid var(--paper-rule);
+    flex-wrap: nowrap;
+  }
+  :root:root dialog.dialog .actions .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 48px;
+    justify-content: center;
+  }
+  :root:root dialog.dialog .actions :is(.spacer, span:empty) {
+    display: none;
+  }
+  /* a confirmation: a slip from the bottom with its grabber, the page dimmed above it */
+  :root:root dialog.dialog:is([data-variant='danger'], :not(:has(input:not([type='hidden']), textarea, select))) {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: calc(100dvh - var(--safe-top, 0px) - 12px);
+    margin: auto 0 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: var(--sheet-r) var(--sheet-r) 0 0;
+    box-shadow:
+      inset 0 1px 0 var(--slip-lip),
+      0 -10px 30px -6px rgb(var(--cast) / 0.5);
+    --enter-from: translate3d(0, 64px, 0);
+    --enter-to: translate3d(0, 0, 0);
+  }
+  :root:root dialog.dialog:is([data-variant='danger'], :not(:has(input:not([type='hidden']), textarea, select))) > .panel {
+    --bleed-start: 18px;
+    --bleed-end: 18px;
+    padding: 22px 18px calc(16px + var(--safe-bottom, 0px));
+  }
+  :root:root dialog.dialog:is([data-variant='danger'], :not(:has(input:not([type='hidden']), textarea, select))) > .panel::before {
+    content: '';
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    width: 38px;
+    height: 4px;
+    margin-left: -19px;
+    border-radius: 2px;
+    background: var(--grabber);
+    box-shadow: 0 1px 0 var(--slip-lip);
+  }
+  :root:root dialog.dialog:is([data-variant='danger'], :not(:has(input:not([type='hidden']), textarea, select))) .actions {
+    flex-wrap: nowrap;
+  }
+
+  /* ---- Benvenuto: the passports are a deck you thumb through ------------------ */
+  :root:root .welcome {
+    padding: calc(var(--safe-top, 0px) + 14px) 0 calc(var(--safe-bottom, 0px) + 16px);
+    overflow-x: hidden;
+  }
+  :root:root .welcome .masthead {
+    padding: 0 12px 0 20px;
+  }
+  :root:root .welcome .masthead .settings {
+    min-height: var(--tap);
+  }
+  :root:root .welcome .intro {
+    display: contents;
+  }
+  :root:root .welcome .intro-text {
+    order: 1;
+    margin-top: clamp(14px, 4.5vh, 40px);
+    padding: 0 20px;
+  }
+  :root:root .welcome .title {
+    font-size: clamp(40px, 12.5vw, 54px);
+  }
+  :root:root .welcome .sub {
+    margin-top: 8px;
+    font-size: var(--text-base);
+  }
+  :root:root .welcome .shelf {
+    order: 2;
+    flex: 1 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-top: 10px;
+  }
+  /* the keys at the foot, the width of the hand */
+  :root:root .welcome .actions {
+    order: 3;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 6px 16px 0;
+  }
+  :root:root .welcome .actions .btn {
+    min-height: 50px;
+    justify-content: center;
+    font-size: var(--text-base);
+  }
+  :root:root .welcome .actions .btn:only-child,
+  :root:root .welcome .actions:not(:has(> :nth-child(2):not([data-testid='open-device']))) .btn {
+    grid-column: 1 / -1;
+  }
+  :root:root .welcome .passports {
+    flex-wrap: nowrap;
+    gap: 22px;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: 18px calc(50vw - var(--book-w) / 2) 22px;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: calc(50vw - var(--book-w) / 2);
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  :root:root .welcome .passports::-webkit-scrollbar {
+    display: none;
+  }
+  :root:root .welcome .passport {
+    flex: none;
+    scroll-snap-align: center;
+    scroll-snap-stop: always;
+  }
+  /* the neighbours lie a little further down the deck (scroll-driven: the compositor's work) */
+  @supports (animation-timeline: view()) {
+    @media (prefers-reduced-motion: no-preference) {
+      :root:root .welcome .passport > .book {
+        animation: nv-deck linear both;
+        animation-timeline: view(inline);
+      }
+    }
+  }
+  :root:root .welcome .passport .caption,
+  :root:root .welcome .passport .where {
+    text-align: center;
+  }
+  /* the cross that forgets a volume: a finger-sized key on the cover's corner */
+  :root:root .welcome .passport .forget {
+    width: 34px;
+    height: 34px;
+    min-height: 34px;
+    min-width: 34px;
+    opacity: 1;
+  }
+  :root:root .welcome .empty {
+    display: grid;
+    place-items: center;
+  }
+
+  /* ---- Nuovo volume: the form is the page ------------------------------------ */
+  :root:root .wizard .stage {
+    padding: calc(var(--safe-top, 0px) + 8px) 10px 10px;
+    align-items: start;
+  }
+  :root:root .wizard .form-sheet {
+    width: 100%;
+  }
+  :root:root .wizard .nav .btn {
+    min-height: 48px;
+  }
+  :root:root .wizard .nav .btn.primary {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  /* ---- Sblocca: the data page of a passport, held upright ---------------------- */
+  /* One column with room round everything (2026-10-25: "tutto schiacciato"): the seal at the
+     head, centred, sized by the screen's height; the name, the facts in three even columns; the
+     password the page's width with its eye inside the well, the key under it; the MRZ at the
+     foot. The ghost portrait and the thread stripe are the desktop's (no room for them here).
+     The board scrolls: a short phone, or the keyboard up, moves the page, never squeezes it. */
+  :root:root .unlock {
+    grid-template-rows: auto minmax(max-content, 1fr) auto;
+  }
+  :root:root .unlock .top {
+    padding: calc(var(--safe-top, 0px) + 4px) max(8px, var(--safe-left, 0px)) 0;
+  }
+  :root:root .unlock .top .back {
+    min-height: var(--tap);
+  }
+  :root:root .unlock .stage {
+    padding: 4px max(16px, var(--safe-left, 0px)) 20px max(16px, var(--safe-right, 0px));
+    place-items: center;
+  }
+  :root:root .unlock .document {
+    --w: calc(100vw - 32px - var(--safe-left, 0px) - var(--safe-right, 0px));
+    aspect-ratio: auto;
+    min-height: 0;
+    border-radius: 14px;
+  }
+  :root:root .unlock .face {
+    position: relative;
+    inset: auto;
+    /* clear of the guilloché border and its stitches, with air inside them */
+    margin: 34px 28px 26px;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    column-gap: 0;
+    row-gap: 0;
+  }
+  :root:root .unlock .seal-panel {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 0;
+    /* the seal's size follows the panel (Unlock.svelte sealSize): smaller on a short phone */
+    height: clamp(150px, 25svh, 214px);
+  }
+  /* no security tint behind the seal on a phone (2026-10-25: "un pattern tutto storto che si spezza a
+     destra e sotto"); the passport's fibres and frame carry the paper. (The rule that sized it here
+     never applied: `:global()` in a plain stylesheet voided its selector list.) */
+  :root:root .unlock .seal-panel > .tint-ink {
+    display: none;
+  }
+  :root:root .unlock .seal-panel .file {
+    margin-top: 10px;
+    font-size: 16px;
+  }
+  :root:root .unlock :is(.thread-col, .wm-window) {
+    display: none;
+  }
+  :root:root .unlock .data-panel {
+    grid-column: 1;
+    grid-row: 2;
+    padding: 0;
+    margin-top: 26px;
+  }
+  :root:root .unlock .name {
+    margin-top: 6px;
+    font-size: clamp(30px, 9.4vw, 42px);
+  }
+  :root:root .unlock .data-panel .microline {
+    margin-top: 10px;
+  }
+  :root:root .unlock .facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 14px;
+    margin-top: 16px;
+  }
+  :root:root .unlock .facts dt {
+    font-size: 9.5px;
+    line-height: 1.3;
+  }
+  :root:root .unlock .facts dd {
+    margin-top: 5px;
+    font-size: 14px;
+  }
+  /* the password the page's width, its eye seated inside the well; the key under it */
+  :root:root .unlock .pw-form {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 26px;
+    row-gap: 0;
+  }
+  :root:root .unlock .pw-form .control {
+    width: 100%;
+    min-height: 52px;
+  }
+  :root:root .unlock .pw-form .control .input {
+    width: 100%;
+    min-width: 0;
+    height: 52px;
+  }
+  :root:root .unlock .pw-form .control .toggle {
+    right: 5px;
+    width: var(--tap);
+    height: var(--tap);
+    min-height: var(--tap);
+  }
+  :root:root .unlock .pw-form .submit {
+    grid-row: 4;
+    grid-column: 1;
+    width: 100%;
+    min-height: 52px;
+    margin-top: 14px;
+    justify-content: center;
+  }
+  :root:root .unlock .messages {
+    margin-top: 6px;
+  }
+  :root:root .unlock .mrz {
+    grid-column: 1;
+    grid-row: 3;
+    margin-top: 8px;
+    padding: 14px 0 0;
+    font-size: 9.5px;
+  }
+  :root:root .unlock .reason {
+    top: 16px;
+    right: 22px;
+    bottom: auto;
+    font-size: 10px;
+  }
+  :root:root :is(.unlock, .create) .imprint {
+    padding-bottom: calc(var(--safe-bottom, 0px) + 12px);
+  }
+
+  /* ---- Password: the list, or the entry with a way back ------------------------- */
+  :root:root .passwords .pm-head {
+    padding: calc(var(--safe-top, 0px) + 12px) 14px 0 16px;
+  }
+  :root:root .passwords .pm-head .line {
+    align-items: center;
+    gap: 2px;
+  }
+  :root:root .passwords .pm-head .title {
+    font-size: 34px;
+  }
+  :root:root .passwords .pm-head .count {
+    margin-left: 8px;
+  }
+  :root:root .passwords .pm-head .line .btn:not(.primary) {
+    width: var(--tap);
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--ink-2);
+  }
+  :root:root .passwords .pm-head .line .btn:not(.primary) .label-text {
+    display: none;
+  }
+  /* Nuova voce: under the thumb, as Importa is among the files */
+  :root:root .passwords .pm-head .line .btn.primary {
+    position: fixed;
+    right: calc(16px + var(--safe-right, 0px));
+    bottom: calc(var(--flap-h) + 18px + var(--safe-bottom, 0px));
+    z-index: 4;
+    height: 54px;
+    padding: 0 20px 0 16px;
+    border-radius: 18px;
+    font-size: var(--text-base);
+    box-shadow:
+      inset 0 1px 0 var(--key-accent-hi),
+      inset 0 0 0 1px var(--key-accent-edge),
+      0 2px 3px rgb(var(--cast) / 0.35),
+      0 12px 22px -8px rgb(var(--cast) / 0.65);
+  }
+  :root:root .passwords:has(.mobile-back) .pm-head .line .btn.primary {
+    display: none;
+  }
+  :root:root .passwords .pm-head .search .input {
+    height: 44px;
+    border-radius: 22px;
+  }
+  :root:root .passwords .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :root:root .passwords .body:has(.mobile-back) > .side,
+  :root:root .passwords .body:not(:has(.mobile-back)) > .main {
+    display: none;
+  }
+  /* nothing in the volume yet: the empty seal and its two keys, not an empty ledger */
+  :root:root .passwords .body:has([data-state='empty-detail']) > .side {
+    display: none;
+  }
+  :root:root .passwords .body:has([data-state='empty-detail']) > .main {
+    display: block;
+  }
+  /* several picked: the list stays, what to do with them is a slip at its foot */
+  :root:root .passwords .body:has([data-testid='pm-multi']) {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  :root:root .passwords .body:has([data-testid='pm-multi']) > .main {
+    display: block;
+    padding: 14px 16px calc(14px + var(--flap-h));
+    border-top: 1px solid var(--paper-rule);
+    background: var(--paper-hi);
+    box-shadow: 0 -8px 20px -10px rgb(var(--cast) / 0.45);
+  }
+  :root:root .passwords .side {
+    border-right: 0;
+  }
+  :root:root .passwords .filters {
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 6px;
+    padding: 10px 14px;
+  }
+  :root:root .passwords .filters .filter {
+    flex: none;
+    min-height: 38px;
+    padding-inline: 12px;
+    border-radius: 19px;
+  }
+  :root:root .passwords .entries {
+    padding-bottom: 84px;
+  }
+  :root:root .passwords .main {
+    padding: 10px 16px 28px;
+  }
+  :root:root .passwords .mobile-back {
+    min-height: var(--tap);
+    margin-left: -8px;
+  }
+
+  /* the entry: its name across the page, its keys on a line under it */
+  :root:root .passwords .detail .head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  :root:root .passwords .detail .head .title {
+    font-size: 34px;
+  }
+  :root:root .passwords .detail .head .actions {
+    justify-content: flex-start;
+    margin-left: -8px;
+  }
+  :root:root .passwords:has([data-state='empty-detail']) .pm-head .line .btn.primary {
+    display: none;
+  }
+
+  /* a row of choices stays one row, the width of the card: no key wraps under its neighbours */
+  :root:root .segmented {
+    display: flex;
+    flex-wrap: nowrap;
+    align-self: stretch;
+    max-width: 100%;
+  }
+  :root:root .segmented > * {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 6px;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* the interface sizes: five keys across the card, the letter of each a little smaller */
+  :root:root [data-testid='app-scale'] [role='radio'] {
+    min-width: 0;
+    height: 40px;
+    line-height: 40px;
+    padding-inline: 2px;
+    font-size: 12px;
+  }
+  :root:root [data-testid='app-scale'] [role='radio']::before {
+    margin-right: 2px;
+    font-size: min(var(--aa), 15px);
+  }
+  /* the emblem's kinds stand in a column beside the seal (three across would not fit) */
+  :root:root .picker .preview-side .kinds {
+    display: grid;
+    align-self: stretch;
+  }
+  :root:root .picker .preview-side .kinds .kind {
+    min-height: 40px;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  /* ---- Dettagli and Impostazioni: one column, the cards edge to edge ----------- */
+  /* the clasp stands 15 px proud of the flap: the pages scroll clear of it */
+  :root:root .details {
+    padding-top: var(--safe-top, 0px);
+    padding-bottom: 28px;
+  }
+  /* a key: its name and what it is across the page, its two keys on the line under it */
+  :root:root .details .slot {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  :root:root .details .slot-main {
+    flex: 1 1 calc(100% - 48px);
+  }
+  :root:root .details .slot > .btn {
+    flex: none;
+    min-height: 38px;
+    padding-inline: 16px;
+  }
+  :root:root .details .slot > .btn:first-of-type {
+    margin-left: calc(15px + var(--space-3) + 2px);
+  }
+  :root:root main.settings {
+    padding-top: var(--safe-top, 0px);
+  }
+  /* no classic scrollbar on a phone: the styled one of base.css takes 12px of the window's width
+     (the column then sits off-centre); fingers scroll, the indicator overlays */
+  :root[data-platform='mobile'] ::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+  :root:root .settings {
+    scrollbar-width: none;
+  }
+  :root:root .settings .bar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 8px max(16px, var(--safe-right, 0px)) 14px max(16px, var(--safe-left, 0px));
+  }
+  :root:root .settings .bar .back {
+    margin-left: -8px;
+  }
+  :root:root .settings .bar .head {
+    text-align: left;
+  }
+  /* a phone has no room for the desktop's hanging indent under each section's mark: the mark stays
+     beside the title, the section's content takes the full width of the page */
+  :root:root .settings .block > :not(.block-title) {
+    margin-left: 0;
+  }
+  :root:root .settings .layout {
+    padding: 0 max(8px, var(--safe-right, 0px)) calc(16px + var(--safe-bottom, 0px)) max(8px, var(--safe-left, 0px));
+  }
+  :root:root .settings .pages {
+    --bleed-start: 16px;
+    --bleed-end: 16px;
+    padding: 14px 16px 6px;
+  }
+}
+
+/* the deck: the book in the middle flat and whole, the ones either side tipped back a little */
+@keyframes nv-deck {
+  0% {
+    transform: scale(0.86) translateY(10px);
+    opacity: 0.55;
+  }
+  40%,
+  60% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.86) translateY(10px);
+    opacity: 0.55;
+  }
+}
+
+/* ==========================================================================
+   The phone on its side: the flap becomes a rail at the left edge
+   ========================================================================== */
+@media (min-width: 641px) and (max-height: 500px) and (orientation: landscape) {
+  :root[data-platform='mobile'] {
+    --sidebar-w: calc(84px + var(--safe-left, 0px));
+  }
+  :root[data-platform='mobile'] .vault-screen > .gutter {
+    display: none;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar {
+    width: var(--sidebar-w);
+    padding: 10px 6px calc(8px + var(--safe-bottom, 0px)) calc(6px + var(--safe-left, 0px));
+    gap: 4px;
+    align-items: stretch;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar :is(.identity, .vault-list, .mount, .autolock, .update-notice) {
+    display: none;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar .nav {
+    gap: 2px;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar :is(.nav-btn, .settings-row, .lock) {
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-height: 54px;
+    margin: 0;
+    padding: 5px 2px;
+    font-size: 10.5px;
+    text-align: center;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar .settings-row .row-name {
+    flex: none;
+    font-size: 10.5px;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar .bottom {
+    padding: 8px 0 0;
+    gap: 4px;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar .lock {
+    width: 100%;
+  }
+  /* real work is a page in landscape too: there is no room for a sheet over the page */
+  :root[data-platform='mobile'] dialog.dialog:not([data-variant='danger']):has(input:not([type='hidden']), textarea, select) {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+  :root[data-platform='mobile'] dialog.dialog:not([data-variant='danger']):has(input:not([type='hidden']), textarea, select) > .panel {
+    min-height: 100%;
+    padding-inline: max(24px, var(--safe-left, 0px)) max(24px, var(--safe-right, 0px));
+  }
+  :root[data-platform='mobile'] dialog.dialog:not([data-variant='danger']):has(input:not([type='hidden']), textarea, select) .actions {
+    position: sticky;
+    bottom: 0;
+    margin-top: auto;
+    padding-block: 10px calc(10px + var(--safe-bottom, 0px));
+    background: var(--paper-hi);
+  }
+  /* Sblocca on its side: the seal on the left, the data and the password on the right, the
+     whole document as wide as the phone; no ghost, no stripe; the board scrolls under it */
+  :root[data-platform='mobile'] .unlock {
+    grid-template-rows: auto minmax(max-content, 1fr) auto;
+  }
+  :root[data-platform='mobile'] .unlock .top {
+    padding: 4px max(12px, var(--safe-left, 0px)) 0;
+  }
+  :root[data-platform='mobile'] .unlock .stage {
+    padding: 2px max(20px, var(--safe-right, 0px)) 14px max(20px, var(--safe-left, 0px));
+  }
+  :root[data-platform='mobile'] .unlock .document {
+    --w: min(calc(100vw - 40px - var(--safe-left, 0px) - var(--safe-right, 0px)), 900px);
+    aspect-ratio: auto;
+    min-height: 0;
+    border-radius: 14px;
+  }
+  :root[data-platform='mobile'] .unlock .face {
+    position: relative;
+    inset: auto;
+    margin: 30px 32px 22px;
+    min-height: 0;
+    grid-template-columns: minmax(150px, 30%) minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 32px;
+  }
+  :root[data-platform='mobile'] .unlock :is(.thread-col, .wm-window) {
+    display: none;
+  }
+  :root[data-platform='mobile'] .unlock .seal-panel {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 0;
+    height: 196px;
+    align-self: center;
+  }
+  :root[data-platform='mobile'] .unlock .seal-panel .file {
+    font-size: 15px;
+  }
+  :root[data-platform='mobile'] .unlock .data-panel {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 0;
+  }
+  :root[data-platform='mobile'] .unlock .name {
+    font-size: 34px;
+  }
+  :root[data-platform='mobile'] .unlock .pw-form {
+    margin-top: 18px;
+  }
+  :root[data-platform='mobile'] .unlock .pw-form .control .input {
+    width: 100%;
+    min-width: 0;
+  }
+  :root[data-platform='mobile'] .unlock .mrz {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    padding-top: 12px;
+  }
+  :root[data-platform='mobile'] .folder-head .nav-line > .breadcrumb,
+  :root[data-platform='mobile'] .folder-head .nav-line .up:disabled {
+    display: none;
+  }
+  :root[data-platform='mobile'] .vault-screen .sidebar .settings-row .row-name {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 10px;
+  }
+}
+
+/* ==========================================================================
+   The tablet: the desktop's book under a finger
+   ========================================================================== */
+@media (min-width: 641px) {
+  :root[data-platform='mobile'] .vault-screen .sidebar :is(.row, .nav-btn) {
+    min-height: var(--tap);
+  }
+  :root[data-platform='mobile'] .folder-head .view-toggle .seg {
+    min-width: 40px;
+    min-height: 38px;
+  }
+  :root[data-platform='mobile'] .folder-head .search-box .input {
+    height: 40px;
+  }
+  :root[data-platform='mobile'] .folder-head .search-box:not(:has(.close)) .input {
+    padding-right: 12px;
+  }
+  :root[data-platform='mobile'] .menu {
+    min-width: 260px;
+  }
+}
+/* the tablet's cover lists the open volumes itself */
+@media (min-width: 641px) and (min-height: 501px) {
+  :root[data-platform='mobile'] .folder-head .shelf {
+    display: none;
+  }
+}
+/* a tablet held upright: Password shows the list, then the entry (as on a phone) */
+@media (min-width: 641px) and (max-width: 1023px) and (min-height: 501px) {
+  :root[data-platform='mobile'] .passwords .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :root[data-platform='mobile'] .passwords .body:has(.mobile-back) > .side,
+  :root[data-platform='mobile'] .passwords .body:not(:has(.mobile-back)) > .main {
+    display: none;
+  }
+  :root[data-platform='mobile'] .passwords .body:has([data-state='empty-detail']) > .side {
+    display: none;
+  }
+  :root[data-platform='mobile'] .passwords .body:has([data-state='empty-detail']) > .main {
+    display: block;
+  }
+  :root[data-platform='mobile'] .passwords .side {
+    border-right: 0;
+  }
+  :root[data-platform='mobile'] .passwords .mobile-back {
+    display: inline-flex;
+  }
+  /* the file list: name, tags, size and date (the type and the place need a wider page) */
+  :root[data-platform='mobile'] .file-view-wrap,
+  :root[data-platform='mobile'] .file-view-wrap[data-results] {
+    --list-cols: var(--row-vis-w, 40px) minmax(0, 1fr) auto 76px 104px;
+  }
+  :root[data-platform='mobile'] .file-view-wrap .list-header .col:is([data-col='type'], [data-col='place']),
+  :root[data-platform='mobile'] .file-item[data-layout='list'] > :is(.type, .place) {
+    display: none;
+  }
+}

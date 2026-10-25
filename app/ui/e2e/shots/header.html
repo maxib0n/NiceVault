@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>NiceVault header</title>
+<!-- Rendered to docs/media/header.webp by e2e/shots/shots.mjs, which fills in the icon (docs/media/icon.png).
+     The fonts are the app's own. -->
+<style>
+  @font-face { font-family: 'Newsreader'; font-style: normal; font-weight: 200 800; src: url('/src/assets/fonts/newsreader/newsreader-normal-200-800-latin.woff2') format('woff2'); }
+  @font-face { font-family: 'Newsreader'; font-style: italic; font-weight: 200 800; src: url('/src/assets/fonts/newsreader/newsreader-italic-200-800-latin.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Sans'; font-weight: 100 700; src: url('/src/assets/fonts/plex-sans/plex-sans-normal-100-700-latin.woff2') format('woff2'); }
+  @font-face { font-family: 'IBM Plex Mono'; font-weight: 500; src: url('/src/assets/fonts/plex-mono/plex-mono-normal-500-latin.woff2') format('woff2'); }
+  html, body { margin: 0; width: 1600px; height: 420px; overflow: hidden; background: #1b1a19; }
+  body {
+    position: relative; color: #f3e9e6; font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    background:
+      radial-gradient(900px 420px at 18% 50%, rgba(163, 40, 62, .30), transparent 70%),
+      radial-gradient(1200px 500px at 85% 110%, rgba(255, 255, 255, .05), transparent 70%),
+      #1b1a19;
+  }
+  /* the app's stitched edge, as a hairline frame */
+  .frame { position: absolute; inset: 22px; border: 1.5px dashed rgba(224, 96, 118, .38); border-radius: 18px; }
+  .row { position: absolute; inset: 0; display: flex; align-items: center; gap: 64px; justify-content: center; }
+  .icon { width: 224px; height: 224px; flex: none; filter: drop-shadow(0 22px 28px rgba(0, 0, 0, .55)); }
+  h1 { margin: 0; font-family: 'Newsreader', Georgia, serif; font-weight: 400; font-size: 132px; line-height: 1; letter-spacing: -.01em; }
+  h1 em { font-style: italic; color: #ef6a7c; }
+  p { margin: 22px 0 0; font-size: 30px; font-weight: 300; line-height: 1.4; color: #c9bfbb; max-width: 820px; }
+  .os { margin-top: 30px; font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 17px; letter-spacing: .12em; color: #8d8380; }
+</style>
+</head>
+<body>
+  <div class="frame"></div>
+  <div class="row">
+    <img class="icon" id="icon" alt="" />
+    <div>
+      <h1>Nice<em>Vault</em></h1>
+      <p>Encrypted volumes in a single file. Keep them on a USB stick, open them on any computer or phone.</p>
+      <div class="os">Linux &nbsp;·&nbsp; macOS &nbsp;·&nbsp; Windows &nbsp;·&nbsp; iOS &nbsp;·&nbsp; Android</div>
+    </div>
+  </div>
+</body>
+</html>

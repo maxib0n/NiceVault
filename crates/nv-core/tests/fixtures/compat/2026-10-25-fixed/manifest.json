@@ -1,0 +1,875 @@
+{
+  "chunk": 262144,
+  "generated_by_commit": "6648fe2b809c9a10c456b33cb60295ad56949abb",
+  "generated_on": "2026-10-25-fixed",
+  "kdf_note": "All slots use KdfPreset::Fast (Argon2id m=8 MiB, t=1, p=1) for test speed, except nudo.nvault which uses KdfPreset::Strong as calibrated on the generating machine (p = 4, like real volumes).",
+  "manifest_version": 1,
+  "totp_t": 1700000000,
+  "volumes": [
+    {
+      "app": {
+        "appearance": {
+          "accent": "ottanio",
+          "emblem": {
+            "id": "star",
+            "kind": "icon"
+          },
+          "emblem_frame": "guilloche",
+          "tampered": false,
+          "visibility": "visible"
+        },
+        "open_password_slot": 0,
+        "pm_list": [
+          {
+            "created": 1792916596395,
+            "favorite": false,
+            "folder": "",
+            "has_password": true,
+            "has_totp": false,
+            "icon": null,
+            "id": "0adf38881a7ff4f7c1bb12ff2f6b50be",
+            "tags": [],
+            "title": "Wi-Fi",
+            "updated": 1792916596395,
+            "urls": [],
+            "username": ""
+          }
+        ],
+        "recent_before_open": {
+          "accent": "ottanio",
+          "emblem": {
+            "id": "star",
+            "kind": "icon"
+          },
+          "name": "fisso",
+          "show_when_locked": true
+        },
+        "settings": {
+          "accent": "ottanio",
+          "auto_lock_minutes": 5,
+          "grid_size": "m",
+          "list_density": "normal",
+          "lock_on_screen_lock": true,
+          "lock_on_sleep": true,
+          "lock_scope": "volume",
+          "theme": "dark"
+        },
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": "Chiavetta"
+          }
+        ],
+        "vault_info": {
+          "appearance_tampered": false,
+          "emblem": {
+            "id": "star",
+            "kind": "icon"
+          },
+          "kdf": {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          },
+          "name": "fisso",
+          "settings": {
+            "accent": "ottanio",
+            "auto_lock_minutes": 5,
+            "grid_size": "m",
+            "list_density": "normal",
+            "lock_on_screen_lock": true,
+            "lock_on_sleep": true,
+            "lock_scope": "volume",
+            "theme": "dark"
+          },
+          "show_when_locked": true,
+          "visibility": "visible"
+        }
+      },
+      "core": {
+        "absent": [],
+        "appearance": {
+          "accent": "ottanio",
+          "emblem": {
+            "id": "star",
+            "kind": "icon"
+          }
+        },
+        "meta": {
+          "nicevault.emblem": {
+            "base64": "eyJlbWJsZW0iOnsiaWQiOiJzdGFyIiwia2luZCI6Imljb24ifSwiZW1ibGVtX2ZyYW1lIjoiZ3VpbGxvY2hlIiwic2hvd193aGVuX2xvY2tlZCI6dHJ1ZX0=",
+            "sha256": "10aade25e58c437994268d9b04d2af389917f4e8a1d876fdb9078fefcbffb13e",
+            "utf8": "{\"emblem\":{\"id\":\"star\",\"kind\":\"icon\"},\"emblem_frame\":\"guilloche\",\"show_when_locked\":true}"
+          },
+          "nicevault.emblem_locked": null,
+          "nicevault.settings": {
+            "base64": "eyJhY2NlbnQiOiJvdHRhbmlvIiwiYXV0b19sb2NrX21pbnV0ZXMiOjUsImdyaWRfc2l6ZSI6Im0iLCJsaXN0X2RlbnNpdHkiOiJub3JtYWwiLCJsb2NrX29uX3NjcmVlbl9sb2NrIjp0cnVlLCJsb2NrX29uX3NsZWVwIjp0cnVlLCJsb2NrX3Njb3BlIjoidm9sdW1lIiwidGhlbWUiOiJkYXJrIn0=",
+            "sha256": "ff56ae9f08e1bcd245e729a92477d6606082f6c7c52bef276c81410c5f76552d",
+            "utf8": "{\"accent\":\"ottanio\",\"auto_lock_minutes\":5,\"grid_size\":\"m\",\"list_density\":\"normal\",\"lock_on_screen_lock\":true,\"lock_on_sleep\":true,\"lock_scope\":\"volume\",\"theme\":\"dark\"}"
+          },
+          "nv.pm_schema": {
+            "base64": "MQ==",
+            "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+            "utf8": "1"
+          },
+          "volume_id": {
+            "base64": "Dg9D7yZvF2Zad+OicvDuvQ==",
+            "sha256": "35ca65591586d87ab61450f8eba77b336f1a16ad1b95a1553fc6811f7fa00f9d"
+          }
+        },
+        "nodes": [
+          {
+            "id": 3,
+            "kind": "dir",
+            "mtime": 1710000003000009144,
+            "path": "Cartella",
+            "size": 0
+          },
+          {
+            "id": 4,
+            "kind": "file",
+            "mtime": 1710000004000012151,
+            "path": "Cartella/dati.bin",
+            "sha256": "da2f191c072989d3256b4ee14761da7439ed616b8e32f4ba07ea7d27feca7876",
+            "size": 1300001
+          },
+          {
+            "id": 2,
+            "kind": "file",
+            "mtime": 1710000002000006137,
+            "path": "nota.txt",
+            "sha256": "dc0b3cdf3865817927083af3c1ad082760ef0d4ca94dc96d134b3f50378bd085",
+            "size": 36
+          }
+        ],
+        "pm": [
+          {
+            "detail": {
+              "created": 1792916596395,
+              "favorite": false,
+              "fields": [],
+              "folder": "",
+              "has_password": true,
+              "has_totp": false,
+              "history_count": 0,
+              "icon": null,
+              "id": "0adf38881a7ff4f7c1bb12ff2f6b50be",
+              "notes": "",
+              "tags": [],
+              "title": "Wi-Fi",
+              "totp": null,
+              "updated": 1792916596395,
+              "urls": [],
+              "username": ""
+            },
+            "history": [],
+            "secrets": {
+              "fields": [],
+              "history": [],
+              "notes": "",
+              "password": "fisso-wifi",
+              "totp": null,
+              "totp_code_at": null,
+              "username": ""
+            },
+            "summary": {
+              "created": 1792916596395,
+              "favorite": false,
+              "folder": "",
+              "has_password": true,
+              "has_totp": false,
+              "icon": null,
+              "id": "0adf38881a7ff4f7c1bb12ff2f6b50be",
+              "tags": [],
+              "title": "Wi-Fi",
+              "updated": 1792916596395,
+              "urls": [],
+              "username": ""
+            }
+          }
+        ],
+        "root_mtime": 1710000000000000000,
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": "Chiavetta"
+          }
+        ]
+      },
+      "description": "Fixed-size (8 MiB) single-file volume made through the app (vault_create_sized): header fixed + journal sections, journal region 1 MiB in place of the footer region; icon emblem 'star' visible, accent ottanio, theme dark, auto-lock 5 min; labelled slot; one PM entry; a folder with a 1.3 MB file.",
+      "duress": null,
+      "file": "fisso.nvault",
+      "header_after_app_open": {
+        "accent": "ottanio",
+        "emblem": {
+          "id": "star",
+          "kind": "icon"
+        }
+      },
+      "identity": null,
+      "passwords": [
+        {
+          "password": "fisso-pw",
+          "slot": 0
+        }
+      ],
+      "peek": {
+        "appearance": {
+          "accent": "ottanio",
+          "emblem": {
+            "id": "star",
+            "kind": "icon"
+          }
+        },
+        "password_kdf": [
+          {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          }
+        ],
+        "recipient_slots": 0
+      },
+      "sha256": "7d16d3b0fc1d4cde933cbe066fc8d3a5beb04ca440d6a40ab556492b80491220",
+      "size": 8388608
+    },
+    {
+      "app": {
+        "appearance": {
+          "accent": "velluto",
+          "emblem": {
+            "kind": "initial"
+          },
+          "emblem_frame": "guilloche",
+          "tampered": false,
+          "visibility": "visible"
+        },
+        "open_password_slot": 0,
+        "pm_list": [],
+        "recent_before_open": {
+          "accent": null,
+          "emblem": null,
+          "name": "fisso-vecchio",
+          "show_when_locked": false
+        },
+        "settings": {
+          "accent": "velluto",
+          "auto_lock_minutes": 15,
+          "grid_size": "m",
+          "list_density": "normal",
+          "lock_on_screen_lock": true,
+          "lock_on_sleep": true,
+          "lock_scope": "volume",
+          "theme": "dark"
+        },
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ],
+        "vault_info": {
+          "appearance_tampered": false,
+          "emblem": {
+            "kind": "initial"
+          },
+          "kdf": {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          },
+          "name": "fisso-vecchio",
+          "settings": {
+            "accent": "velluto",
+            "auto_lock_minutes": 15,
+            "grid_size": "m",
+            "list_density": "normal",
+            "lock_on_screen_lock": true,
+            "lock_on_sleep": true,
+            "lock_scope": "volume",
+            "theme": "dark"
+          },
+          "show_when_locked": true,
+          "visibility": "visible"
+        }
+      },
+      "core": {
+        "absent": [],
+        "appearance": null,
+        "meta": {
+          "nicevault.emblem": null,
+          "nicevault.emblem_locked": null,
+          "nicevault.settings": null,
+          "nv.pm_schema": {
+            "base64": "MQ==",
+            "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+            "utf8": "1"
+          },
+          "volume_id": {
+            "base64": "PyA3hPu+PKjlq4HCbiuBwA==",
+            "sha256": "0f01bda4ef985fb67132c7a3d2d44115c7e7a9a841937b2fc0f8bd1cbf129c63"
+          }
+        },
+        "nodes": [
+          {
+            "id": 3,
+            "kind": "file",
+            "mtime": 1720000003000009144,
+            "path": "medio.bin",
+            "sha256": "054ce4af41d4eb06f2fccac6ae416c1d8ee3c79fcb4e871263b0adcb960b0230",
+            "size": 900000
+          },
+          {
+            "id": 2,
+            "kind": "file",
+            "mtime": 1720000002000006137,
+            "path": "vecchio.txt",
+            "sha256": "b86153e00572de4c66c42cb5db67f02fe0bf5f0a9e108cd941bbfcb924e0b615",
+            "size": 26
+          }
+        ],
+        "pm": [],
+        "root_mtime": 1720000000000000000,
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ]
+      },
+      "description": "Fixed-size (6 MiB) volume with the SIDE-FILE journal and the footer region (header fixed, no journal section), as made by builds before fixed-size single-file volumes (same code path); not upgraded. nv-core only.",
+      "duress": null,
+      "file": "fisso-vecchio.nvault",
+      "header_after_app_open": {
+        "accent": "velluto",
+        "emblem": {
+          "kind": "initial",
+          "text": "F"
+        }
+      },
+      "identity": null,
+      "passwords": [
+        {
+          "password": "fisso-vecchio-pw",
+          "slot": 0
+        }
+      ],
+      "peek": {
+        "appearance": null,
+        "password_kdf": [
+          {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          }
+        ],
+        "recipient_slots": 0
+      },
+      "sha256": "2d9cafdfa1c5bd97115a20108bd6b69da6605b3a026024948c88259a00280f50",
+      "size": 6291456
+    },
+    {
+      "app": {
+        "appearance": {
+          "accent": "velluto",
+          "emblem": {
+            "kind": "initial"
+          },
+          "emblem_frame": "guilloche",
+          "tampered": false,
+          "visibility": "visible"
+        },
+        "open_password_slot": 0,
+        "pm_list": [],
+        "recent_before_open": {
+          "accent": null,
+          "emblem": null,
+          "name": "fisso-aggiornato",
+          "show_when_locked": false
+        },
+        "settings": {
+          "accent": "velluto",
+          "auto_lock_minutes": 15,
+          "grid_size": "m",
+          "list_density": "normal",
+          "lock_on_screen_lock": true,
+          "lock_on_sleep": true,
+          "lock_scope": "volume",
+          "theme": "dark"
+        },
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ],
+        "vault_info": {
+          "appearance_tampered": false,
+          "emblem": {
+            "kind": "initial"
+          },
+          "kdf": {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          },
+          "name": "fisso-aggiornato",
+          "settings": {
+            "accent": "velluto",
+            "auto_lock_minutes": 15,
+            "grid_size": "m",
+            "list_density": "normal",
+            "lock_on_screen_lock": true,
+            "lock_on_sleep": true,
+            "lock_scope": "volume",
+            "theme": "dark"
+          },
+          "show_when_locked": true,
+          "visibility": "visible"
+        }
+      },
+      "core": {
+        "absent": [],
+        "appearance": null,
+        "meta": {
+          "nicevault.emblem": null,
+          "nicevault.emblem_locked": null,
+          "nicevault.settings": null,
+          "nv.pm_schema": {
+            "base64": "MQ==",
+            "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+            "utf8": "1"
+          },
+          "volume_id": {
+            "base64": "Ajcc0J+ll6zQmlRC054PVw==",
+            "sha256": "45035e9b86b7d8ab87eea648a4cc879746072d5b282f5a488ef83d596a9fc97c"
+          }
+        },
+        "nodes": [
+          {
+            "id": 2,
+            "kind": "file",
+            "mtime": 1730000002000006137,
+            "path": "grande.bin",
+            "sha256": "eb4d44e6f3076f87e4593b748e8aae248235cd61113e3ba5b517d4d1a620cadb",
+            "size": 2100000
+          },
+          {
+            "id": 3,
+            "kind": "file",
+            "mtime": 1730000003000009144,
+            "path": "piccolo.txt",
+            "sha256": "2dcc133412a4bb08c808dca1b5ad38e1968100705f7888c63ef37dd263d71a38",
+            "size": 21
+          }
+        ],
+        "pm": [],
+        "root_mtime": 1730000000000000000,
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ]
+      },
+      "description": "Fixed-size (8 MiB) side-file volume upgraded in place to single-file: its database (~2.2 MB) is larger than the 1 MiB region's displaced part, whose bytes moved past the database (journal section split > region - 64 KiB). nv-core only.",
+      "duress": null,
+      "file": "fisso-aggiornato.nvault",
+      "header_after_app_open": {
+        "accent": "velluto",
+        "emblem": {
+          "kind": "initial",
+          "text": "F"
+        }
+      },
+      "identity": null,
+      "passwords": [
+        {
+          "password": "fisso-aggiornato-pw",
+          "slot": 0
+        }
+      ],
+      "peek": {
+        "appearance": null,
+        "password_kdf": [
+          {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          }
+        ],
+        "recipient_slots": 0
+      },
+      "sha256": "938937aa44e161577a891debce829ac1172a38a8d63de6c70536c23fbbf848b8",
+      "size": 8388608
+    },
+    {
+      "app": {
+        "appearance": {
+          "accent": "velluto",
+          "emblem": {
+            "kind": "initial"
+          },
+          "emblem_frame": "guilloche",
+          "tampered": false,
+          "visibility": "visible"
+        },
+        "open_password_slot": 0,
+        "pm_list": [],
+        "recent_before_open": {
+          "accent": null,
+          "emblem": null,
+          "name": "fisso-esteso",
+          "show_when_locked": false
+        },
+        "settings": {
+          "accent": "velluto",
+          "auto_lock_minutes": 15,
+          "grid_size": "m",
+          "list_density": "normal",
+          "lock_on_screen_lock": true,
+          "lock_on_sleep": true,
+          "lock_scope": "volume",
+          "theme": "dark"
+        },
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ],
+        "vault_info": {
+          "appearance_tampered": false,
+          "emblem": {
+            "kind": "initial"
+          },
+          "kdf": {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          },
+          "name": "fisso-esteso",
+          "settings": {
+            "accent": "velluto",
+            "auto_lock_minutes": 15,
+            "grid_size": "m",
+            "list_density": "normal",
+            "lock_on_screen_lock": true,
+            "lock_on_sleep": true,
+            "lock_scope": "volume",
+            "theme": "dark"
+          },
+          "show_when_locked": true,
+          "visibility": "visible"
+        }
+      },
+      "core": {
+        "absent": [],
+        "appearance": null,
+        "meta": {
+          "nicevault.emblem": null,
+          "nicevault.emblem_locked": null,
+          "nicevault.settings": null,
+          "nv.pm_schema": {
+            "base64": "MQ==",
+            "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+            "utf8": "1"
+          },
+          "volume_id": {
+            "base64": "yL790dvm8yWaVVU2+665eg==",
+            "sha256": "562a01c3586a9a23d148d18f28363332a53ec5939f4cdbc549067da6ef2e69eb"
+          }
+        },
+        "nodes": [
+          {
+            "id": 3,
+            "kind": "file",
+            "mtime": 1740000003000009144,
+            "path": "dopo.bin",
+            "sha256": "f34dddd27e570408311bb90e1a50ebf22240523020a6b5837762d2eef3ef0855",
+            "size": 3000000
+          },
+          {
+            "id": 2,
+            "kind": "file",
+            "mtime": 1740000002000006137,
+            "path": "prima.bin",
+            "sha256": "125270434dfa7605c628b714fc8bba0fbbbfadb7dff683dee85995ecca2f32b9",
+            "size": 1500000
+          }
+        ],
+        "pm": [],
+        "root_mtime": 1740000000000000000,
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ]
+      },
+      "description": "Fixed-size single-file volume made at 6 MiB (region 512 KiB), extended to 10 MiB (Estendi: journal records of the new capacity, header capacity 10 MiB), then written past the old size. nv-core only.",
+      "duress": null,
+      "file": "fisso-esteso.nvault",
+      "header_after_app_open": {
+        "accent": "velluto",
+        "emblem": {
+          "kind": "initial",
+          "text": "F"
+        }
+      },
+      "identity": null,
+      "passwords": [
+        {
+          "password": "fisso-esteso-pw",
+          "slot": 0
+        }
+      ],
+      "peek": {
+        "appearance": null,
+        "password_kdf": [
+          {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          }
+        ],
+        "recipient_slots": 0
+      },
+      "sha256": "111ef83d49085608f61d8e83108940f29d1406ee16b3156bd7ff1a0651539104",
+      "size": 10485760
+    },
+    {
+      "app": {
+        "appearance": {
+          "accent": "velluto",
+          "emblem": {
+            "kind": "initial"
+          },
+          "emblem_frame": "guilloche",
+          "tampered": false,
+          "visibility": "visible"
+        },
+        "open_password_slot": 0,
+        "pm_list": [],
+        "recent_before_open": {
+          "accent": null,
+          "emblem": null,
+          "name": "fisso-interrotto",
+          "show_when_locked": false
+        },
+        "settings": {
+          "accent": "velluto",
+          "auto_lock_minutes": 15,
+          "grid_size": "m",
+          "list_density": "normal",
+          "lock_on_screen_lock": true,
+          "lock_on_sleep": true,
+          "lock_scope": "volume",
+          "theme": "dark"
+        },
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ],
+        "vault_info": {
+          "appearance_tampered": false,
+          "emblem": {
+            "kind": "initial"
+          },
+          "kdf": {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          },
+          "name": "fisso-interrotto",
+          "settings": {
+            "accent": "velluto",
+            "auto_lock_minutes": 15,
+            "grid_size": "m",
+            "list_density": "normal",
+            "lock_on_screen_lock": true,
+            "lock_on_sleep": true,
+            "lock_scope": "volume",
+            "theme": "dark"
+          },
+          "show_when_locked": true,
+          "visibility": "visible"
+        }
+      },
+      "core": {
+        "absent": [
+          "perso.bin",
+          "pieno/liberato.bin"
+        ],
+        "appearance": null,
+        "meta": {
+          "nicevault.emblem": null,
+          "nicevault.emblem_locked": null,
+          "nicevault.settings": null,
+          "nv.pm_schema": {
+            "base64": "MQ==",
+            "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+            "utf8": "1"
+          },
+          "volume_id": {
+            "base64": "Ab/8ktWOJeWRuU2bRJaFMg==",
+            "sha256": "1c4afd24ed09e4f4c8dec406209a8a1bbd21459c7228badd1cd05c6c3b0a5251"
+          }
+        },
+        "nodes": [
+          {
+            "id": 3,
+            "kind": "file",
+            "mtime": 1792916553658225414,
+            "path": "piccolo.txt",
+            "sha256": "0372081b9508fc2dbaf188d867cd284084072288f1dbd68aca2d6434225591cb",
+            "size": 14
+          },
+          {
+            "id": 4,
+            "kind": "dir",
+            "mtime": 1792916553790595922,
+            "path": "pieno",
+            "size": 0
+          },
+          {
+            "id": 6,
+            "kind": "file",
+            "mtime": 1792916553732264792,
+            "path": "pieno/riempitivo.bin",
+            "sha256": "8060d4c7833106b6c97722556c77d2f34b3fc96d2aa0f592e40f23ef3bf40690",
+            "size": 3400000
+          },
+          {
+            "id": 2,
+            "kind": "file",
+            "mtime": 1792916553658044335,
+            "path": "tenuto.bin",
+            "sha256": "ee682c74188f40683c8db46f7c0492871ca0c7eb5dc1c004527b6f70f95ab3b7",
+            "size": 700000
+          }
+        ],
+        "pm": [],
+        "root_mtime": 1792916553658228134,
+        "slots": [
+          {
+            "fingerprint": null,
+            "in_use": true,
+            "index": 0,
+            "kdf": {
+              "m_kib": 8192,
+              "p": 1,
+              "t": 1
+            },
+            "kind": "password",
+            "label": null
+          }
+        ]
+      },
+      "description": "Fixed-size (6 MiB) single-file volume (region 128 KiB) whose store reaches almost to its capacity, left by a crash mid-transaction: the hot journal's tail lies PAST the capacity (the file is longer than its 6 MiB); opening it rolls back to tenuto.bin + piccolo.txt + pieno/riempitivo.bin (no perso.bin, no pieno/liberato.bin) and cuts the file back to 6 MiB.",
+      "duress": null,
+      "file": "fisso-interrotto.nvault",
+      "header_after_app_open": {
+        "accent": "velluto",
+        "emblem": {
+          "kind": "initial",
+          "text": "F"
+        }
+      },
+      "identity": null,
+      "passwords": [
+        {
+          "password": "fisso-interrotto-pw",
+          "slot": 0
+        }
+      ],
+      "peek": {
+        "appearance": null,
+        "password_kdf": [
+          {
+            "m_kib": 8192,
+            "p": 1,
+            "t": 1
+          }
+        ],
+        "recipient_slots": 0
+      },
+      "sha256": "df796b0e1675ae77ae92536b25db872c459a72e9f4abea9bf2ea6c155702d07c",
+      "size": 7120384
+    }
+  ]
+}

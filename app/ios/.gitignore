@@ -1,0 +1,7 @@
+# staged by scripts/build-ios.sh
+/Packages/
+/Libs/
+/.build/
+/xtool/
+/.swiftpm/
+/.bsp/

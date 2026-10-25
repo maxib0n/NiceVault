@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Minimal xcrun stand-in for Linux (OpenSSL's *-xcrun configs, cc-rs): `-sdk X` is
+# ignored (build-ios.sh sets SDKROOT), --show-sdk-path prints SDKROOT, `-f tool` /
+# `tool args...` run our wrappers. Only what the iOS build needs.
+here="$(cd "$(dirname "$0")" && pwd)"
+find=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -sdk|--sdk) shift 2 ;;
+    --show-sdk-path) echo "${SDKROOT:?}"; exit 0 ;;
+    --show-sdk-version) echo "${NV_IOS_SDK_VERSION:-27.1}"; exit 0 ;;
+    --show-sdk-platform-path) echo "$(dirname "$(dirname "$(dirname "$SDKROOT")")")"; exit 0 ;;
+    -f|--find) find=1; shift ;;
+    -r|--run|-l|--log|-v|--verbose|-n|--no-cache|-k|--kill-cache) shift ;;
+    *) break ;;
+  esac
+done
+tool="$1"; shift || true
+case "$tool" in
+  cc|clang|gcc|c++|clang++) path="$here/ios-clang" ;;
+  ar|libtool) path="$(command -v llvm-ar)" ;;
+  ranlib) path="$(command -v llvm-ranlib)" ;;
+  *) path="$(command -v "$tool")" ;;
+esac
+[ -n "$path" ] || { echo "xcrun shim: unable to find utility \"$tool\"" >&2; exit 72; }
+if [ $find = 1 ]; then echo "$path"; exit 0; fi
+exec "$path" "$@"

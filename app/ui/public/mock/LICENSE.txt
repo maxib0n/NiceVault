@@ -1,0 +1,5 @@
+photo-01.jpg ... photo-14.jpg are CC0 photographs (Unsplash uploads of the CC0 era,
+mirrored on Wikimedia Commons); each file's source page is listed in SOURCES.md.
+Every other file in this directory was generated procedurally by
+scripts/gen-mock-assets.sh for the NiceVault in-browser mock and is dedicated to
+the public domain under CC0 1.0.

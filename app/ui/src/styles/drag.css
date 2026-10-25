@@ -1,0 +1,71 @@
+/* The drag preview (lib/dragPreview.ts): built in the document behind the app while the
+   browser takes its picture. Pictures are copies of the items' own (envelope, print, sheet). */
+.nv-drag-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  pointer-events: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  /* padding: set by dragPreview.ts (room for the fanned cards and the count) */
+  border-radius: var(--radius-md, 6px);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  /* a slip of the page, lit at its top edge: solid, so it reads the same with or without a
+     compositor (the browser takes a picture of it) */
+  background: linear-gradient(180deg, var(--key-hi), var(--key-lo));
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    inset 0 0 0 1px var(--key-edge-lo);
+  contain: layout paint;
+}
+.nv-drag-preview .stack {
+  position: relative;
+  width: 60px;
+  height: 45px;
+}
+.nv-drag-preview .drag-card {
+  position: absolute;
+  inset: 0;
+  /* each one further back sits a little up-right and turned, like a fanned pile */
+  transform: translate(calc(var(--i, 0) * 5px), calc(var(--i, 0) * -3px)) rotate(var(--tilt, 0deg));
+  filter: drop-shadow(0 2px 3px rgb(var(--cast, 0 0 0) / 0.35));
+}
+/* the name of a single item: on up to two lines, never cut in the middle of a word */
+.nv-drag-preview .label {
+  max-width: 132px;
+  font-size: var(--text-md, 13px);
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink);
+}
+/* how many: a dot of the volume's ink at the top right */
+.nv-drag-preview .count {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow:
+    0 0 0 1.5px var(--paper-hi),
+    0 1px 3px rgb(var(--cast, 0 0 0) / 0.35);
+}

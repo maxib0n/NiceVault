@@ -1,0 +1,3 @@
+name,url,username,password,notes,AUTOFILLURLS,CREATETIME,MODIFYTIME
+login.microsoftonline.com,https://login.microsoftonline.com/,mario@example.com,ms-pass-1,Salvato automaticamente su https://login.microsoftonline.com/,"[{""url"":""https://login.microsoftonline.com/"",""mode"":0},{""url"":""https://account.example.com/"",""mode"":0}]",1774863307,1790593026
+Forum,https://forum.example.org,mario,forum-pass,,,1700000000000,

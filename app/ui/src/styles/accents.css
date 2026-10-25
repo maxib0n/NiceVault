@@ -1,0 +1,868 @@
+/*
+ * Accent presets (the volume's ink): one per id in ACCENTS (app/ui/src/lib/accents.ts,
+ * app/src-tauri/src/appearance.rs). <html data-accent="<id>"> (the app root) picks one;
+ * none = velluto. Dark (the default) = the ink stitched and printed on anthracite
+ * Alcantara; light = the same ink printed in intaglio on ivory paper. Any element can
+ * carry data-accent too (the swatches in Dettagli, the passports on Benvenuto), so a
+ * preset can be shown in place.
+ *
+ *   --accent       accent text / line work                    (>= 4.5:1 on every page and on the board)
+ *   --accent-ink   text and icons ON an --accent fill         (>= 4.5:1 on --accent)
+ *   --accent-soft  tinted background (selection, wash)        (--accent and body ink >= 4.5:1 on it)
+ *   --accent-line  hairlines, guilloche, focus/UI strokes     (>= 3:1 on the page)
+ *   --accent-deep  the ink as a fill: keys, wax, dyed suede   (the key ink, --key-accent-ink, >= 4.5:1 on it)
+ *   --foil-hi/--foil/--foil-mid/--foil-lo  the ink's metal, stamped (emblems, covers, seals):
+ *                  gold for velluto, rose gold prugna, cool silver prussia, pale gold bottiglia,
+ *                  copper seppia, pewter ardesia, platinum ottanio
+ *
+ * accents.test.ts checks these ratios: refine the values freely, keep ids and token names.
+ * No electric blue.
+ */
+
+/* light (data-theme="light") */
+/* Rosso velluto */
+:root,
+[data-accent='velluto'] {
+  --accent: #9c1730;
+  --accent-ink: #fcfaf5;
+  --accent-soft: #f9e6e6;
+  --accent-line: #c4666a;
+  --accent-deep: #9c1730;
+  --foil-hi: var(--gold-hi);
+  --foil: var(--gold);
+  --foil-mid: var(--gold-mid);
+  --foil-lo: var(--gold-lo);
+}
+/* Prugna */
+[data-accent='prugna'] {
+  --accent: #8e2050;
+  --accent-ink: #fcfaf5;
+  --accent-soft: #f6e6ee;
+  --accent-line: #b8678c;
+  --accent-deep: #8e2050;
+  --foil-hi: #ffe8de;
+  --foil: #e8bba9;
+  --foil-mid: #cc917c;
+  --foil-lo: #93604f;
+}
+/* Blu di Prussia */
+[data-accent='prussia'] {
+  --accent: #1f3d66;
+  --accent-ink: #fcfaf5;
+  --accent-soft: #e4eaf3;
+  --accent-line: #6b84a8;
+  --accent-deep: #1f3d66;
+  --foil-hi: #f9fbfd;
+  --foil: #d5dbe3;
+  --foil-mid: #acb4bf;
+  --foil-lo: #707985;
+}
+/* Verde bottiglia */
+[data-accent='bottiglia'] {
+  --accent: #1d5a3d;
+  --accent-ink: #fcfaf5;
+  --accent-soft: #e2efe7;
+  --accent-line: #689b80;
+  --accent-deep: #1d5a3d;
+  --foil-hi: #fcf8da;
+  --foil: #e0d6a0;
+  --foil-mid: #c1b372;
+  --foil-lo: #877c46;
+}
+/* Terra di Siena */
+[data-accent='seppia'] {
+  --accent: #7f4422;
+  --accent-ink: #fcfaf5;
+  --accent-soft: #f4e8de;
+  --accent-line: #b07f60;
+  --accent-deep: #7f4422;
+  --foil-hi: #ffe3cd;
+  --foil: #e4ad86;
+  --foil-mid: #c6845e;
+  --foil-lo: #8b5636;
+}
+/* Ardesia */
+[data-accent='ardesia'] {
+  --accent: #3d4752;
+  --accent-ink: #fcfaf5;
+  --accent-soft: #e6e9ec;
+  --accent-line: #7f8994;
+  --accent-deep: #3d4752;
+  --foil-hi: #fafafa;
+  --foil: #d8d9db;
+  --foil-mid: #b0b2b6;
+  --foil-lo: #75787d;
+}
+/* Ottanio */
+[data-accent='ottanio'] {
+  --accent: #0e5a60;
+  --accent-ink: #fcfaf5;
+  --accent-soft: #ddeeee;
+  --accent-line: #5f9a9d;
+  --accent-deep: #0e5a60;
+  --foil-hi: #f7fcfb;
+  --foil: #d1dddc;
+  --foil-mid: #a8b6b5;
+  --foil-lo: #6c7a79;
+}
+
+/* anthracite (dark) by OS */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']),
+  :root:not([data-theme='light'])[data-accent='velluto'],
+  :root:not([data-theme='light']) [data-accent='velluto'] {
+    --accent: #f26873;
+    --accent-ink: #1e1213;
+    --accent-soft: #4a2022;
+    --accent-line: #bc3546;
+    --accent-deep: #a41c37;
+    --foil-hi: #f6e6bd;
+    --foil: #d8bf88;
+    --foil-mid: #b89a5c;
+    --foil-lo: #7b6134;
+  }
+  :root:not([data-theme='light'])[data-accent='prugna'],
+  :root:not([data-theme='light']) [data-accent='prugna'] {
+    --accent: #e26da1;
+    --accent-ink: #1d1217;
+    --accent-soft: #471f30;
+    --accent-line: #ae3e74;
+    --accent-deep: #942e60;
+    --foil-hi: #f7ddd3;
+    --foil: #dcae9c;
+    --foil-mid: #b8826f;
+    --foil-lo: #7a5045;
+  }
+  :root:not([data-theme='light'])[data-accent='prussia'],
+  :root:not([data-theme='light']) [data-accent='prussia'] {
+    --accent: #6997d4;
+    --accent-ink: #10161f;
+    --accent-soft: #1c2d44;
+    --accent-line: #3d69a3;
+    --accent-deep: #2d5891;
+    --foil-hi: #edf1f6;
+    --foil: #c2c9d3;
+    --foil-mid: #98a1ad;
+    --foil-lo: #5d6571;
+  }
+  :root:not([data-theme='light'])[data-accent='bottiglia'],
+  :root:not([data-theme='light']) [data-accent='bottiglia'] {
+    --accent: #4aa676;
+    --accent-ink: #0e1913;
+    --accent-soft: #113321;
+    --accent-line: #08774a;
+    --accent-deep: #176540;
+    --foil-hi: #f3eecb;
+    --foil: #d4ca94;
+    --foil-mid: #ae9f63;
+    --foil-lo: #6f6639;
+  }
+  :root:not([data-theme='light'])[data-accent='seppia'],
+  :root:not([data-theme='light']) [data-accent='seppia'] {
+    --accent: #d08154;
+    --accent-ink: #1e130e;
+    --accent-soft: #422514;
+    --accent-line: #9e5425;
+    --accent-deep: #88461c;
+    --foil-hi: #f6d8c0;
+    --foil: #d9a37d;
+    --foil-mid: #b27553;
+    --foil-lo: #74462d;
+  }
+  :root:not([data-theme='light'])[data-accent='ardesia'],
+  :root:not([data-theme='light']) [data-accent='ardesia'] {
+    --accent: #8b9aa9;
+    --accent-ink: #0f171f;
+    --accent-soft: #272d32;
+    --accent-line: #5b6977;
+    --accent-deep: #4b5a68;
+    --foil-hi: #ececec;
+    --foil: #c5c6c8;
+    --foil-mid: #9b9ea2;
+    --foil-lo: #5f6266;
+  }
+  :root:not([data-theme='light'])[data-accent='ottanio'],
+  :root:not([data-theme='light']) [data-accent='ottanio'] {
+    --accent: #2ea3a9;
+    --accent-ink: #0a191a;
+    --accent-soft: #063134;
+    --accent-line: #007479;
+    --accent-deep: #006368;
+    --foil-hi: #e9f2f1;
+    --foil: #bfcccb;
+    --foil-mid: #95a3a2;
+    --foil-lo: #5a6766;
+  }
+}
+
+/* anthracite (dark) forced (data-theme="dark"): identical */
+:root[data-theme='dark'],
+:root[data-theme='dark'][data-accent='velluto'],
+:root[data-theme='dark'] [data-accent='velluto'] {
+  --accent: #f26873;
+  --accent-ink: #1e1213;
+  --accent-soft: #4a2022;
+  --accent-line: #bc3546;
+  --accent-deep: #a41c37;
+  --foil-hi: #f6e6bd;
+  --foil: #d8bf88;
+  --foil-mid: #b89a5c;
+  --foil-lo: #7b6134;
+}
+:root[data-theme='dark'][data-accent='prugna'],
+:root[data-theme='dark'] [data-accent='prugna'] {
+  --accent: #e26da1;
+  --accent-ink: #1d1217;
+  --accent-soft: #471f30;
+  --accent-line: #ae3e74;
+  --accent-deep: #942e60;
+  --foil-hi: #f7ddd3;
+  --foil: #dcae9c;
+  --foil-mid: #b8826f;
+  --foil-lo: #7a5045;
+}
+:root[data-theme='dark'][data-accent='prussia'],
+:root[data-theme='dark'] [data-accent='prussia'] {
+  --accent: #6997d4;
+  --accent-ink: #10161f;
+  --accent-soft: #1c2d44;
+  --accent-line: #3d69a3;
+  --accent-deep: #2d5891;
+  --foil-hi: #edf1f6;
+  --foil: #c2c9d3;
+  --foil-mid: #98a1ad;
+  --foil-lo: #5d6571;
+}
+:root[data-theme='dark'][data-accent='bottiglia'],
+:root[data-theme='dark'] [data-accent='bottiglia'] {
+  --accent: #4aa676;
+  --accent-ink: #0e1913;
+  --accent-soft: #113321;
+  --accent-line: #08774a;
+  --accent-deep: #176540;
+  --foil-hi: #f3eecb;
+  --foil: #d4ca94;
+  --foil-mid: #ae9f63;
+  --foil-lo: #6f6639;
+}
+:root[data-theme='dark'][data-accent='seppia'],
+:root[data-theme='dark'] [data-accent='seppia'] {
+  --accent: #d08154;
+  --accent-ink: #1e130e;
+  --accent-soft: #422514;
+  --accent-line: #9e5425;
+  --accent-deep: #88461c;
+  --foil-hi: #f6d8c0;
+  --foil: #d9a37d;
+  --foil-mid: #b27553;
+  --foil-lo: #74462d;
+}
+:root[data-theme='dark'][data-accent='ardesia'],
+:root[data-theme='dark'] [data-accent='ardesia'] {
+  --accent: #8b9aa9;
+  --accent-ink: #0f171f;
+  --accent-soft: #272d32;
+  --accent-line: #5b6977;
+  --accent-deep: #4b5a68;
+  --foil-hi: #ececec;
+  --foil: #c5c6c8;
+  --foil-mid: #9b9ea2;
+  --foil-lo: #5f6266;
+}
+:root[data-theme='dark'][data-accent='ottanio'],
+:root[data-theme='dark'] [data-accent='ottanio'] {
+  --accent: #2ea3a9;
+  --accent-ink: #0a191a;
+  --accent-soft: #063134;
+  --accent-line: #007479;
+  --accent-deep: #006368;
+  --foil-hi: #e9f2f1;
+  --foil: #bfcccb;
+  --foil-mid: #95a3a2;
+  --foil-lo: #5a6766;
+}
+
+
+
+
+
+/* @surfaces-begin (generated: oklch of the anthracite / ivory ramps, re-hued per ink) */
+
+/* surfaces, light: ivory paper with a breath of the ink */
+/* Prugna */
+:root[data-accent='prugna'] {
+  --ground: #ebdede;
+  --ground-hi: #f6eaeb;
+  --ground-lo: #ddd0cf;
+  --paper: #fef6f6;
+  --paper-hi: #fffcfb;
+  --paper-lo: #f4ebe9;
+  --paper-2: #f7eeed;
+  --paper-sunk: #f1e7e5;
+  --paper-edge: #d8cbc8;
+  --paper-rule: #e6dad8;
+  --paper-rule-2: #d4c6c3;
+  --field: #f7eeec;
+  --field-focus: #fffcfb;
+  --key-hi: #fffcfc;
+  --key-lo: #f3eae9;
+  --key-press: #eadfdd;
+  --key-dead: #f2e8e7;
+  --stage: #ede1e1;
+}
+/* Blu di Prussia */
+:root[data-accent='prussia'] {
+  --ground: #dde2e8;
+  --ground-hi: #e9eef5;
+  --ground-lo: #d0d4d9;
+  --paper: #f6f9fb;
+  --paper-hi: #fbfdff;
+  --paper-lo: #eceef0;
+  --paper-2: #eff1f3;
+  --paper-sunk: #e8eaec;
+  --paper-edge: #ccced1;
+  --paper-rule: #dbdde0;
+  --paper-rule-2: #c8cacc;
+  --field: #eff1f3;
+  --field-focus: #fbfdff;
+  --key-hi: #fbfdff;
+  --key-lo: #ebedef;
+  --key-press: #e0e2e5;
+  --key-dead: #e8ebee;
+  --stage: #e1e5ea;
+}
+/* Verde bottiglia */
+:root[data-accent='bottiglia'] {
+  --ground: #dbe5d9;
+  --ground-hi: #e7f1e6;
+  --ground-lo: #ced7ca;
+  --paper: #f5faf3;
+  --paper-hi: #fbfff9;
+  --paper-lo: #ebefe6;
+  --paper-2: #eef2ea;
+  --paper-sunk: #e6ece2;
+  --paper-edge: #cbd1c4;
+  --paper-rule: #dadfd4;
+  --paper-rule-2: #c7ccbe;
+  --field: #eef2e9;
+  --field-focus: #fbfff9;
+  --key-hi: #fbfffa;
+  --key-lo: #eaefe6;
+  --key-press: #dee4d9;
+  --key-dead: #e7ede3;
+  --stage: #dfe7dc;
+}
+/* Terra di Siena */
+:root[data-accent='seppia'] {
+  --ground: #ecdfd2;
+  --ground-hi: #f7ebe0;
+  --ground-lo: #ded1c4;
+  --paper: #fef7ef;
+  --paper-hi: #fffcf7;
+  --paper-lo: #f5ece2;
+  --paper-2: #f8efe6;
+  --paper-sunk: #f2e8dd;
+  --paper-edge: #d9ccbe;
+  --paper-rule: #e7dbce;
+  --paper-rule-2: #d5c7b8;
+  --field: #f8efe5;
+  --field-focus: #fffcf7;
+  --key-hi: #fffcf7;
+  --key-lo: #f4ebe2;
+  --key-press: #ebe0d4;
+  --key-dead: #f2e9df;
+  --stage: #eee2d6;
+}
+/* Ardesia */
+:root[data-accent='ardesia'] {
+  --ground: #dae3e7;
+  --ground-hi: #e6eff4;
+  --ground-lo: #cdd5d8;
+  --paper: #f4f9fa;
+  --paper-hi: #fafeff;
+  --paper-lo: #eaeeef;
+  --paper-2: #edf2f2;
+  --paper-sunk: #e6ebeb;
+  --paper-edge: #cacfd0;
+  --paper-rule: #d9dedf;
+  --paper-rule-2: #c6cbca;
+  --field: #edf1f2;
+  --field-focus: #fafeff;
+  --key-hi: #fafeff;
+  --key-lo: #eaeeee;
+  --key-press: #dde3e4;
+  --key-dead: #e6eced;
+  --stage: #dee6e9;
+}
+/* Ottanio */
+:root[data-accent='ottanio'] {
+  --ground: #d8e5e2;
+  --ground-hi: #e4f1f0;
+  --ground-lo: #cbd7d3;
+  --paper: #f3faf8;
+  --paper-hi: #f9fefd;
+  --paper-lo: #e9efec;
+  --paper-2: #ecf2f0;
+  --paper-sunk: #e4ece8;
+  --paper-edge: #c8d1cc;
+  --paper-rule: #d7dfdb;
+  --paper-rule-2: #c4ccc7;
+  --field: #ecf2ef;
+  --field-focus: #f9fefd;
+  --key-hi: #f9fffe;
+  --key-lo: #e8eeeb;
+  --key-press: #dce4e0;
+  --key-dead: #e5edea;
+  --stage: #dce7e5;
+}
+
+/* surfaces, dark by OS */
+@media (prefers-color-scheme: dark) {
+  /* Prugna: very dark plum */
+  :root:not([data-theme='light'])[data-accent='prugna'] {
+    --ground: #2c1c23;
+    --ground-hi: #35242c;
+    --ground-lo: #221219;
+    --paper: #1d1217;
+    --paper-hi: #24181e;
+    --paper-lo: #190e13;
+    --paper-2: #20151a;
+    --paper-sunk: #140a0f;
+    --paper-edge: #0d0509;
+    --paper-rule: #34262c;
+    --paper-rule-2: #44343b;
+    --ink: #efebed;
+    --ink-2: #cfc8cb;
+    --ink-3: #a8a1a4;
+    --ink-4: #807a7c;
+    --field: #150b10;
+    --field-focus: #180e13;
+    --field-edge: #756a6f;
+    --key-hi: #392b31;
+    --key-lo: #2e2127;
+    --key-press: #23161c;
+    --key-dead: #281b21;
+    --print-develop: #170d12;
+    --stage: #150b10;
+    --env-paper: #3d3036;
+    --env-paper-hi: #483b41;
+    --env-paper-lo: #32262b;
+    --env-paper-2: #372a30;
+    --file-paper: #35282e;
+    --file-fold: #4b3e44;
+    --file-ink: #c3bcbf;
+    --lining-base: #2a1a21;
+    --lining-base-hi: #322129;
+    --lining-base-lo: #1d0e15;
+  }
+  /* Blu di Prussia: midnight blue */
+  :root:not([data-theme='light'])[data-accent='prussia'] {
+    --ground: #18212e;
+    --ground-hi: #212a37;
+    --ground-lo: #0f1723;
+    --paper: #0f151e;
+    --paper-hi: #161c25;
+    --paper-lo: #0b111a;
+    --paper-2: #121821;
+    --paper-sunk: #080d14;
+    --paper-edge: #04070e;
+    --paper-rule: #222a35;
+    --paper-rule-2: #313945;
+    --ink: #ebedf0;
+    --ink-2: #c7cad0;
+    --ink-3: #a0a3a9;
+    --ink-4: #797c81;
+    --field: #090e15;
+    --field-focus: #0c1118;
+    --field-edge: #686e77;
+    --key-hi: #272f3a;
+    --key-lo: #1e2530;
+    --key-press: #131a24;
+    --key-dead: #181f29;
+    --print-develop: #0b1017;
+    --stage: #090e15;
+    --env-paper: #2d343e;
+    --env-paper-hi: #383f49;
+    --env-paper-lo: #232932;
+    --env-paper-2: #272e38;
+    --file-paper: #252c35;
+    --file-fold: #3b424c;
+    --file-ink: #bbbfc4;
+    --lining-base: #161f2c;
+    --lining-base-hi: #1e2734;
+    --lining-base-lo: #0b131f;
+  }
+  /* Verde bottiglia: very dark green */
+  :root:not([data-theme='light'])[data-accent='bottiglia'] {
+    --ground: #16261d;
+    --ground-hi: #1f2f25;
+    --ground-lo: #0c1c13;
+    --paper: #0e1912;
+    --paper-hi: #152019;
+    --paper-lo: #0a150f;
+    --paper-2: #111c15;
+    --paper-sunk: #08100b;
+    --paper-edge: #030a06;
+    --paper-rule: #212f26;
+    --paper-rule-2: #303e35;
+    --ink: #eaedeb;
+    --ink-2: #c6ccc8;
+    --ink-3: #9fa5a1;
+    --ink-4: #787d7a;
+    --field: #09110c;
+    --field-focus: #0b140f;
+    --field-edge: #67706a;
+    --key-hi: #26332c;
+    --key-lo: #1d2922;
+    --key-press: #121e17;
+    --key-dead: #17231c;
+    --print-develop: #0a130e;
+    --stage: #09110c;
+    --env-paper: #2d3831;
+    --env-paper-hi: #38433c;
+    --env-paper-lo: #222d26;
+    --env-paper-2: #27322b;
+    --file-paper: #253029;
+    --file-fold: #3a463f;
+    --file-ink: #bac0bd;
+    --lining-base: #14241b;
+    --lining-base-hi: #1c2c22;
+    --lining-base-lo: #08180f;
+  }
+  /* Terra di Siena: dark umber */
+  :root:not([data-theme='light'])[data-accent='seppia'] {
+    --ground: #2b2017;
+    --ground-hi: #35291f;
+    --ground-lo: #21160d;
+    --paper: #1d150f;
+    --paper-hi: #241c15;
+    --paper-lo: #19110b;
+    --paper-2: #201812;
+    --paper-sunk: #140e08;
+    --paper-edge: #0d0804;
+    --paper-rule: #342a22;
+    --paper-rule-2: #433930;
+    --ink: #eeecea;
+    --ink-2: #cec9c6;
+    --ink-3: #a7a29f;
+    --ink-4: #7f7b77;
+    --field: #150f09;
+    --field-focus: #18110c;
+    --field-edge: #736c66;
+    --key-hi: #382f27;
+    --key-lo: #2e251d;
+    --key-press: #221a13;
+    --key-dead: #281f17;
+    --print-develop: #17100b;
+    --stage: #150f09;
+    --env-paper: #3d342d;
+    --env-paper-hi: #483f38;
+    --env-paper-lo: #312923;
+    --env-paper-2: #362e27;
+    --file-paper: #342c25;
+    --file-fold: #4b423b;
+    --file-ink: #c2beba;
+    --lining-base: #291e15;
+    --lining-base-hi: #31261d;
+    --lining-base-lo: #1d1209;
+  }
+  /* Ardesia: dark slate blue-grey */
+  :root:not([data-theme='light'])[data-accent='ardesia'] {
+    --ground: #1f262b;
+    --ground-hi: #282f34;
+    --ground-lo: #151c21;
+    --paper: #151a1d;
+    --paper-hi: #1c2124;
+    --paper-lo: #111619;
+    --paper-2: #181d20;
+    --paper-sunk: #0e1215;
+    --paper-edge: #080b0e;
+    --paper-rule: #292f34;
+    --paper-rule-2: #383e43;
+    --ink: #ebedee;
+    --ink-2: #c8cbcd;
+    --ink-3: #a1a4a5;
+    --ink-4: #797c7e;
+    --field: #0f1316;
+    --field-focus: #121619;
+    --field-edge: #6a6e72;
+    --key-hi: #2e3439;
+    --key-lo: #242a2e;
+    --key-press: #191f23;
+    --key-dead: #1e2428;
+    --print-develop: #111518;
+    --stage: #0f1316;
+    --env-paper: #34393d;
+    --env-paper-hi: #3f4548;
+    --env-paper-lo: #292e32;
+    --env-paper-2: #2e3337;
+    --file-paper: #2c3135;
+    --file-fold: #42474b;
+    --file-ink: #bcbfc1;
+    --lining-base: #1d2429;
+    --lining-base-hi: #252c31;
+    --lining-base-lo: #11181d;
+  }
+  /* Ottanio: dark petrol */
+  :root:not([data-theme='light'])[data-accent='ottanio'] {
+    --ground: #102629;
+    --ground-hi: #192f32;
+    --ground-lo: #061c1e;
+    --paper: #0a191b;
+    --paper-hi: #112022;
+    --paper-lo: #071517;
+    --paper-2: #0d1c1e;
+    --paper-sunk: #051012;
+    --paper-edge: #020a0b;
+    --paper-rule: #1d2e31;
+    --paper-rule-2: #2b3d40;
+    --ink: #e9edee;
+    --ink-2: #c4cccd;
+    --ink-3: #9ea5a6;
+    --ink-4: #767d7e;
+    --field: #061113;
+    --field-focus: #081416;
+    --field-edge: #647072;
+    --key-hi: #223336;
+    --key-lo: #19292c;
+    --key-press: #0e1e20;
+    --key-dead: #132325;
+    --print-develop: #081315;
+    --stage: #061113;
+    --env-paper: #29383a;
+    --env-paper-hi: #344345;
+    --env-paper-lo: #1f2d2f;
+    --env-paper-2: #233234;
+    --file-paper: #213032;
+    --file-fold: #374648;
+    --file-ink: #b9c0c1;
+    --lining-base: #0e2427;
+    --lining-base-hi: #162c2f;
+    --lining-base-lo: #03171a;
+  }
+}
+
+/* surfaces, dark forced: identical */
+/* Prugna: very dark plum */
+:root[data-theme='dark'][data-accent='prugna'] {
+  --ground: #2c1c23;
+  --ground-hi: #35242c;
+  --ground-lo: #221219;
+  --paper: #1d1217;
+  --paper-hi: #24181e;
+  --paper-lo: #190e13;
+  --paper-2: #20151a;
+  --paper-sunk: #140a0f;
+  --paper-edge: #0d0509;
+  --paper-rule: #34262c;
+  --paper-rule-2: #44343b;
+  --ink: #efebed;
+  --ink-2: #cfc8cb;
+  --ink-3: #a8a1a4;
+  --ink-4: #807a7c;
+  --field: #150b10;
+  --field-focus: #180e13;
+  --field-edge: #756a6f;
+  --key-hi: #392b31;
+  --key-lo: #2e2127;
+  --key-press: #23161c;
+  --key-dead: #281b21;
+  --print-develop: #170d12;
+  --stage: #150b10;
+  --env-paper: #3d3036;
+  --env-paper-hi: #483b41;
+  --env-paper-lo: #32262b;
+  --env-paper-2: #372a30;
+  --file-paper: #35282e;
+  --file-fold: #4b3e44;
+  --file-ink: #c3bcbf;
+  --lining-base: #2a1a21;
+  --lining-base-hi: #322129;
+  --lining-base-lo: #1d0e15;
+}
+/* Blu di Prussia: midnight blue */
+:root[data-theme='dark'][data-accent='prussia'] {
+  --ground: #18212e;
+  --ground-hi: #212a37;
+  --ground-lo: #0f1723;
+  --paper: #0f151e;
+  --paper-hi: #161c25;
+  --paper-lo: #0b111a;
+  --paper-2: #121821;
+  --paper-sunk: #080d14;
+  --paper-edge: #04070e;
+  --paper-rule: #222a35;
+  --paper-rule-2: #313945;
+  --ink: #ebedf0;
+  --ink-2: #c7cad0;
+  --ink-3: #a0a3a9;
+  --ink-4: #797c81;
+  --field: #090e15;
+  --field-focus: #0c1118;
+  --field-edge: #686e77;
+  --key-hi: #272f3a;
+  --key-lo: #1e2530;
+  --key-press: #131a24;
+  --key-dead: #181f29;
+  --print-develop: #0b1017;
+  --stage: #090e15;
+  --env-paper: #2d343e;
+  --env-paper-hi: #383f49;
+  --env-paper-lo: #232932;
+  --env-paper-2: #272e38;
+  --file-paper: #252c35;
+  --file-fold: #3b424c;
+  --file-ink: #bbbfc4;
+  --lining-base: #161f2c;
+  --lining-base-hi: #1e2734;
+  --lining-base-lo: #0b131f;
+}
+/* Verde bottiglia: very dark green */
+:root[data-theme='dark'][data-accent='bottiglia'] {
+  --ground: #16261d;
+  --ground-hi: #1f2f25;
+  --ground-lo: #0c1c13;
+  --paper: #0e1912;
+  --paper-hi: #152019;
+  --paper-lo: #0a150f;
+  --paper-2: #111c15;
+  --paper-sunk: #08100b;
+  --paper-edge: #030a06;
+  --paper-rule: #212f26;
+  --paper-rule-2: #303e35;
+  --ink: #eaedeb;
+  --ink-2: #c6ccc8;
+  --ink-3: #9fa5a1;
+  --ink-4: #787d7a;
+  --field: #09110c;
+  --field-focus: #0b140f;
+  --field-edge: #67706a;
+  --key-hi: #26332c;
+  --key-lo: #1d2922;
+  --key-press: #121e17;
+  --key-dead: #17231c;
+  --print-develop: #0a130e;
+  --stage: #09110c;
+  --env-paper: #2d3831;
+  --env-paper-hi: #38433c;
+  --env-paper-lo: #222d26;
+  --env-paper-2: #27322b;
+  --file-paper: #253029;
+  --file-fold: #3a463f;
+  --file-ink: #bac0bd;
+  --lining-base: #14241b;
+  --lining-base-hi: #1c2c22;
+  --lining-base-lo: #08180f;
+}
+/* Terra di Siena: dark umber */
+:root[data-theme='dark'][data-accent='seppia'] {
+  --ground: #2b2017;
+  --ground-hi: #35291f;
+  --ground-lo: #21160d;
+  --paper: #1d150f;
+  --paper-hi: #241c15;
+  --paper-lo: #19110b;
+  --paper-2: #201812;
+  --paper-sunk: #140e08;
+  --paper-edge: #0d0804;
+  --paper-rule: #342a22;
+  --paper-rule-2: #433930;
+  --ink: #eeecea;
+  --ink-2: #cec9c6;
+  --ink-3: #a7a29f;
+  --ink-4: #7f7b77;
+  --field: #150f09;
+  --field-focus: #18110c;
+  --field-edge: #736c66;
+  --key-hi: #382f27;
+  --key-lo: #2e251d;
+  --key-press: #221a13;
+  --key-dead: #281f17;
+  --print-develop: #17100b;
+  --stage: #150f09;
+  --env-paper: #3d342d;
+  --env-paper-hi: #483f38;
+  --env-paper-lo: #312923;
+  --env-paper-2: #362e27;
+  --file-paper: #342c25;
+  --file-fold: #4b423b;
+  --file-ink: #c2beba;
+  --lining-base: #291e15;
+  --lining-base-hi: #31261d;
+  --lining-base-lo: #1d1209;
+}
+/* Ardesia: dark slate blue-grey */
+:root[data-theme='dark'][data-accent='ardesia'] {
+  --ground: #1f262b;
+  --ground-hi: #282f34;
+  --ground-lo: #151c21;
+  --paper: #151a1d;
+  --paper-hi: #1c2124;
+  --paper-lo: #111619;
+  --paper-2: #181d20;
+  --paper-sunk: #0e1215;
+  --paper-edge: #080b0e;
+  --paper-rule: #292f34;
+  --paper-rule-2: #383e43;
+  --ink: #ebedee;
+  --ink-2: #c8cbcd;
+  --ink-3: #a1a4a5;
+  --ink-4: #797c7e;
+  --field: #0f1316;
+  --field-focus: #121619;
+  --field-edge: #6a6e72;
+  --key-hi: #2e3439;
+  --key-lo: #242a2e;
+  --key-press: #191f23;
+  --key-dead: #1e2428;
+  --print-develop: #111518;
+  --stage: #0f1316;
+  --env-paper: #34393d;
+  --env-paper-hi: #3f4548;
+  --env-paper-lo: #292e32;
+  --env-paper-2: #2e3337;
+  --file-paper: #2c3135;
+  --file-fold: #42474b;
+  --file-ink: #bcbfc1;
+  --lining-base: #1d2429;
+  --lining-base-hi: #252c31;
+  --lining-base-lo: #11181d;
+}
+/* Ottanio: dark petrol */
+:root[data-theme='dark'][data-accent='ottanio'] {
+  --ground: #102629;
+  --ground-hi: #192f32;
+  --ground-lo: #061c1e;
+  --paper: #0a191b;
+  --paper-hi: #112022;
+  --paper-lo: #071517;
+  --paper-2: #0d1c1e;
+  --paper-sunk: #051012;
+  --paper-edge: #020a0b;
+  --paper-rule: #1d2e31;
+  --paper-rule-2: #2b3d40;
+  --ink: #e9edee;
+  --ink-2: #c4cccd;
+  --ink-3: #9ea5a6;
+  --ink-4: #767d7e;
+  --field: #061113;
+  --field-focus: #081416;
+  --field-edge: #647072;
+  --key-hi: #223336;
+  --key-lo: #19292c;
+  --key-press: #0e1e20;
+  --key-dead: #132325;
+  --print-develop: #081315;
+  --stage: #061113;
+  --env-paper: #29383a;
+  --env-paper-hi: #344345;
+  --env-paper-lo: #1f2d2f;
+  --env-paper-2: #233234;
+  --file-paper: #213032;
+  --file-fold: #374648;
+  --file-ink: #b9c0c1;
+  --lining-base: #0e2427;
+  --lining-base-hi: #162c2f;
+  --lining-base-lo: #03171a;
+}
+/* @surfaces-end */

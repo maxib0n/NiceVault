@@ -1,0 +1,969 @@
+/*
+ * Reset + the shared parts of the factory. Component styles live next to components.
+ * Surfaces (tokens.css says what each is made of in each theme):
+ *   .ground  the board the documents lie on: anthracite Alcantara / a paper board
+ *   .sheet   a page that holds content: calm deep card / cotton paper
+ *   .cloth   a cover: suede dyed in the volume's ink / book cloth
+ * Keys stand on the surface (lit lip, heavier bottom edge, a short drop) and press in;
+ * fields are pressed into it. One light, from the top-left.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern' 1;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+/* the lathes' angle is animated (the turning while the key is derived, the fall back after a
+   wrong key); set on the two lathe canvases themselves, never inherited: a frame restyles them only */
+@property --lathe {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* a desktop object: the arrow cursor, never the web's pointing hand */
+button {
+  cursor: default;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* one stroke weight for the whole icon set */
+svg.lucide {
+  flex: none;
+  stroke-width: 1.6;
+}
+
+/* one focus style for everything keyboard-reachable: the volume's ink */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* a modal sheet takes focus to hand it on; the sheet itself needs no ring, nor does a group's
+   own box (a radiogroup, tabindex -1, passes the focus to its radios: they carry the ring) */
+dialog:focus-visible,
+[data-focus-panel]:focus-visible,
+[role='radiogroup'][tabindex='-1']:focus-visible,
+[role='group'][tabindex='-1']:focus-visible {
+  outline: none;
+}
+/* the last input was a pointer (lib/modality.ts): focus the app moved itself (a dialog, a preview
+   or a menu opening) shows no ring; fields keep their own focused look, the caret says where */
+:root[data-input='pointer'] :focus-visible:not(.input, textarea, input:not([type='checkbox'], [type='radio'], [type='range'], [type='button'])) {
+  outline-color: transparent;
+}
+:root[data-input='pointer'] input[type='range']:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    0 0 0 1px var(--key-edge),
+    0 1px 3px rgb(0 0 0 / 0.4);
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* figures that are read as data (sizes, counts, timers): set in the mono, so they
+   stay tabular without the grotesk's wide tabular comma */
+.num {
+  font-family: var(--font-mono);
+  font-size: 0.93em;
+  letter-spacing: -0.01em;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92em;
+  letter-spacing: 0;
+}
+/* a printed label: small mono caps, spaced, like the field names on a document */
+.caps {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: var(--label-track);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+/* display type: Newsreader, 18 px and up only */
+.display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* -------------------------------------------------------------------------
+   A page. Its own colour, lit from the top-left; the material's grain sits in
+   it (below the ink), never on top of it, and never as a haze.
+   ------------------------------------------------------------------------- */
+.sheet {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--paper);
+  /* the light pool, interpolated in oklab, over a blue-noise dither (--tex-dither) laid on
+     the flat card: every pool is translucent, so the dither shifts where each 8-bit step
+     falls and a long, quiet dark gradient shows no bands. First line: the fallback */
+  background-image: linear-gradient(162deg, var(--paper-hi) 0%, transparent 42%, var(--paper-lo) 100%), var(--tex-dither);
+  background-image:
+    linear-gradient(in oklab 162deg, var(--paper-hi) 0%, color-mix(in oklab, var(--paper-hi) 45%, transparent) 20%, transparent 42%,
+      color-mix(in oklab, var(--paper-lo) 45%, transparent) 70%, var(--paper-lo) 100%),
+    var(--tex-dither);
+  background-size: auto, var(--dither-px) var(--dither-px);
+  background-blend-mode: normal, soft-light;
+}
+.sheet::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--sheet-tex);
+  background-size: var(--sheet-tex-size) var(--sheet-tex-size);
+  mix-blend-mode: var(--sheet-tex-blend);
+  opacity: var(--sheet-tex-alpha);
+}
+
+/* the board the documents lie on: lit from the top-left; its nap (or grain) is
+   finer than anything else on screen, one texel per device pixel */
+.ground {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--ground);
+  /* oklab, eased falloffs (no hard end to the pool), over the dither: no visible steps */
+  background-image:
+    radial-gradient(140% 110% at 0% 0%, var(--ground-hi) 0%, transparent 70%),
+    linear-gradient(158deg, transparent 40%, var(--ground-lo) 100%),
+    var(--tex-dither);
+  background-image:
+    radial-gradient(in oklab 140% 110% at 0% 0%, var(--ground-hi) 0%, color-mix(in oklab, var(--ground-hi) 74%, transparent) 18%,
+      color-mix(in oklab, var(--ground-hi) 42%, transparent) 38%, color-mix(in oklab, var(--ground-hi) 14%, transparent) 56%, transparent 74%),
+    linear-gradient(in oklab 158deg, transparent 38%, color-mix(in oklab, var(--ground-lo) 22%, transparent) 56%,
+      color-mix(in oklab, var(--ground-lo) 62%, transparent) 78%, var(--ground-lo) 100%),
+    var(--tex-dither);
+  background-size: auto, auto, var(--dither-px) var(--dither-px);
+  background-blend-mode: normal, normal, soft-light;
+}
+.ground::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--board-tex);
+  background-size: var(--board-tex-size) var(--board-tex-size);
+  mix-blend-mode: var(--board-tex-blend);
+  opacity: var(--board-tex-alpha);
+}
+
+/* -------------------------------------------------------------------------
+   The cover: the volume's ink dyed into the material (suede in the dark theme,
+   a plain-weave book cloth on paper), lit from the top-left. The material shows
+   through anything stamped into it.
+   ------------------------------------------------------------------------- */
+.cloth {
+  /* the accent ring vanishes on the accent's own cloth: rings here are drawn in the cloth's ink */
+  --focus: var(--cloth-ink);
+  position: relative;
+  isolation: isolate;
+  color: var(--cloth-ink);
+  background-color: var(--cloth);
+  background-image:
+    radial-gradient(130% 90% at 8% -6%, var(--cloth-hi) 0%, transparent 58%),
+    linear-gradient(176deg, transparent 30%, var(--cloth-lo) 100%),
+    var(--tex-dither);
+  background-image:
+    radial-gradient(in oklab 130% 90% at 8% -6%, var(--cloth-hi) 0%, color-mix(in oklab, var(--cloth-hi) 60%, transparent) 22%,
+      color-mix(in oklab, var(--cloth-hi) 22%, transparent) 42%, transparent 60%),
+    linear-gradient(in oklab 176deg, transparent 30%, color-mix(in oklab, var(--cloth-lo) 50%, transparent) 68%, var(--cloth-lo) 100%),
+    var(--tex-dither);
+  background-size: auto, auto, var(--dither-px) var(--dither-px);
+  background-blend-mode: normal, normal, soft-light;
+}
+.cloth::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-image: var(--cloth-tex);
+  background-size: var(--cloth-tex-size) var(--cloth-tex-size);
+  mix-blend-mode: var(--cloth-tex-blend);
+  opacity: var(--cloth-tex-alpha);
+}
+
+/* the inside of a cover (the open volume's sidebar): its own lining, its own inks */
+.cloth.lining {
+  --cloth: var(--lining);
+  --cloth-hi: var(--lining-hi);
+  --cloth-lo: var(--lining-lo);
+  --cloth-ink: var(--lining-ink);
+  --cloth-ink-2: var(--lining-ink-2);
+  --cloth-ink-3: var(--lining-ink-3);
+  --cloth-bed: var(--lining-bed);
+  --cloth-edge: var(--lining-edge);
+  --cloth-scroll-thumb: var(--lining-scroll-thumb);
+  --foil-hi: var(--lining-foil-hi);
+  --foil: var(--lining-foil);
+  --foil-mid: var(--lining-foil-mid);
+  --foil-lo: var(--lining-foil-lo);
+}
+
+/* a card saddle-stitched round its edge: ornament/Stitch.svelte (an even pitch that turns the
+   corners, never a cut stitch), shown only where the theme stitches (--stitch-alpha) */
+
+/* gold foil stamped into the cloth: metal catches the light at the top, the weave
+   prints through it, and the edges sit in the pressed-in recess */
+.foil {
+  color: transparent;
+  background-image:
+    var(--cloth-tex),
+    linear-gradient(168deg, var(--foil) 0%, var(--foil-hi) 18%, var(--foil) 34%, var(--foil-mid) 52%, var(--foil-lo) 64%, var(--foil-mid) 76%, var(--foil-hi) 90%, var(--foil) 100%);
+  background-size: var(--cloth-tex-size) var(--cloth-tex-size), 100% 100%;
+  background-blend-mode: soft-light, normal;
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 -0.6px 0 rgb(0 0 0 / 0.5)) drop-shadow(0 0.7px 0 rgb(255 255 255 / 0.14));
+}
+/* small lettering: the same foil without the deep trough, so no letter sinks into the cloth */
+.foil.fine {
+  background-image:
+    var(--cloth-tex),
+    linear-gradient(168deg, var(--foil-hi) 0%, var(--foil) 45%, var(--foil-mid) 100%);
+}
+
+/* -------------------------------------------------------------------------
+   Scrollbars: thin, at the natural edge, tinted by the surface. (The
+   ::-webkit-* pseudo elements only: WebKitGTK, WKWebView and WebView2 honour them.)
+   ------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: var(--scrollbar);
+  height: var(--scrollbar);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  min-height: 40px;
+  border: 3.5px solid transparent;
+  border-radius: var(--radius-pill);
+  background-color: var(--scroll-thumb);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover);
+}
+.cloth::-webkit-scrollbar-thumb,
+.cloth ::-webkit-scrollbar-thumb {
+  background-color: var(--cloth-scroll-thumb);
+}
+
+/* -------------------------------------------------------------------------
+   Keys. A paper key: ivory face, lit lip, an edge heavier at the bottom, a short
+   warm drop. Hover lifts it, active presses it in, disabled lies flat.
+   ------------------------------------------------------------------------- */
+.btn {
+  --face-hi: var(--key-hi);
+  --face-lo: var(--key-lo);
+  --edge: var(--key-edge);
+  --edge-lo: var(--key-edge-lo);
+  --lip: var(--key-lip);
+  --lift: var(--lift-key);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: var(--key-h);
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, var(--face-hi), var(--face-lo));
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 var(--lip),
+    inset 0 0 0 1px var(--edge),
+    inset 0 -1px 0 var(--edge-lo),
+    var(--lift);
+}
+.btn > svg {
+  color: var(--ink-2);
+}
+.btn:hover:not(:disabled) {
+  --lift: var(--lift-key-hover);
+  --edge: var(--key-edge-lo);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled) {
+  --face-hi: var(--key-press);
+  --face-lo: var(--key-press);
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 0 0 1px var(--edge-lo),
+    inset 0 1px 3px rgb(var(--cast) / 0.22);
+}
+.btn:disabled {
+  --face-hi: var(--key-dead);
+  --face-lo: var(--key-dead);
+  --lip: transparent;
+  --edge-lo: var(--key-edge);
+  --lift: 0 0 0 transparent;
+  color: var(--ink-3);
+}
+.btn:disabled > svg {
+  color: var(--ink-4);
+}
+
+/* primary: the volume's ink, as a key */
+.btn.primary {
+  --face-hi: var(--key-accent-hi);
+  --face-lo: var(--key-accent-lo);
+  --edge: var(--key-accent-edge);
+  --edge-lo: color-mix(in oklab, var(--key-accent-edge) 70%, #000);
+  --lip: rgb(255 255 255 / 0.3);
+  --lift: 0 1px 1px rgb(var(--cast) / 0.12), 0 4px 10px -4px color-mix(in srgb, var(--accent-deep) 60%, transparent);
+  color: var(--key-accent-ink);
+  font-weight: 600;
+}
+.btn.primary > svg {
+  color: currentColor;
+}
+.btn.primary:hover:not(:disabled) {
+  --face-hi: color-mix(in oklab, var(--key-accent-hi) 80%, #ffffff);
+  --edge: var(--key-accent-edge);
+  --lift: 0 1px 1px rgb(var(--cast) / 0.12), 0 7px 14px -5px color-mix(in srgb, var(--accent-deep) 66%, transparent);
+}
+.btn.primary:active:not(:disabled) {
+  --face-hi: var(--key-accent-press);
+  --face-lo: var(--accent-deep);
+  box-shadow:
+    inset 0 0 0 1px var(--key-accent-edge),
+    inset 0 1px 4px rgb(0 0 0 / 0.35);
+}
+/* disabled danger: a flat, pale slip of the danger ink, plainly not pressable */
+.btn.danger:disabled {
+  --face-hi: var(--danger-wash);
+  --face-lo: var(--danger-wash);
+  --edge: color-mix(in oklab, var(--danger-line) 45%, transparent);
+  --edge-lo: color-mix(in oklab, var(--danger-line) 45%, transparent);
+  --lip: transparent;
+  --lift: 0 0 0 transparent;
+  color: color-mix(in oklab, var(--danger) 55%, var(--paper));
+  font-weight: 500;
+}
+.btn.danger:disabled > svg {
+  color: currentColor;
+}
+
+/* disabled primary: still says what it does; the ink is there, the key lies flat */
+.btn.primary:disabled {
+  --face-hi: var(--accent-soft);
+  --face-lo: var(--accent-soft);
+  --edge: color-mix(in oklab, var(--accent-line) 55%, transparent);
+  --edge-lo: color-mix(in oklab, var(--accent-line) 55%, transparent);
+  --lip: transparent;
+  --lift: 0 0 0 transparent;
+  color: color-mix(in oklab, var(--accent) 78%, var(--paper));
+}
+
+/* danger: confirms a destruction, nothing else */
+.btn.danger {
+  --face-hi: var(--danger-hi);
+  --face-lo: var(--danger-lo);
+  --edge: color-mix(in oklab, var(--danger-lo) 60%, #000);
+  --edge-lo: color-mix(in oklab, var(--danger-lo) 40%, #000);
+  --lip: rgb(255 255 255 / 0.26);
+  color: var(--danger-ink);
+  font-weight: 600;
+}
+.btn.danger > svg {
+  color: currentColor;
+}
+.btn.danger:active:not(:disabled) {
+  --face-hi: var(--danger-lo);
+  --face-lo: var(--danger-lo);
+  box-shadow:
+    inset 0 0 0 1px var(--edge),
+    inset 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+/* ghost: no face at rest; under the pointer it stands up as a paper key */
+.btn.ghost {
+  --face-hi: transparent;
+  --face-lo: transparent;
+  --edge: transparent;
+  --edge-lo: transparent;
+  --lip: transparent;
+  --lift: 0 0 0 transparent;
+  color: var(--ink-2);
+}
+.btn.ghost:hover:not(:disabled) {
+  --face-hi: var(--key-hi);
+  --face-lo: var(--key-lo);
+  --edge: var(--key-edge);
+  --edge-lo: var(--key-edge-lo);
+  --lip: var(--key-lip);
+  --lift: var(--lift-key);
+  color: var(--ink);
+  transform: none;
+}
+.btn.ghost:active:not(:disabled) {
+  --face-hi: var(--key-press);
+  --face-lo: var(--key-press);
+  color: var(--ink);
+}
+.btn.ghost:disabled {
+  --face-hi: transparent;
+  --face-lo: transparent;
+  --edge: transparent;
+  --edge-lo: transparent;
+  color: var(--ink-4);
+}
+.btn.ghost[aria-pressed='true'] {
+  --face-hi: var(--key-press);
+  --face-lo: var(--key-press);
+  --edge: var(--key-edge);
+  color: var(--ink);
+  box-shadow:
+    inset 0 0 0 1px var(--edge),
+    inset 0 1px 2px rgb(var(--cast) / 0.18);
+}
+
+.btn.icon {
+  width: var(--key-h);
+  padding: 0;
+}
+.btn.sm {
+  min-height: 28px;
+  padding: 0 11px;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+}
+.btn.sm.icon {
+  width: 28px;
+}
+.btn.lg {
+  min-height: var(--key-h-lg);
+  padding: 0 22px;
+  font-size: var(--text-base);
+  border-radius: var(--radius-lg);
+}
+
+/* keys on the cover cloth: ivory keys standing proud of it (the clasp), ghosts
+   that press into it */
+.cloth .btn {
+  --lift: 0 1px 1px rgb(0 0 0 / 0.3), 0 3px 6px -2px rgb(0 0 0 / 0.45);
+}
+.cloth .btn:hover:not(:disabled) {
+  --lift: 0 1px 1px rgb(0 0 0 / 0.3), 0 6px 12px -4px rgb(0 0 0 / 0.5);
+}
+.cloth .btn.ghost {
+  --lift: 0 0 0 transparent;
+  color: var(--cloth-ink-2);
+}
+.cloth .btn.ghost > svg {
+  color: currentColor;
+}
+.cloth .btn.ghost:hover:not(:disabled) {
+  --face-hi: color-mix(in oklab, var(--cloth-ink) 12%, transparent);
+  --face-lo: color-mix(in oklab, var(--cloth-ink) 7%, transparent);
+  --edge: rgb(0 0 0 / 0.22);
+  --edge-lo: rgb(0 0 0 / 0.3);
+  --lip: rgb(255 255 255 / 0.1);
+  --lift: 0 0 0 transparent;
+  color: var(--cloth-ink);
+}
+.cloth .btn.ghost:active:not(:disabled) {
+  --face-hi: var(--cloth-bed);
+  --face-lo: var(--cloth-bed);
+  box-shadow:
+    inset 0 1px 3px rgb(0 0 0 / 0.5),
+    0 1px 0 rgb(255 255 255 / 0.08);
+}
+.cloth .btn.ghost:disabled {
+  color: var(--cloth-ink-3);
+}
+.cloth :focus-visible {
+  outline-color: var(--foil);
+}
+
+/* -------------------------------------------------------------------------
+   Fields: pressed into the paper. The recess is darker than its surround, its
+   top-left wall in shade, its far lip catching the light.
+   ------------------------------------------------------------------------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field > label,
+.field > .field-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+.input {
+  height: var(--control-h);
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--field-edge);
+  border-radius: var(--radius-md);
+  background: var(--field);
+  color: var(--ink);
+  font-size: var(--text-base);
+  box-shadow:
+    inset 0 1px 2px var(--field-shade),
+    inset 1px 0 1px -1px var(--field-shade),
+    0 1px 0 var(--paper-hi);
+  caret-color: var(--accent);
+}
+.input::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
+}
+/* the platforms' own password widgets (WebView2 eye, WKWebView key and caps
+   badges) would double ours: the field has one show/hide key and one caps line */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+input::-webkit-credentials-auto-fill-button,
+input::-webkit-caps-lock-indicator,
+input::-webkit-contacts-auto-fill-button {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+.input:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  background: var(--field-focus);
+  box-shadow:
+    inset 0 1px 2px var(--field-shade),
+    0 0 0 3px var(--accent-soft);
+}
+.input[aria-invalid='true'] {
+  border-color: var(--danger);
+  box-shadow:
+    inset 0 1px 2px var(--field-shade),
+    0 0 0 3px var(--danger-wash);
+}
+.input:disabled {
+  color: var(--ink-3);
+  border-color: var(--paper-rule-2);
+}
+.hint {
+  font-size: var(--text-sm);
+  color: var(--ink-3);
+}
+.error-text {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--danger);
+}
+
+/* -------------------------------------------------------------------------
+   Check boxes: a small well pressed into the page; checked, a key of the volume's ink
+   with a tick (danger: the danger ink). Never the platform's own widget.
+   ------------------------------------------------------------------------- */
+input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  border-radius: 4px;
+  background: var(--field);
+  box-shadow:
+    inset 0 1px 2px var(--field-shade),
+    inset 0 0 0 1px var(--field-edge),
+    0 1px 0 var(--paper-hi);
+  vertical-align: middle;
+}
+input[type='checkbox']::before {
+  content: '';
+  width: 9px;
+  height: 5px;
+  border-left: 2px solid var(--key-accent-ink);
+  border-bottom: 2px solid var(--key-accent-ink);
+  --nv-s: 0;
+  transform: translate(0, -1px) rotate(-45deg) scale(var(--nv-s));
+  transition: --nv-s var(--dur-micro) var(--ease-out);
+}
+input[type='checkbox']:hover:not(:disabled) {
+  box-shadow:
+    inset 0 1px 2px var(--field-shade),
+    inset 0 0 0 1px var(--ink-3),
+    0 1px 0 var(--paper-hi);
+}
+input[type='checkbox']:checked {
+  background: linear-gradient(180deg, var(--key-accent-hi), var(--key-accent-lo));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    inset 0 0 0 1px var(--key-accent-edge),
+    0 1px 1px rgb(var(--cast) / 0.25);
+}
+input[type='checkbox']:checked::before {
+  --nv-s: 1;
+}
+input[type='checkbox'].danger:checked {
+  background: linear-gradient(180deg, var(--danger-hi), var(--danger-lo));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.26),
+    inset 0 0 0 1px color-mix(in oklab, var(--danger-lo) 60%, #000);
+}
+input[type='checkbox'].danger::before {
+  border-color: var(--danger-ink);
+}
+input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+input[type='checkbox']:disabled {
+  opacity: 0.5;
+}
+
+/* -------------------------------------------------------------------------
+   Sliders: a groove pressed into the page, filled with the ink up to the knob (the
+   element's --fill, a percentage), an ivory knob that stands on it.
+   ------------------------------------------------------------------------- */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  margin: 0;
+  background: none;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent) 0 var(--fill, 50%), var(--paper-sunk) var(--fill, 50%));
+  box-shadow:
+    inset 0 1px 2px var(--field-shade),
+    0 1px 0 var(--paper-hi);
+}
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--paper-sunk);
+}
+input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--key-hi), var(--key-lo));
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    0 0 0 1px var(--key-edge),
+    0 1px 3px rgb(0 0 0 / 0.4);
+}
+input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--key-hi), var(--key-lo));
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    0 0 0 1px var(--key-edge),
+    0 1px 3px rgb(0 0 0 / 0.4);
+}
+input[type='range']:hover::-webkit-slider-thumb {
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    0 0 0 1px var(--key-edge-lo),
+    0 2px 5px rgb(0 0 0 / 0.45);
+}
+input[type='range']:focus-visible {
+  outline: none;
+}
+input[type='range']:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    0 0 0 2px var(--paper),
+    0 0 0 4px var(--focus);
+}
+
+/* -------------------------------------------------------------------------
+   Progress: a groove pressed into the paper, filled with ink as it goes.
+   ------------------------------------------------------------------------- */
+progress {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 5px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--paper-sunk);
+  color: var(--accent);
+  overflow: hidden;
+}
+progress::-webkit-progress-bar {
+  border-radius: 3px;
+  background: var(--paper-sunk);
+  box-shadow:
+    inset 0 1px 1px var(--field-shade),
+    0 1px 0 var(--paper-hi);
+}
+progress::-webkit-progress-value {
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--key-accent-hi));
+}
+progress::-moz-progress-bar {
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--key-accent-hi));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Latching keys (segmented control): role=radiogroup of role=radio buttons.
+   Used by Dettagli, Impostazioni and the password manager.
+   ------------------------------------------------------------------------- */
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: var(--space-1);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: var(--paper-sunk);
+  box-shadow:
+    inset 0 1px 2px var(--field-shade),
+    0 1px 0 var(--paper-hi);
+}
+.segmented [role='radio'] {
+  min-height: 28px;
+  min-width: 62px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.segmented [role='radio']:hover {
+  color: var(--ink);
+}
+.segmented [role='radio']:active {
+  background: color-mix(in oklab, var(--ink) 7%, transparent);
+}
+.segmented [role='radio'][aria-checked='true'] {
+  color: var(--ink);
+  font-weight: 600;
+  background: linear-gradient(180deg, var(--key-hi), var(--key-lo));
+  box-shadow:
+    inset 0 1px 0 var(--key-lip),
+    0 0 0 1px var(--key-edge),
+    var(--lift-key);
+}
+.segmented [role='radio']:focus-visible {
+  outline-offset: 1px;
+}
+.segmented [role='radio']:disabled {
+  color: var(--ink-4);
+}
+
+/* -------------------------------------------------------------------------
+   Switch on paper (role=switch, aria-checked): a groove pressed into the page,
+   an ivory knob; washed in the volume's ink when on. (The cover's own switch
+   in the sidebar is stitched in cloth: Sidebar.svelte.)
+   ------------------------------------------------------------------------- */
+.switch {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--paper-sunk);
+  box-shadow:
+    inset 0 1px 3px var(--field-shade),
+    inset 0 0 0 1px var(--field-edge),
+    0 1px 0 var(--paper-hi);
+}
+.switch .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  /* an ivory knob in every theme and ink: it reads on the dark well as on the paper one */
+  background: linear-gradient(180deg, #f7f2ea, #d8d0c4);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.38),
+    inset 0 1px 0 rgb(255 255 255 / 0.7),
+    inset 0 -1px 0 rgb(0 0 0 / 0.08);
+  /* styles/motion.css: the knob slides on a registered property, not on its transform */
+  translate: var(--nv-dx) 0;
+  transition: --nv-dx var(--dur-micro) var(--ease-out);
+}
+.switch[aria-checked='true'] {
+  background: var(--accent);
+  box-shadow:
+    inset 0 1px 3px rgb(0 0 0 / 0.3),
+    inset 0 0 0 1px rgb(0 0 0 / 0.12);
+}
+.switch[aria-checked='true'] .knob {
+  --nv-dx: 16px;
+}
+.switch:disabled {
+  opacity: 0.5;
+}
+/* a labelled switch row: text on the left, the switch on the right */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 34px;
+}
+.switch-row > label,
+.switch-row > .switch-label {
+  font-size: var(--text-base);
+  color: var(--ink);
+}
+
+/* a small stamped tag in the volume's ink (in uso ora, TOTP, Preferita...) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-line) 60%, transparent);
+}
+.badge[data-tone='danger'] {
+  color: var(--danger);
+  background: var(--danger-wash);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.badge[data-tone='quiet'] {
+  color: var(--ink-3);
+  background: var(--paper-sunk);
+  box-shadow: inset 0 0 0 1px var(--paper-rule-2);
+}
+
+/* a view about to decode from glyphs (lib/reveal.ts), until its first glyph frame: nothing of
+   it shows plainly first. Opacity only (layout and the accessibility tree untouched); the
+   glyph overlay and a loading skeleton stay. Reduced motion: never set. */
+[data-nv-pending] > :not(.ar-overlay, [data-state='loading']) {
+  opacity: 0 !important;
+}
+
+/* a board or sheet that scrolls itself (a whole screen): its nap/grain must cover every
+   screenful, not stop at the fold. The texture layer stays put in the window (fixed) and the
+   scroller clips it to itself (clip-path makes no containing block, so `fixed` stays fixed);
+   the light gradients are the element's own background and already stay put. */
+.scroller {
+  clip-path: inset(0);
+}
+.ground.scroller::before,
+.sheet.scroller::before {
+  position: fixed;
+}

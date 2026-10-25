@@ -1,0 +1,39 @@
+{
+  "encrypted": false,
+  "folders": [
+    { "id": "f-lavoro", "name": "Lavoro" },
+    { "id": "f-casa", "name": "Casa" }
+  ],
+  "items": [
+    {
+      "id": "1", "organizationId": null, "folderId": "f-lavoro", "type": 1, "reprompt": 0,
+      "name": "Posta aziendale", "notes": "Chiedere il reset a IT", "favorite": true,
+      "fields": [
+        { "name": "Domanda", "value": "Colore preferito", "type": 0, "linkedId": null },
+        { "name": "Risposta", "value": "bw-hidden-answer-77", "type": 1, "linkedId": null },
+        { "name": "Remember", "value": "true", "type": 2, "linkedId": null }
+      ],
+      "login": {
+        "uris": [ { "match": null, "uri": "https://mail.example.com" }, { "match": null, "uri": "https://webmail.example.com" } ],
+        "username": "anna@example.com",
+        "password": "bw-current-pass-1",
+        "totp": "otpauth://totp/Example:anna?secret=JBSWY3DPEHPK3PXP&issuer=Example"
+      },
+      "passwordHistory": [
+        { "lastUsedDate": "2024-01-10T08:00:00.000Z", "password": "bw-old-pass-1" },
+        { "lastUsedDate": "2023-06-01T08:00:00.000Z", "password": "bw-old-pass-0" }
+      ],
+      "creationDate": "2023-01-01T00:00:00.000Z",
+      "revisionDate": "2024-01-10T08:00:00.000Z"
+    },
+    {
+      "id": "2", "folderId": null, "type": 1, "name": "", "notes": null, "favorite": false,
+      "login": { "uris": [ { "uri": "https://www.forum.example.org/login" } ], "username": "anna", "password": "bw-forum", "totp": "not a secret!" }
+    },
+    { "id": "3", "folderId": "f-casa", "type": 2, "name": "Codice allarme", "notes": "1234#", "favorite": false, "secureNote": { "type": 0 } },
+    {
+      "id": "4", "folderId": "f-casa", "type": 3, "name": "Carta", "favorite": false,
+      "card": { "cardholderName": "Anna Bianchi", "brand": "Visa", "number": "4111111111111111", "expMonth": "12", "expYear": "2030", "code": "123" }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Only used as the C preprocessor of x86_64-w64-mingw32-windres (tauri-build compiles the
+# Windows icon/manifest/version resource with windres, which runs `<prefix>-gcc -E`).
+exec zig cc -target x86_64-windows-gnu "$@"

@@ -1,0 +1,3 @@
+name,url,username,password,note
+Example,https://example.com/,chrome-user,chrome-pass-1,first note
+,https://www.nameless.example.net/,nobody,chrome-pass-2,

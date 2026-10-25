@@ -1,0 +1,12 @@
+/* carta e inchiostro */
+:root {
+  --carta: #f3efe6;
+  --inchiostro: #1d1b18;
+}
+.foglio > p:first-child {
+  margin: 0 0 1.2em;
+  color: var(--inchiostro);
+}
+@media (prefers-color-scheme: dark) {
+  .foglio { background: #22201d; }
+}

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- AndroidTV support -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:theme="@style/Theme.nicevault_app"
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:launchMode="singleTask"
+            android:label="@string/main_activity_title"
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <!-- AndroidTV support -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <provider
+          android:name="androidx.core.content.FileProvider"
+          android:authorities="${applicationId}.fileprovider"
+          android:exported="false"
+          android:grantUriPermissions="true">
+          <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- The unlocked volumes in the Files app / system picker (NvDocumentsProvider.kt, docs.rs):
+             only the system (MANAGE_DOCUMENTS) binds it; other apps get per-document grants
+             through the picker. -->
+        <provider
+          android:name=".NvDocumentsProvider"
+          android:authorities="${applicationId}.documents"
+          android:exported="true"
+          android:grantUriPermissions="true"
+          android:permission="android.permission.MANAGE_DOCUMENTS">
+          <intent-filter>
+            <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+          </intent-filter>
+        </provider>
+    </application>
+</manifest>

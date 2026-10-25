@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NiceVault: encrypted volumes in a single file</title>
+<meta name="description" content="NiceVault keeps your files in one encrypted .nvault file. Copy it, back it up, carry it on a USB stick, open it with a password on Linux, Windows or macOS.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="NiceVault">
+<meta property="og:description" content="Encrypted volumes in a single file. Keep them on a USB stick, open them on any computer.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/img/icon-192.png">
+<link rel="preload" href="assets/fonts/newsreader-normal-200-800-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script>document.documentElement.classList.add('js');if(!matchMedia('(prefers-reduced-motion: reduce)').matches)document.documentElement.classList.add('dec-on')</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="bar">
+  <div class="wrap bar-in">
+    <a class="brand" href="#top" aria-label="NiceVault, top of page">
+      <img src="assets/img/icon-192.png" width="28" height="28" alt="">
+      <span class="wordmark">Nice<i>Vault</i></span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="#what">What it is</a>
+      <a href="#see">Screens</a>
+      <a href="#crypto">Encryption</a>
+      <a href="#downloads">Downloads</a>
+      <a href="#status">Status</a>
+    </nav>
+    <a class="bar-gh" data-repo href="#downloads">GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <h1>Encrypted volumes in a <em>single&nbsp;file.</em></h1>
+      <p class="lede">A NiceVault volume is one file. Copy it, back it up, carry it on a USB stick. Open it with a password on Linux, Windows or macOS and browse it in a built-in file manager.</p>
+      <div class="cta">
+        <a class="btn btn-primary" id="dl-main" href="#downloads">Download</a>
+        <a class="btn btn-quiet" href="#downloads">All platforms</a>
+      </div>
+      <p class="cta-note" id="dl-note">Linux, Windows and macOS.</p>
+    </div>
+    <figure class="stage-fig">
+      <div class="stage" id="stage">
+        <canvas id="stage-canvas" aria-hidden="true"></canvas>
+        <noscript><img src="assets/img/icon.webp" alt="" width="384" height="384"></noscript>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<div class="mrz" aria-hidden="true"><span>NV&lt;NICEVAULT&lt;&lt;ENCRYPTED&lt;VOLUME&lt;NVAULT&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</span></div>
+
+<section class="sec" id="what">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="eyebrow">01 <span aria-hidden="true">·</span> What it is</p>
+      <h2>One file. Your files inside it.</h2>
+      <p class="sec-lede">Folders, file names, file contents, tags and passwords are all stored inside the <span class="mono">.nvault</span> file, encrypted. Without the password it is noise.</p>
+    </header>
+    <ul class="facts">
+      <li>
+        <h3>One file per volume</h3>
+        <p>No side files. New volumes keep their journal inside, so the file you copy is the whole volume.</p>
+      </li>
+      <li>
+        <h3>It travels on a stick</h3>
+        <p>NiceVault can prepare a USB drive with two partitions: one holds the program for Windows, macOS and Linux, the other holds your volumes. Start it from the stick. Nothing is installed on the host.</p>
+      </li>
+      <li>
+        <h3>No driver needed</h3>
+        <p>The built-in file manager decrypts on the fly and previews files in memory. Mounting as a drive is optional: FUSE on Linux, a local NFS share on macOS, WinFsp on Windows.</p>
+      </li>
+      <li>
+        <h3>Pulling the plug is fine</h3>
+        <p>Writes go through a database transaction. After a crash or a yanked drive the volume opens in its last committed state. You can lose the last few seconds of work, never half a file.</p>
+      </li>
+      <li>
+        <h3>A password manager inside</h3>
+        <p>Logins and one-time codes (TOTP) live in the same encrypted database as your files. Import from Bitwarden, KeePass and CSV exports.</p>
+      </li>
+      <li>
+        <h3>Several keys</h3>
+        <p>Up to 8 passwords per volume, each changeable on its own. A duress password destroys the keys in the volume header, then fails like any wrong password.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec sec-board" id="see">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="eyebrow">02 <span aria-hidden="true">·</span> Screens</p>
+      <h2>The same file manager on every desktop.</h2>
+      <p class="sec-lede">Dark and light themes follow your system. Screenshots come from the app running against an in-memory demo volume. The sample photographs are CC0.</p>
+    </header>
+
+    <div class="viewer" id="viewer">
+      <div class="tabs" role="tablist" aria-label="Screens">
+        <button role="tab" id="t-shelf" aria-controls="p-shelf" aria-selected="true">Shelf</button>
+        <button role="tab" id="t-unlock" aria-controls="p-unlock" aria-selected="false" tabindex="-1">Unlock</button>
+        <button role="tab" id="t-files" aria-controls="p-files" aria-selected="false" tabindex="-1">Files</button>
+        <button role="tab" id="t-preview" aria-controls="p-preview" aria-selected="false" tabindex="-1">Quick look</button>
+        <button role="tab" id="t-passwords" aria-controls="p-passwords" aria-selected="false" tabindex="-1">Passwords</button>
+        <button role="tab" id="t-details" aria-controls="p-details" aria-selected="false" tabindex="-1">Keys</button>
+      </div>
+
+      <div class="frame">
+        <div class="panels">
+          <div class="panel" role="tabpanel" id="p-shelf" aria-labelledby="t-shelf">
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/img/welcome-dark.webp">
+              <img src="assets/img/welcome-light.webp" width="1280" height="800" alt="The shelf of recent volumes. Each volume is a passport with its own colour and emblem.">
+            </picture>
+            <p class="cap">Volumes sit on a shelf as passports. Each can carry its own colour and emblem, even while locked.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="p-unlock" aria-labelledby="t-unlock" hidden>
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/img/unlock-dark.webp">
+              <img src="assets/img/unlock-light.webp" width="1280" height="800" alt="The unlock screen of a volume called Documents, with a password field." loading="lazy">
+            </picture>
+            <p class="cap">The volume stays opaque until the password is right.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="p-files" aria-labelledby="t-files" hidden>
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/img/files-grid-dark.webp">
+              <img src="assets/img/files-grid-light.webp" width="1280" height="800" alt="The file browser in grid view, showing photographs with names, sizes and tags." loading="lazy">
+            </picture>
+            <p class="cap">Grid or list, with thumbnails, tags and search by name. Import and export run as background jobs with progress and cancel.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="p-preview" aria-labelledby="t-preview" hidden>
+            <img src="assets/img/preview-image-dark.webp" width="1280" height="800" alt="The image viewer, showing a photograph from the volume." loading="lazy">
+            <p class="cap">Quick look decrypts in memory: images, audio and video, PDF, text and code, archives. Nothing is written to disk.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="p-passwords" aria-labelledby="t-passwords" hidden>
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="assets/img/passwords-dark.webp">
+              <img src="assets/img/passwords-light.webp" width="1280" height="800" alt="The password manager with a login entry and a one-time code." loading="lazy">
+            </picture>
+            <p class="cap">Logins with notes and custom fields, TOTP codes, a generator, and a clipboard that clears itself.</p>
+          </div>
+          <div class="panel" role="tabpanel" id="p-details" aria-labelledby="t-details" hidden>
+            <img src="assets/img/details-dark.webp" width="1280" height="800" alt="Volume details: the list of keys, the duress password and the appearance options." loading="lazy">
+            <p class="cap">Keys, the duress password, key rotation and the look of the locked volume.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="clips">
+      <figure>
+        <video muted loop playsinline preload="none" poster="assets/video/unlock-poster.webp" aria-label="Opening a volume: pick it on the shelf, type the password, the files appear">
+          <source src="assets/video/unlock.webm" type="video/webm">
+          <source src="assets/video/unlock.mp4" type="video/mp4">
+        </video>
+        <figcaption>Opening a volume: pick it, type the password, the files appear.</figcaption>
+      </figure>
+      <figure>
+        <video muted loop playsinline preload="none" poster="assets/video/create-device-poster.webp" aria-label="Creating a NiceVault device from a USB stick">
+          <source src="assets/video/create-device.webm" type="video/webm">
+          <source src="assets/video/create-device.mp4" type="video/mp4">
+        </video>
+        <figcaption>Making a NiceVault device. The wizard lists external drives only, shows what will be erased and asks you to type the drive's name.</figcaption>
+      </figure>
+    </div>
+
+    <div class="phones">
+      <div class="phones-copy">
+        <p class="eyebrow">Phones <span aria-hidden="true">·</span> in development</p>
+        <h3>The same volumes, with a phone layout.</h3>
+        <p>iOS and Android builds exist and run, but neither is on a store yet. These are the screens as they stand today.</p>
+      </div>
+      <div class="phone-row">
+        <div class="ph"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/img/phone-unlock.webp"><img src="assets/img/phone-unlock-light.webp" width="390" height="844" alt="Unlocking a volume on a phone." loading="lazy"></picture></div>
+        <div class="ph"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/img/phone-files-grid.webp"><img src="assets/img/phone-files-grid-light.webp" width="390" height="844" alt="Files in a grid on a phone." loading="lazy"></picture></div>
+        <div class="ph hide-s"><img src="assets/img/phone-preview.webp" width="390" height="844" alt="A photograph open in the viewer on a phone." loading="lazy"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="crypto">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="eyebrow">03 <span aria-hidden="true">·</span> Encryption</p>
+      <h2>How the file is built.</h2>
+      <p class="sec-lede">Standard primitives, composed the usual way.</p>
+    </header>
+
+    <figure class="layout" aria-label="Layout of a .nvault file">
+      <div class="bytes">
+        <div class="blk blk-h"><b>Header A</b><span>64 KiB</span></div>
+        <div class="blk blk-h"><b>Header B</b><span>64 KiB</span></div>
+        <div class="blk blk-db"><div class="noise" id="noise" aria-hidden="true"></div><b>SQLCipher database</b><span>16 KiB pages</span></div>
+      </div>
+      <figcaption>Two header copies, then one encrypted database. Folders, names, contents, tags and passwords are all rows in it.</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li>
+        <span class="n mono">1</span>
+        <div>
+          <h3>A random master key, wrapped once per password</h3>
+          <p>Creating a volume draws a 32-byte master key. Each password slot stretches its password with <b>Argon2id</b> and uses the result to wrap the master key with <b>XChaCha20-Poly1305</b>. The default setting uses up to 512 MiB of memory and is measured on your machine so one unlock takes about 0.7 seconds. A volume holds up to 8 slots.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n mono">2</span>
+        <div>
+          <h3>Every page of the database is encrypted and authenticated</h3>
+          <p>The database key is derived from the master key with <b>HKDF-SHA256</b>. SQLCipher 4 encrypts each 16 KiB page with <b>AES-256-CBC</b> and authenticates it with <b>HMAC-SHA256</b>. File contents are stored in 256 KiB chunks. A read that finds a page failing its HMAC is an error, never zeros.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n mono">3</span>
+        <div>
+          <h3>Two header copies, so one is always valid</h3>
+          <p>The copies are written one after the other with a sync between. A checksum catches a torn copy and a keyed MAC checked after unlock catches tampering. The format is append-only: every release must open volumes written by earlier builds.</p>
+        </div>
+      </li>
+      <li>
+        <span class="n mono">4</span>
+        <div>
+          <h3>Keys stay in memory, and leave it when you lock</h3>
+          <p>The master key is locked against swapping where the OS allows it and wiped when the volume locks. Core dumps are disabled. Previews are decrypted into memory and never written to disk. Auto-lock fires on idle, sleep, screen lock or when the drive disappears.</p>
+        </div>
+      </li>
+    </ol>
+
+    <div class="limits">
+      <h3>What it does not hide</h3>
+      <ul>
+        <li>The file is recognisable: it starts with fixed magic bytes. There are no hidden volumes and no plausible deniability.</li>
+        <li>Some header fields are plaintext: format version, volume id, number of key slots, the Argon2id parameters and, with the default look, the accent colour and emblem.</li>
+        <li>The size of the file.</li>
+        <li>An unlocked volume. Malware on the computer at that moment wins.</li>
+        <li>Old copies. Changing a password does not change the master key, so an old copy still opens with the old password until you rotate the volume key.</li>
+        <li>Rollback to an older copy of a volume cannot be detected from the file alone. The app keeps a counter per volume in installed mode and warns.</li>
+        <li>No third-party audit. The code had an internal security review, and the findings were fixed or documented.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="sec sec-board" id="downloads">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="eyebrow">04 <span aria-hidden="true">·</span> Downloads</p>
+      <h2>Get NiceVault.</h2>
+      <p class="sec-lede">The latest release. All versions, checksums and signatures are on the <a data-releases href="#downloads">releases page</a>.</p>
+    </header>
+
+    <div class="tablewrap">
+      <table class="dl" id="dl-table">
+        <thead>
+          <tr><th scope="col">Platform</th><th scope="col">File</th><th scope="col">State</th><th scope="col"><span class="sr">Download</span></th></tr>
+        </thead>
+        <tbody>
+          <tr data-os="linux">
+            <th scope="row">Linux<small>x86_64, AppImage</small></th>
+            <td class="mono" data-label="File">NiceVault-linux-x86_64.AppImage</td>
+            <td data-label="State"><span class="chip ok">Usable</span></td>
+            <td class="act"><a class="btn btn-sm btn-primary" data-asset="NiceVault-linux-x86_64.AppImage" href="#downloads">Download</a></td>
+          </tr>
+          <tr data-os="linux">
+            <th scope="row">Linux<small>x86_64, tarball</small></th>
+            <td class="mono" data-label="File">NiceVault-linux-x86_64.tar.gz</td>
+            <td data-label="State"><span class="chip ok">Usable</span></td>
+            <td class="act"><a class="btn btn-sm" data-asset="NiceVault-linux-x86_64.tar.gz" href="#downloads">Download</a></td>
+          </tr>
+          <tr data-os="windows">
+            <th scope="row">Windows<small>x86_64, a single .exe in a zip</small></th>
+            <td class="mono" data-label="File">NiceVault-windows-x86_64.zip</td>
+            <td data-label="State"><span class="chip ok">Usable</span></td>
+            <td class="act"><a class="btn btn-sm btn-primary" data-asset="NiceVault-windows-x86_64.zip" href="#downloads">Download</a></td>
+          </tr>
+          <tr data-os="macos">
+            <th scope="row">macOS<small>universal, ad-hoc signed app in a zip</small></th>
+            <td class="mono" data-label="File">NiceVault-macos-universal.zip</td>
+            <td data-label="State"><span class="chip part">Not fully tested</span></td>
+            <td class="act"><a class="btn btn-sm btn-primary" data-asset="NiceVault-macos-universal.zip" href="#downloads">Download</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ul class="notes">
+      <li>The binaries are not code-signed. Windows and macOS will ask you to confirm the first run. On macOS the app is not notarized, so Gatekeeper needs a manual approval.</li>
+      <li>Windows uses the system WebView2. Mounting a volume as a drive needs WinFsp. Creating a device goes through a UAC prompt.</li>
+      <li>On Linux, mounting a volume as a drive needs <span class="mono">fusermount3</span>. The built-in file manager needs nothing extra.</li>
+      <li>On iOS and Android, see the status below. There is nothing to download yet.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec" id="status">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="eyebrow">05 <span aria-hidden="true">·</span> Status</p>
+      <h2>Where it stands.</h2>
+      <p class="sec-lede">NiceVault is young software. This is what works and what is still rough.</p>
+    </header>
+    <div class="status">
+      <dl>
+        <div><dt>Linux</dt><dd><span class="chip ok">Usable</span> The main development platform. File manager, mounting through FUSE, device creation through udisks2.</dd></div>
+        <div><dt>Windows</dt><dd><span class="chip ok">Usable</span></dd></div>
+        <div><dt>macOS</dt><dd><span class="chip part">Builds, not fully tested</span> Less exercised than Linux, and not notarized.</dd></div>
+        <div><dt>iOS</dt><dd><span class="chip dev">In development</span> Runs when built from source and sideloaded. Not on the App Store.</dd></div>
+        <div><dt>Android</dt><dd><span class="chip dev">In development</span> Runs on the emulator. Not on Google Play.</dd></div>
+      </dl>
+      <div class="todo">
+        <h3>Not done yet</h3>
+        <p>Sharing a volume by public key in the app (the core library has the slot type, the app does not expose it, so today sharing means sharing a password). Hidden volumes. FIDO2 keys. A browser extension for the password manager.</p>
+        <h3>Privacy</h3>
+        <p>No telemetry. The app goes online only to check for updates (switchable), to download the programs when you make a device, and, if you leave it on, to fetch site icons for the password manager.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div>
+      <span class="wordmark">Nice<i>Vault</i></span>
+      <p>Encrypted volumes in a single file.</p>
+    </div>
+    <ul>
+      <li><a data-repo href="#downloads">Source on GitHub</a></li>
+      <li><a data-releases href="#downloads">Releases and checksums</a></li>
+    </ul>
+    <p class="fine">NiceVault is free software under the GNU GPL, version 3 or later. Type: Newsreader, IBM Plex Sans and IBM Plex Mono, under the SIL Open Font License.</p>
+  </div>
+</footer>
+
+<script src="assets/app.js"></script>
+<script src="assets/vendor/ascii-reveal.js"></script>
+<script src="assets/reveal.js"></script>
+<script src="assets/ascii.js"></script>
+</body>
+</html>

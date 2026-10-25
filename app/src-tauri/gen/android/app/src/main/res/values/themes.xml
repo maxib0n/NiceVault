@@ -1,0 +1,9 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- The page is laid out between the system bars (MainActivity pads the content by their
+         insets); the bars show the window background: the app's anthracite ground. -->
+    <style name="Theme.nicevault_app" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/nv_ground</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

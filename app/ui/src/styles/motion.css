@@ -1,0 +1,62 @@
+/* -------------------------------------------------------------------------
+   Entrances (dialogs, quick look, popovers, toasts, slips, loading states).
+
+   WebKitGTK runs an animation or transition of `opacity` / `transform` on the compositor; when
+   it ends, the layer goes back to the page's own values one frame late, and that frame shows the
+   surface at a value from the middle of the animation: a slip that fades in, then flashes
+   half-transparent once at the end (frame captures of the real app, e2e/real/flicker.mjs, on
+   Xvfb and on a nested KWin). So no entrance animates `opacity` / `transform` themselves: they
+   animate two registered custom properties, and the element reads its opacity and transform
+   from them. Nothing for the compositor to hand back at the end, the same motion on screen.
+   At rest the transform is `none` (no containing block for fixed descendants) and opacity 1.
+
+   Use: class="nv-enter" on the element, and in its rule
+     animation: nv-enter <duration> <easing> [delay] backwards;
+     --enter-from: translateY(4px) scale(0.985); --enter-to: translateY(0) scale(1);
+   (from/to the same list of functions; none for a plain fade). An own resting rotation goes in
+   the `rotate` property (it composes with this transform).
+   ------------------------------------------------------------------------- */
+@property --nv-o {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+@property --nv-t {
+  syntax: '<transform-list> | none';
+  inherits: false;
+  initial-value: none;
+}
+/* The small motions (a switch's knob, a checkbox's tick, an envelope lifting under a drop, the
+   wrong-key shake, the search's busy line) follow the same rule: they move a registered custom
+   property, read by translate / transform, never the compositor's transform itself. */
+@property --nv-dx {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --nv-dy {
+  syntax: '<length-percentage>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --nv-s {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+@keyframes nv-enter {
+  from {
+    --nv-o: 0;
+    --nv-t: var(--enter-from, none);
+  }
+  to {
+    --nv-o: 1;
+    --nv-t: var(--enter-to, none);
+  }
+}
+.nv-enter {
+  /* its own layer for its whole life: each frame only updates that layer's opacity */
+  will-change: opacity;
+  opacity: var(--nv-o);
+  transform: var(--nv-t);
+}

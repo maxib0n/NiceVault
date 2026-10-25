@@ -1,0 +1,2 @@
+Title,URL,Username,Password,Notes,OTPAuth
+Apple sito (sa-user),https://apple.example.com/,sa-user,sa-pass-1,,otpauth://totp/Apple:sa-user?secret=JBSWY3DPEHPK3PXP

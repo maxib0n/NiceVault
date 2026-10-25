@@ -1,0 +1,3 @@
+type,name,url,email,username,password,note,totp,createTime,modifyTime,vault
+login,Proton Mail,https://account.proton.example,mario@proton.example,,pp-pass-1,nota proton,otpauth://totp/Proton:mario?secret=JBSWY3DPEHPK3PXP&issuer=Proton,1714000000,1714500000,Personal
+login,Gioco,https://game.example,mario@proton.example,mario99,pp-pass-2,,,1715000000,1715000500,Personal

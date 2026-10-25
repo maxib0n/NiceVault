@@ -1,0 +1,11 @@
+libwinfsp-x64.a is a GNU delay-import library for winfsp-x64.dll (NiceVault patch).
+Its thunks load the DLL on first call through MinGW's __delayLoadHelper2, so an exe
+linked against it starts on machines without WinFsp. Regenerate (binutils dlltool):
+
+  llvm-nm ../lib/winfsp-x64.lib | grep -o ' __imp_.*' | sed 's/ __imp_//' | sort -u \
+    | { echo 'LIBRARY winfsp-x64.dll'; echo EXPORTS; cat; } > winfsp-x64.def
+  x86_64-w64-mingw32-dlltool -d winfsp-x64.def -D winfsp-x64.dll -y libwinfsp-x64.a
+
+Recorded (2026-10-25; scripts/verify-winfsp-gnu-lib.sh checks the structure with llvm-nm):
+  sha256 5ffa7312f31ab336bf5001e0f63d8fb19f045832535d157002b6282805aca259  libwinfsp-x64.a
+  sha256 e36f49f57b4f3845db78652b9fd0dd80e752083db964a38a57253ab0ded93613  winfsp-x64.def

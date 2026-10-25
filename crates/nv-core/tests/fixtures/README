@@ -1,0 +1,14 @@
+Importer fixtures (tests/passwords.rs). All data is fake.
+
+bitwarden.json, chrome.csv, firefox.csv, onepassword.csv, autofill.csv (AUTOFILLURLS /
+CREATETIME / MODIFYTIME columns, as a real export has), protonpass.csv, keepassxc.csv,
+dashlane.csv, nordpass.csv, lastpass.csv, bitwarden.csv, safari.csv, roboform.csv
+  Hand-written for NiceVault, following the column / JSON layout of each app's export.
+
+kdbx31_demopass.kdbx   (KDBX 3.1, master password "demopass")
+  Copied unchanged from keepass-rs, tests/resources/test_db_with_password.kdbx
+  https://github.com/sseemayer/keepass-rs  — MIT License, Copyright (c) Stefan Seemayer.
+  (The keepass crate can only write KDBX 4, so the 3.1 sample comes from its test suite.)
+
+The KDBX 4 sample (groups, otp URI, TimeOtp-* fields, key file, history) is written by the
+test itself with the keepass crate's save_kdbx4 feature.

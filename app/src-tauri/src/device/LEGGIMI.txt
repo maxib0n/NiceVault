@@ -1,0 +1,22 @@
+NiceVault - dispositivo
+=======================
+
+Questa unità è un dispositivo NiceVault. Ha due parti:
+
+- "NiceVault" (questa): il programma NiceVault per Windows, macOS e Linux.
+- "VaultData": i tuoi volumi cifrati (file .nvault). File system: {fs}.
+  Si legge su: {readable}.
+
+Quale file aprire
+- Windows: NiceVault-windows-x86_64.exe
+  Serve Microsoft Edge WebView2 (già presente su Windows 11 e su Windows 10 aggiornato).
+- macOS: NiceVault.app (estratta dal pacchetto firmato e controllata quando è stata copiata)
+  L'app non è firmata da Apple. Se macOS dice che non si può aprire, fai clic destro
+  su NiceVault.app > Apri, oppure nel Terminale:
+      xattr -dr com.apple.quarantine /Volumes/NiceVault/NiceVault.app
+- Linux: NiceVault-linux-x86_64 (doppio clic, oppure ./NiceVault-linux-x86_64 dal terminale).
+
+I file .sig accanto ai programmi sono le firme: NiceVault le controlla quando si aggiorna.
+Quando NiceVault parte da questa unità non lascia nulla sul computer.
+{missing}
+Senza la password un volume non si apre: nessuno può recuperarla, nemmeno NiceVault.

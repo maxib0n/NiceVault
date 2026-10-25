@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged by xtool into the app's Info.plist (it adds bundle id, executable, platform keys). -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>NiceVault</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiresFullScreen</key>
+	<false/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<!-- "Esporta" writes to Documents/NiceVault (mobile.rs mobile_export_dir): shown in the Files app
+	     under "On My iPhone > NiceVault". Volumes live in Library/Application Support, not here. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- audio / video play from a loopback stream on 127.0.0.1 (viewers.rs media_url) -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<!-- "Salva nella Galleria" (NvPlugin.swift saveToGallery): add-only, never reads the library -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>NiceVault salva nella Galleria le foto e i video che esporti da un volume.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

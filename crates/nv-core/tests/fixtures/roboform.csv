@@ -1,0 +1,2 @@
+Name,Url,MatchUrl,Login,Pwd,Note,Folder,RfFieldsV2
+Banca RF,https://rf.example.com/login,https://rf.example.com/,rf-user,rf-pass-1,,/Finanze,"Login$,txt,,rf-user"

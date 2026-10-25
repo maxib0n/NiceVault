@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs>
+    <linearGradient id="ground" x1="0.12" y1="0.04" x2="0.88" y2="0.98">
+      <stop offset="0" stop-color="#b4283f"/><stop offset="0.45" stop-color="#8a1a30"/><stop offset="1" stop-color="#4f0b19"/>
+    </linearGradient>
+    <radialGradient id="pool" cx="0.24" cy="0.14" r="0.8">
+      <stop offset="0" stop-color="#fff6ec" stop-opacity="0.14"/><stop offset="0.6" stop-color="#fff6ec" stop-opacity="0.023333333333333334"/><stop offset="1" stop-color="#fff6ec" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="foil" gradientUnits="userSpaceOnUse" x1="182" y1="152" x2="842" y2="872">
+      <stop offset="0" stop-color="#fff4d4"/><stop offset="0.3" stop-color="#ecd59c"/><stop offset="0.52" stop-color="#c8a961"/>
+      <stop offset="0.7" stop-color="#94743b"/><stop offset="0.86" stop-color="#d9bf83"/><stop offset="1" stop-color="#f3e2b4"/>
+    </linearGradient>
+    <radialGradient id="bead" cx="0.38" cy="0.32" r="0.8">
+      <stop offset="0" stop-color="#e2596b"/><stop offset="0.48" stop-color="#a81d39"/><stop offset="1" stop-color="#5c0c1d"/>
+    </radialGradient>
+    <filter id="nap" x="0" y="0" width="1" height="1">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="11" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0.33 0.33 0.33 0 -0.5" result="g"/>
+      <feComposite in="g" in2="SourceGraphic" operator="in"/>
+    </filter>
+    <filter id="drop" x="-0.2" y="-0.2" width="1.4" height="1.4">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000" flood-opacity="0.4"/>
+    </filter></defs>
+  <clipPath id="tile"><path d="M236 16H788A220 220 0 0 1 1008 236V788A220 220 0 0 1 788 1008H236A220 220 0 0 1 16 788V236A220 220 0 0 1 236 16Z"/></clipPath>
+  <g ><path d="M236 16H788A220 220 0 0 1 1008 236V788A220 220 0 0 1 788 1008H236A220 220 0 0 1 16 788V236A220 220 0 0 1 236 16Z" fill="url(#ground)"/></g>
+  <g clip-path="url(#tile)">
+    <rect x="16" y="16" width="992" height="992" fill="url(#pool)"/>
+    
+  </g>
+  <path d="M236 18H788A218 218 0 0 1 1006 236V788A218 218 0 0 1 788 1006H236A218 218 0 0 1 18 788V236A218 218 0 0 1 236 18Z" fill="none" stroke="#ffe6ea" stroke-opacity="0.13" stroke-width="4"/>
+  <path d="M236 17H788A219 219 0 0 1 1007 236V788A219 219 0 0 1 788 1007H236A219 219 0 0 1 17 788V236A219 219 0 0 1 236 17Z" fill="none" stroke="#000" stroke-opacity="0.5" stroke-width="2"/>
+  <g stroke-linecap="round" stroke-linejoin="round"><path d="M832.4 512A320.4 320.4 0 1 0 191.6 512A320.4 320.4 0 1 0 832.4 512Z" fill="none" stroke="#000" stroke-opacity="0.5" stroke-width="46.28" transform="translate(-2.4 -2.8)"/><path d="M832.4 512A320.4 320.4 0 1 0 191.6 512A320.4 320.4 0 1 0 832.4 512Z" fill="none" stroke="#fff" stroke-opacity="0.17" stroke-width="46.28" transform="translate(2 2.4)"/><path d="M832.4 512A320.4 320.4 0 1 0 191.6 512A320.4 320.4 0 1 0 832.4 512Z" fill="none" stroke="url(#foil)" stroke-opacity="1" stroke-width="46.28" transform="translate(0 0)"/></g>
+</svg>

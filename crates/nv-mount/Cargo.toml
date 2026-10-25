@@ -1,0 +1,43 @@
+[package]
+name = "nv-mount"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+nv-fs = { path = "../nv-fs" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+log = "0.4"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+fuser = { version = "0.18", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+nfsserve = "0.11"
+async-trait = "0.1"
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "sync", "net", "macros"] }
+
+[target.'cfg(windows)'.dependencies]
+winfsp = { version = "0.13", default-features = false, features = ["delayload"] }
+winfsp-sys = "0.12"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry", "Win32_System_LibraryLoader", "Win32_Storage_FileSystem", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tempfile = "3"
+# examples/nv_bench.rs and the FUSE-over-a-real-vault test
+nv-core = { path = "../nv-core" }
+secrecy = "0.10"
+
+# The NFS adapter is macOS-only in production but pure Rust, so it is unit-tested on Linux too.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+nfsserve = "0.11"
+async-trait = "0.1"
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "sync", "net", "macros"] }
+
+# Real NFSv3 client used to test the server end-to-end over TCP (no mount needed).
+[target.'cfg(unix)'.dev-dependencies]
+nfs3_client = { version = "0.9", features = ["tokio"] }

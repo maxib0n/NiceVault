@@ -1,0 +1,38 @@
+Passphrase wordlists (7776 words each = log2(7776) = 12.925 bits per word)
+
+en_eff_large.txt
+  Source:  EFF "Large Wordlist" for passphrases (Joseph Bonneau, 2016)
+           https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt
+           (dice numbers stripped; words unchanged, same order)
+  Licence: Creative Commons Attribution 3.0 United States (CC BY 3.0 US)
+           https://creativecommons.org/licenses/by/3.0/us/
+           Attribution: "EFF Large Wordlist" by the Electronic Frontier Foundation.
+
+it.txt
+  Source:  derived from "paroleitaliane" by Francesco Napoletano
+           https://github.com/napolux/paroleitaliane
+           files 60000_parole_italiane.txt, 1000_parole_italiane_comuni.txt, lista_badwords.txt
+  Licence: MIT License, Copyright (c) 2016 Francesco Napoletano
+           (the repository's only non-MIT file, coniugazione_verbi.txt, CC BY-SA 3.0, is NOT used)
+  Built with make_it.py (same folder):
+           python3 make_it.py 60000_parole_italiane.txt 1000_parole_italiane_comuni.txt it.txt lista_badwords.txt
+           keeps lowercase a-z words of 4..8 letters ending in a vowel, drops the profanity list and
+           most conjugated verb endings, prefers the common-words list, then length closest to 6,
+           takes 7776 and sorts them.
+
+MIT License text (paroleitaliane):
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+  associated documentation files (the "Software"), to deal in the Software without restriction,
+  including without limitation the rights to use, copy, modify, merge, publish, distribute,
+  sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies or
+  substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+  NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+  DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+  OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

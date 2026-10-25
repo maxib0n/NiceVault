@@ -1,0 +1,745 @@
+/*
+ * NiceVault tokens: "Carta valori", second edition. The volume is a security document.
+ * Default (dark): it lives in an anthracite Alcantara case. Suede is the case (the board
+ * the documents lie on, the covers): a matte microfibre nap lit by one light from the
+ * top-left. Pages that hold content (the document, the file page, dialogs) are calm deep
+ * anthracite card, never suede behind text. Security print is worked into the material:
+ * guilloche and frames pressed into it and printed in the volume's ink, a red-velvet
+ * stitch, foil only where foil belongs, the watermark a relief pressed in. Light: the
+ * same document printed in one intaglio ink on ivory cotton paper (a per-volume choice).
+ *
+ * One light source, top-left. <html data-theme> picks the theme (absent = OS).
+ * Block 1 never changes with the theme. Blocks 2-4 declare every theme token
+ * (light, dark by OS, dark forced: 3 and 4 are identical). Accent tokens come from
+ * accents.css (--accent, --accent-ink, --accent-soft, --accent-line, --accent-deep);
+ * every colour derived from them is declared on :root AND on any [data-accent]
+ * element, so a subtree that shows another preset re-derives its own inks.
+ * Components reference tokens, never raw colours.
+ */
+
+/* 1 · theme-independent ------------------------------------------------- */
+:root {
+  /* type: Newsreader (names, titles; 18 px and up only), IBM Plex Sans (all UI text),
+     IBM Plex Mono (serials, the MRZ, sizes, dates, timecodes, printed labels) */
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  --text-2xs: 10.5px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --display-s: 20px;
+  --display-m: 26px;
+  --display-l: 34px;
+  --display-xl: 58px;
+  --label-track: 0.14em;
+
+  /* space: 4 px rhythm */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* shape: paper and card are cut nearly square; keys and wells are pressed with a small radius */
+  --radius-paper: 3px;
+  /* a saddle-stitched card: its stitching (6 px in) turns a 4 px curve, concentric with this one */
+  --radius-stitched: 10px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+  --hairline: 1px solid var(--paper-rule);
+
+  /* named dimensions */
+  --control-h: 32px;
+  --key-h: 34px;
+  --key-h-lg: 48px;
+  --sidebar-w: 252px;
+  /* the sidebar's own width (--sidebar-w is what it takes on screen: less when folded to a rail) */
+  --sidebar-full: 252px;
+  --rail-w: 66px;
+  --toolbar-h: 48px;
+  --statusbar-h: 30px;
+  /* the file page's head (path, title, actions, band): notices sit below it */
+  --page-head-h: 136px;
+  --scrollbar: 12px;
+  --z-tray: 40;
+  --z-menu: 50;
+  --z-toast: 100;
+
+  /* motion: spent once (the unlock, components/ceremony.ts; the glyph decode, lib/reveal.ts);
+     everything else is instant or micro */
+  --dur-micro: 120ms;
+  --dur-ui: 180ms;
+  --dur-ui-exit: 140ms;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* materials (see SOURCES.md): seamless tiles. --tex-px keeps one texel per device
+     pixel, so the grain is always as fine as the screen can draw it */
+  --tex-nap: url('../assets/textures/suede-nap.webp');
+  --tex-grain: url('../assets/textures/paper-grain.webp');
+  --tex-weave: url('../assets/textures/cloth-weave.webp');
+  /* the board under the documents (dark): pressed felt, fibres crossing every way. Never the
+     covers' suede: a passport must not melt into the board it lies on */
+  --tex-felt: url('../assets/textures/felt-board.webp');
+  /* the board on paper: the grain alone, finer, no fibres (the sheets keep --tex-grain) */
+  --tex-board-grain: url('../assets/textures/board-grain.webp');
+  --tex-px: 512px;
+  /* how strongly a nap or grain prints: a 1x screen draws every texel as a whole
+     pixel, so the same grain reads coarser there; it is set back to stay as quiet */
+  --tex-k: 0.6;
+  /* blue-noise dither (about -1..+2 /255, soft-light) over every long, quiet light pool (board, card, cover):
+     it breaks the 8-bit steps of a dark gradient without reading as grain. One texel per
+     device pixel, like the nap */
+  --tex-dither: url('../assets/textures/dither.png');
+  --dither-px: 64px;
+
+  /* the glyph decode (lib/reveal.ts): the MRZ's mono */
+  --ascii-font: var(--font-mono);
+
+  /* gold foil, the only yellow metal: velluto's foil (accents.css) and the reference
+     the other inks' metals are cut against */
+  --gold-hi: #fff4d4;
+  --gold: #e4cd92;
+  --gold-mid: #c8a961;
+  --gold-lo: #96753a;
+}
+@media (min-resolution: 1.25dppx) {
+  :root {
+    --dither-px: 51.2px;
+    --tex-px: 410px;
+    --tex-k: 0.7;
+  }
+}
+@media (min-resolution: 1.5dppx) {
+  :root {
+    --dither-px: 42.667px;
+    --tex-px: 341px;
+    --tex-k: 0.8;
+  }
+}
+@media (min-resolution: 2dppx) {
+  :root {
+    --dither-px: 32px;
+    --tex-px: 256px;
+    --tex-k: 1;
+  }
+}
+@media (min-resolution: 3dppx) {
+  :root {
+    --dither-px: 21.333px;
+    --tex-px: 171px;
+    --tex-k: 1;
+  }
+}
+
+/* 2 · light: ivory cotton paper (data-theme="light", or the OS asks for light) ------- */
+:root {
+  color-scheme: light;
+
+  /* the board the documents lie on, lit from the top-left */
+  --ground: #e6e1d7;
+  --ground-hi: #f1ede6;
+  --ground-lo: #d9d3c7;
+  /* the board's surface: a fine, tight paper grain, no cloud */
+  --board-tex: var(--tex-board-grain);
+  --board-tex-size: var(--tex-px);
+  --board-tex-blend: soft-light;
+  --board-tex-alpha: calc(0.2 * var(--tex-k));
+
+  /* cotton rag paper */
+  --paper: #fbf8f1;
+  --paper-hi: #fffdf8;
+  --paper-lo: #f2ede3;
+  --paper-2: #f5f0e7;
+  --paper-sunk: #efe9de;
+  --paper-edge: #d6cdbf;
+  --paper-edge-lo: #c4b9a8;
+  --paper-rule: #e4dccf;
+  --paper-rule-2: #d3c8b8;
+  --cast: 52 30 26;
+  /* the sheet's own grain, under the ink: even, never a haze */
+  --sheet-tex: var(--tex-grain);
+  --sheet-tex-size: var(--tex-px);
+  --sheet-tex-blend: soft-light;
+  --sheet-tex-alpha: calc(0.26 * var(--tex-k));
+  /* how a flat ink (a rubber stamp) sits on this paper */
+  --ink-blend: multiply;
+
+  /* ink */
+  --ink: #1d1719;
+  --ink-2: #4b4145;
+  --ink-3: #605457;
+  --ink-4: #8f8589;
+
+  /* pressed into the paper */
+  --field: #f5f0e6;
+  --field-focus: #fffdf8;
+  --field-edge: #8d8377;
+  --field-shade: rgb(60 40 30 / 0.16);
+
+  /* keys standing on the paper */
+  --key-hi: #fffdf9;
+  --key-lo: #f2ece2;
+  --key-press: #e8e1d5;
+  --key-edge: rgb(48 30 26 / 0.17);
+  --key-edge-lo: rgb(48 30 26 / 0.32);
+  --key-lip: rgb(255 255 255 / 0.95);
+  --key-dead: #efeae1;
+  /* the lit lip of anything pressed into the board or the paper */
+  --deboss-lip: rgb(255 255 255 / 0.62);
+  /* relief of printed line work: 1 = intaglio (the ink stands on the paper, lit at its
+     top-left flank), -1 = pressed in (its top-left wall in shade, its far lip lit) */
+  --ink-relief: 1;
+  /* how a printed title sits: on paper the ink stands up (lit top-left lip, a hair of
+     shade bottom-right); on anthracite it is seated, a soft shade beneath, no lip */
+  --title-lip: rgb(255 255 255 / 0.8);
+  --title-shade: rgb(var(--cast) / 0.17);
+  --relief-hi: rgb(255 255 255 / 0.8);
+  --relief-lo: rgb(60 36 30 / 0.3);
+  /* a pressed panel's floor (blind deboss): none on paper */
+  --press-floor: transparent;
+  /* stitching: none on paper */
+  --stitch-alpha: 0;
+
+  /* the enamel plate a site's icon sits on (the light plate icons are drawn for) */
+  --plate-hi: #ffffff;
+  --plate-lo: #f1ede6;
+  /* photographs are prints; the light table under quick look */
+  --print-border: #ffffff;
+  /* where a picture is still developing inside its border (the glyph decode) */
+  --print-develop: #ffffff;
+  --print-glow: 0 0 0 transparent;
+  --stage: #e9e4da;
+
+  /* ordinary stock (envelopes): warmer and a shade darker than the security paper */
+  --env-paper: #efe6d6;
+  --env-paper-hi: #f8f2e6;
+  --env-paper-lo: #e3d8c5;
+  --env-paper-2: #e8ddc9;
+  --env-crease: rgb(112 84 58 / 0.34);
+  --env-lip: rgb(255 255 255 / 0.55);
+  --env-glow: 0 0 0 transparent;
+  /* loose sheets (documents): plain white stock */
+  --sheet-paper: #fffdf9;
+  --sheet-fold: #ebe4d8;
+  --sheet-ink: var(--ink-2);
+  /* a file lying on the page on its own (its type printed on it) */
+  --file-paper: var(--sheet-paper);
+  --file-fold: var(--sheet-fold);
+  --file-ink: var(--sheet-ink);
+
+  /* security fibres: a few, visible red and blue in daylight */
+  --fibre-1: #b8403f;
+  --fibre-2: #3f5fa6;
+  --fibre-3: #b8403f;
+  --fibre-alpha: 0.42;
+
+  /* the watermark: thinner paper lets more light through */
+  --wm-light: rgb(255 255 255 / 0.85);
+  --wm-shade: rgb(96 70 52 / 0.14);
+  --wm-body: rgb(255 255 255 / 0.85);
+  --wm-alpha: 1;
+
+  /* foil (--foil-hi, --foil, --foil-mid, --foil-lo): each ink has its own metal, accents.css */
+
+  /* the diffractive stripe: pale pastel rainbow on paper */
+  --thread-base: #dfe2ea;
+  --thread-rainbow: #d6e2f6 0%, #f2d6ea 9%, #d4f1e4 18%, #e6defa 27%, #fbe7cf 36%, #d6e2f6 45%, #f2d6ea 54%, #d4f1e4 63%,
+    #e6defa 72%, #fbe7cf 81%, #d6e2f6 90%, #f2d6ea 100%;
+  --thread-lip: rgb(255 255 255 / 0.7);
+  --thread-shade: rgb(0 0 0 / 0.14);
+  --thread-emboss: 1;
+  --thread-grating: 1;
+  --thread-glint: 0.55;
+
+  /* an error is said in vermilion */
+  --danger: #a62d12;
+  --danger-hi: #c43a2e;
+  --danger-lo: #a5241b;
+  --danger-ink: #fffaf6;
+  --danger-wash: #fbe9e3;
+  --danger-line: #d47a6f;
+
+  --scrim: rgb(40 26 24 / 0.36);
+  --scroll-thumb: rgb(48 30 26 / 0.22);
+  --scroll-thumb-hover: rgb(48 30 26 / 0.4);
+  --cloth-scroll-thumb: rgb(255 244 236 / 0.26);
+
+  /* a cover that shows no volume's look (kept encrypted while locked): undyed */
+  --cloth-neutral: #403c39;
+  --cloth-neutral-hi: #4d4945;
+  --cloth-neutral-lo: #2b2826;
+  /* the cover: book cloth */
+  --cloth-tex: var(--tex-weave);
+  --cloth-tex-size: 256px;
+  --cloth-tex-blend: overlay;
+  --cloth-tex-alpha: 0.42;
+
+  --lift-key: 0 1px 1px rgb(var(--cast) / 0.08), 0 2px 3px -1px rgb(var(--cast) / 0.16);
+  --lift-key-hover: 0 1px 1px rgb(var(--cast) / 0.08), 0 4px 8px -2px rgb(var(--cast) / 0.2);
+  --lift-print: 0 0 0 1px rgb(var(--cast) / 0.07), 0 1px 1px rgb(var(--cast) / 0.1), 0 4px 8px -4px rgb(var(--cast) / 0.26);
+  --lift-print-hover: 0 0 0 1px rgb(var(--cast) / 0.07), 0 2px 2px rgb(var(--cast) / 0.1), 0 10px 18px -8px rgb(var(--cast) / 0.34);
+  --shadow-sheet: 0 1px 0 var(--paper-edge), 0 2px 0 -0.5px var(--paper-edge-lo), 0 8px 14px -8px rgb(var(--cast) / 0.24),
+    0 26px 48px -24px rgb(var(--cast) / 0.3);
+  --shadow-pop: 0 0 0 1px rgb(var(--cast) / 0.09), 0 2px 4px rgb(var(--cast) / 0.06), 0 14px 28px -10px rgb(var(--cast) / 0.24),
+    0 34px 64px -24px rgb(var(--cast) / 0.26);
+  /* the lit top edge of a card lifted off the page (paper needs none) */
+  --card-lip: inset 0 1px 0 var(--key-lip);
+}
+:root,
+[data-accent] {
+  --engrave: var(--accent);
+  --engrave-2: color-mix(in oklab, var(--accent-line) 72%, var(--paper));
+  --iris: oklch(from var(--accent-line) l c calc(h + 62));
+  --title-ink: color-mix(in oklab, var(--accent) 30%, var(--ink));
+  --stitch: var(--accent-line);
+
+  --cloth: color-mix(in oklab, var(--accent-deep) 78%, #160b12);
+  --cloth-hi: color-mix(in oklab, var(--accent-deep) 95%, #160b12);
+  --cloth-lo: color-mix(in oklab, var(--accent-deep) 52%, #160b12);
+  --cloth-edge: color-mix(in oklab, var(--accent-deep) 40%, #0b0508);
+  --cloth-ink: #f8eee6;
+  --cloth-ink-2: color-mix(in oklab, #f8eee6 80%, var(--cloth));
+  --cloth-ink-3: color-mix(in oklab, #f8eee6 71%, var(--cloth));
+  --cloth-bed: color-mix(in oklab, var(--cloth) 76%, #000);
+  --stitch-cloth: color-mix(in oklab, var(--cloth-ink) 40%, var(--cloth));
+  /* the inside of the cover (the open volume's sidebar): a pale linen bookcloth with a breath
+     of the ink, as the anthracite lining is the case's suede: the ink stays in the details */
+  --lining: color-mix(in oklab, var(--accent-deep) 5%, #d9d0c1);
+  --lining-hi: color-mix(in oklab, var(--accent-deep) 4%, #e4dccf);
+  --lining-lo: color-mix(in oklab, var(--accent-deep) 6%, #c8beae);
+  --lining-bed: color-mix(in oklab, var(--lining) 86%, #000);
+  /* the lining's cut edge against the page: a warm shade of the linen, never the ink */
+  --lining-edge: color-mix(in oklab, var(--lining-lo) 62%, #3b2f28);
+  --lining-ink: #2a2224;
+  --lining-ink-2: color-mix(in oklab, #2a2224 82%, var(--lining));
+  --lining-ink-3: color-mix(in oklab, #2a2224 66%, var(--lining));
+  --lining-scroll-thumb: rgb(48 30 26 / 0.24);
+  /* foil on the pale linen: the metal's deeper half, so it reads as stamped, not washed out */
+  --lining-foil-hi: color-mix(in oklab, var(--foil-hi) 35%, var(--foil-mid));
+  --lining-foil: color-mix(in oklab, var(--foil) 45%, var(--foil-lo));
+  --lining-foil-mid: var(--foil-lo);
+  --lining-foil-lo: color-mix(in oklab, var(--foil-lo) 72%, #000);
+
+  --wax: color-mix(in oklab, var(--accent-deep) 92%, #e0405a);
+  --wax-hi: color-mix(in oklab, var(--accent-deep) 52%, #fff2f4);
+  --wax-lo: color-mix(in oklab, var(--accent-deep) 58%, #12040a);
+
+  --key-accent-hi: color-mix(in oklab, var(--accent-deep) 84%, #ffffff);
+  --key-accent-lo: color-mix(in oklab, var(--accent-deep) 86%, #000000);
+  --key-accent-edge: color-mix(in oklab, var(--accent-deep) 58%, #000000);
+  --key-accent-press: color-mix(in oklab, var(--accent-deep) 80%, #000000);
+  --key-accent-ink: var(--accent-ink);
+
+  --focus: var(--accent);
+  --select-ring: var(--accent);
+  --select-wash: var(--accent-soft);
+  /* the decode's glyphs are inked like everything else */
+  --ascii-accent: var(--accent);
+  --ascii-glyph: var(--accent);
+}
+
+/* 3 · anthracite (dark) by OS ---------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    /* the case: anthracite Alcantara. A matte microfibre nap, the light pooling softly
+       where the nap faces it (top-left); no cloud, no blotch, nothing that repeats */
+    --ground: #252423;
+    --ground-hi: #2e2d2b;
+    --ground-lo: #1b1a19;
+    --board-tex: var(--tex-felt);
+    --board-tex-size: var(--tex-px);
+    --board-tex-blend: soft-light;
+    --board-tex-alpha: calc(0.62 * var(--tex-k));
+
+    /* the pages: deep anthracite card, calm behind text */
+    --paper: #191817;
+    --paper-hi: #201f1d;
+    --paper-lo: #151413;
+    --paper-2: #1c1b1a;
+    --paper-sunk: #11100f;
+    --paper-edge: #0a0a09;
+    --paper-edge-lo: #000000;
+    --paper-rule: #2f2d2b;
+    --paper-rule-2: #3e3c39;
+    --cast: 0 0 0;
+    --sheet-tex: var(--tex-nap);
+    --sheet-tex-size: var(--tex-px);
+    --sheet-tex-blend: soft-light;
+    --sheet-tex-alpha: calc(0.16 * var(--tex-k));
+    --ink-blend: screen;
+
+    /* warm white ink */
+    --ink: #efece8;
+    --ink-2: #cccac5;
+    --ink-3: #a5a39e;
+    --ink-4: #7e7b78;
+
+    /* pressed into the card */
+    --field: #121110;
+    --field-focus: #151413;
+    --field-edge: #706d69;
+    --field-shade: rgb(0 0 0 / 0.55);
+
+    /* keys: anthracite card, a lit lip, a dark edge, a short drop */
+    --key-hi: #34322f;
+    --key-lo: #2a2826;
+    --key-press: #1e1d1b;
+    --key-edge: rgb(0 0 0 / 0.55);
+    --key-edge-lo: rgb(0 0 0 / 0.8);
+    --key-lip: rgb(255 248 240 / 0.1);
+    --key-dead: #232220;
+    --deboss-lip: rgb(255 248 240 / 0.07);
+    --ink-relief: -1;
+    --title-lip: transparent;
+    --title-shade: rgb(0 0 0 / 0.42);
+    --relief-hi: rgb(255 246 238 / 0.1);
+    --relief-lo: rgb(0 0 0 / 0.62);
+    --press-floor: rgb(0 0 0 / 0.16);
+    --stitch-alpha: 1;
+
+    /* the enamel plate of a site's icon: ivory, a little lower than white in a dim room */
+    --plate-hi: #ebe7e0;
+    --plate-lo: #d5d0c6;
+    /* prints keep a warm white border; the light table is a dark stage */
+    --print-border: #e4dfd6;
+    --print-develop: #141312;
+    --print-glow: 0 0 0 transparent;
+    --stage: #121110;
+
+    /* envelopes: anthracite card stock, its cut edges catching the light */
+    --env-paper: #3a3733;
+    --env-paper-hi: #46423d;
+    --env-paper-lo: #2f2c29;
+    --env-paper-2: #34312d;
+    --env-crease: rgb(0 0 0 / 0.45);
+    --env-lip: rgb(255 246 236 / 0.14);
+    --env-glow: 0 0 0 transparent;
+    /* loose sheets: ivory, as paper looks in a dim room */
+    --sheet-paper: #d6d0c4;
+    --sheet-fold: #b4ad9f;
+    --sheet-ink: #4a443d;
+    /* a file on its own: a sheet of anthracite card, its type printed in warm white */
+    --file-paper: #312f2c;
+    --file-fold: #48453f;
+    --file-ink: #c3beb5;
+
+    /* no security fibres on suede */
+    --fibre-1: #b8403f;
+    --fibre-2: #3f5fa6;
+    --fibre-3: #b8403f;
+    --fibre-alpha: 0;
+
+    /* the watermark: a relief pressed into the material (its floor darker, its far lip lit) */
+    --wm-light: rgb(255 246 236 / 0.13);
+    --wm-shade: rgb(0 0 0 / 0.7);
+    --wm-body: rgb(0 0 0 / 0.2);
+    --wm-alpha: 1;
+
+    /* foil in a dim room: each ink's metal a little lower, accents.css */
+
+    /* the diffractive stripe: dark silver foil, the colours barely there */
+    --thread-base: #33312f;
+    --thread-rainbow: #353331 0%, #4f4b45 7%, #3c3b41 16%, #343533 24%, #534e47 33%, #3b3b42 42%, #333230 50%, #4f4b45 57%,
+      #3c3b41 66%, #343533 74%, #534e47 83%, #3b3b42 92%, #353331 100%;
+    --thread-lip: rgb(255 248 240 / 0.16);
+    --thread-shade: rgb(0 0 0 / 0.6);
+    --thread-emboss: 0.22;
+    --thread-grating: 0.16;
+    --thread-glint: 0.22;
+
+    /* an error is said in vermilion, clear of the red-velvet ink */
+    --danger: #ff8a6c;
+    --danger-hi: #c8432c;
+    --danger-lo: #a83521;
+    --danger-ink: #fff7f3;
+    --danger-wash: rgb(255 120 90 / 0.12);
+    --danger-line: #b8604c;
+
+    --scrim: rgb(0 0 0 / 0.6);
+    --scroll-thumb: rgb(255 246 236 / 0.16);
+    --scroll-thumb-hover: rgb(255 246 236 / 0.3);
+    --cloth-scroll-thumb: rgb(255 246 236 / 0.2);
+
+    /* a cover that shows no volume's look: plain anthracite suede */
+    --cloth-neutral: #2f2e2c;
+    --cloth-neutral-hi: #393735;
+    --cloth-neutral-lo: #1e1d1c;
+    /* the case's suede where it lines the cover (the sidebar); every ink re-dyes it (accents.css) */
+    --lining-base: #232221;
+    --lining-base-hi: #2b2a28;
+    --lining-base-lo: #171615;
+    /* the cover: dyed suede */
+    --cloth-tex: var(--tex-nap);
+    --cloth-tex-size: var(--tex-px);
+    --cloth-tex-blend: soft-light;
+    --cloth-tex-alpha: calc(1 * var(--tex-k));
+
+    --lift-key: 0 1px 1px rgb(0 0 0 / 0.45), 0 2px 4px -1px rgb(0 0 0 / 0.55);
+    --lift-key-hover: 0 1px 1px rgb(0 0 0 / 0.45), 0 5px 10px -3px rgb(0 0 0 / 0.6);
+    --lift-print: 0 0 0 1px rgb(0 0 0 / 0.45), 0 2px 3px rgb(0 0 0 / 0.4), 0 6px 12px -6px rgb(0 0 0 / 0.7);
+    --lift-print-hover: 0 0 0 1px rgb(0 0 0 / 0.45), 0 3px 4px rgb(0 0 0 / 0.4), 0 12px 22px -8px rgb(0 0 0 / 0.8);
+    --shadow-sheet: 0 0 0 1px rgb(0 0 0 / 0.5), 0 1px 0 #000, 0 2px 0 -0.5px #070706, 0 10px 18px -8px rgb(0 0 0 / 0.7),
+      0 36px 64px -28px rgb(0 0 0 / 0.85);
+    --shadow-pop: 0 0 0 1px rgb(0 0 0 / 0.6), 0 2px 4px rgb(0 0 0 / 0.35), 0 14px 30px -8px rgb(0 0 0 / 0.6),
+      0 34px 64px -20px rgb(0 0 0 / 0.7);
+    --card-lip: inset 0 1px 0 rgb(255 248 240 / 0.07), inset 1px 0 0 rgb(255 248 240 / 0.025);
+  }
+  :root:not([data-theme='light']),
+  :root:not([data-theme='light']) [data-accent] {
+    --engrave: color-mix(in oklab, var(--accent-line) 88%, var(--accent));
+    --engrave-2: color-mix(in oklab, var(--accent-line) 58%, var(--paper));
+    --iris: oklch(from var(--accent-line) l c calc(h + 62));
+    --title-ink: color-mix(in oklab, var(--accent) 7%, var(--ink));
+    --stitch: color-mix(in oklab, var(--accent-line) 80%, var(--accent));
+
+    /* a passport's cover: suede dyed deep in the ink */
+    --cloth: color-mix(in oklab, var(--accent-deep) 54%, #1f1e1d);
+    --cloth-hi: color-mix(in oklab, var(--accent-deep) 64%, #2b2a28);
+    --cloth-lo: color-mix(in oklab, var(--accent-deep) 34%, #121110);
+    --cloth-edge: #0b0a0a;
+    --cloth-ink: #f3efea;
+    --cloth-ink-2: color-mix(in oklab, #f3efea 80%, var(--cloth));
+    --cloth-ink-3: color-mix(in oklab, #f3efea 70%, var(--cloth));
+    --cloth-bed: color-mix(in oklab, var(--cloth) 68%, #000);
+    --stitch-cloth: color-mix(in oklab, var(--accent) 58%, var(--cloth-hi));
+    /* its lining (the open volume's sidebar): the case's suede, the ink only a breath */
+    --lining: color-mix(in oklab, var(--accent-deep) 3%, var(--lining-base));
+    --lining-hi: color-mix(in oklab, var(--accent-deep) 3%, var(--lining-base-hi));
+    --lining-lo: var(--lining-base-lo);
+    --lining-bed: color-mix(in oklab, var(--lining) 78%, #000);
+    --lining-edge: #0b0a0a;
+    --lining-ink: var(--cloth-ink);
+    --lining-ink-2: color-mix(in oklab, var(--cloth-ink) 80%, var(--lining));
+    --lining-ink-3: color-mix(in oklab, var(--cloth-ink) 70%, var(--lining));
+    --lining-scroll-thumb: var(--cloth-scroll-thumb);
+    --lining-foil-hi: var(--foil-hi);
+    --lining-foil: var(--foil);
+    --lining-foil-mid: var(--foil-mid);
+    --lining-foil-lo: var(--foil-lo);
+
+    --wax: var(--accent-deep);
+    --wax-hi: color-mix(in oklab, var(--accent-deep) 58%, #ffffff);
+    --wax-lo: color-mix(in oklab, var(--accent-deep) 48%, #000000);
+
+    --key-accent-hi: color-mix(in oklab, var(--accent-deep) 88%, #ffffff);
+    --key-accent-lo: color-mix(in oklab, var(--accent-deep) 84%, #000000);
+    --key-accent-edge: color-mix(in oklab, var(--accent-deep) 40%, #000000);
+    --key-accent-press: color-mix(in oklab, var(--accent-deep) 76%, #000000);
+    --key-accent-ink: #fff6f2;
+
+    --ascii-accent: var(--accent);
+    --ascii-glyph: var(--accent);
+    --focus: var(--accent);
+    --select-ring: var(--accent);
+    --select-wash: color-mix(in oklab, var(--accent-soft) 62%, var(--paper));
+  }
+}
+
+/* 4 · anthracite (dark) forced (data-theme="dark"): identical to block 3 ------------ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* the case: anthracite Alcantara. A matte microfibre nap, the light pooling softly
+     where the nap faces it (top-left); no cloud, no blotch, nothing that repeats */
+  --ground: #252423;
+  --ground-hi: #2e2d2b;
+  --ground-lo: #1b1a19;
+  --board-tex: var(--tex-felt);
+  --board-tex-size: var(--tex-px);
+  --board-tex-blend: soft-light;
+  --board-tex-alpha: calc(0.62 * var(--tex-k));
+
+  /* the pages: deep anthracite card, calm behind text */
+  --paper: #191817;
+  --paper-hi: #201f1d;
+  --paper-lo: #151413;
+  --paper-2: #1c1b1a;
+  --paper-sunk: #11100f;
+  --paper-edge: #0a0a09;
+  --paper-edge-lo: #000000;
+  --paper-rule: #2f2d2b;
+  --paper-rule-2: #3e3c39;
+  --cast: 0 0 0;
+  --sheet-tex: var(--tex-nap);
+  --sheet-tex-size: var(--tex-px);
+  --sheet-tex-blend: soft-light;
+  --sheet-tex-alpha: calc(0.16 * var(--tex-k));
+  --ink-blend: screen;
+
+  /* warm white ink */
+  --ink: #efece8;
+  --ink-2: #cccac5;
+  --ink-3: #a5a39e;
+  --ink-4: #7e7b78;
+
+  /* pressed into the card */
+  --field: #121110;
+  --field-focus: #151413;
+  --field-edge: #706d69;
+  --field-shade: rgb(0 0 0 / 0.55);
+
+  /* keys: anthracite card, a lit lip, a dark edge, a short drop */
+  --key-hi: #34322f;
+  --key-lo: #2a2826;
+  --key-press: #1e1d1b;
+  --key-edge: rgb(0 0 0 / 0.55);
+  --key-edge-lo: rgb(0 0 0 / 0.8);
+  --key-lip: rgb(255 248 240 / 0.1);
+  --key-dead: #232220;
+  --deboss-lip: rgb(255 248 240 / 0.07);
+  --ink-relief: -1;
+  --title-lip: transparent;
+  --title-shade: rgb(0 0 0 / 0.42);
+  --relief-hi: rgb(255 246 238 / 0.1);
+  --relief-lo: rgb(0 0 0 / 0.62);
+  --press-floor: rgb(0 0 0 / 0.16);
+  --stitch-alpha: 1;
+
+  /* the enamel plate of a site's icon: ivory, a little lower than white in a dim room */
+  --plate-hi: #ebe7e0;
+  --plate-lo: #d5d0c6;
+  /* prints keep a warm white border; the light table is a dark stage */
+  --print-border: #e4dfd6;
+  --print-develop: #141312;
+  --print-glow: 0 0 0 transparent;
+  --stage: #121110;
+
+  /* envelopes: anthracite card stock, its cut edges catching the light */
+  --env-paper: #3a3733;
+  --env-paper-hi: #46423d;
+  --env-paper-lo: #2f2c29;
+  --env-paper-2: #34312d;
+  --env-crease: rgb(0 0 0 / 0.45);
+  --env-lip: rgb(255 246 236 / 0.14);
+  --env-glow: 0 0 0 transparent;
+  /* loose sheets: ivory, as paper looks in a dim room */
+  --sheet-paper: #d6d0c4;
+  --sheet-fold: #b4ad9f;
+  --sheet-ink: #4a443d;
+  /* a file on its own: a sheet of anthracite card, its type printed in warm white */
+  --file-paper: #312f2c;
+  --file-fold: #48453f;
+  --file-ink: #c3beb5;
+
+  /* no security fibres on suede */
+  --fibre-1: #b8403f;
+  --fibre-2: #3f5fa6;
+  --fibre-3: #b8403f;
+  --fibre-alpha: 0;
+
+  /* the watermark: a relief pressed into the material (its floor darker, its far lip lit) */
+  --wm-light: rgb(255 246 236 / 0.13);
+  --wm-shade: rgb(0 0 0 / 0.7);
+  --wm-body: rgb(0 0 0 / 0.2);
+  --wm-alpha: 1;
+
+  /* foil in a dim room: each ink's metal a little lower, accents.css */
+
+  /* the diffractive stripe: dark silver foil, the colours barely there */
+  --thread-base: #33312f;
+  --thread-rainbow: #353331 0%, #4f4b45 7%, #3c3b41 16%, #343533 24%, #534e47 33%, #3b3b42 42%, #333230 50%, #4f4b45 57%,
+    #3c3b41 66%, #343533 74%, #534e47 83%, #3b3b42 92%, #353331 100%;
+  --thread-lip: rgb(255 248 240 / 0.16);
+  --thread-shade: rgb(0 0 0 / 0.6);
+  --thread-emboss: 0.22;
+  --thread-grating: 0.16;
+  --thread-glint: 0.22;
+
+  /* an error is said in vermilion, clear of the red-velvet ink */
+  --danger: #ff8a6c;
+  --danger-hi: #c8432c;
+  --danger-lo: #a83521;
+  --danger-ink: #fff7f3;
+  --danger-wash: rgb(255 120 90 / 0.12);
+  --danger-line: #b8604c;
+
+  --scrim: rgb(0 0 0 / 0.6);
+  --scroll-thumb: rgb(255 246 236 / 0.16);
+  --scroll-thumb-hover: rgb(255 246 236 / 0.3);
+  --cloth-scroll-thumb: rgb(255 246 236 / 0.2);
+
+  /* a cover that shows no volume's look: plain anthracite suede */
+  --cloth-neutral: #2f2e2c;
+  --cloth-neutral-hi: #393735;
+  --cloth-neutral-lo: #1e1d1c;
+  /* the case's suede where it lines the cover (the sidebar); every ink re-dyes it (accents.css) */
+  --lining-base: #232221;
+  --lining-base-hi: #2b2a28;
+  --lining-base-lo: #171615;
+  /* the cover: dyed suede */
+  --cloth-tex: var(--tex-nap);
+  --cloth-tex-size: var(--tex-px);
+  --cloth-tex-blend: soft-light;
+  --cloth-tex-alpha: calc(1 * var(--tex-k));
+
+  --lift-key: 0 1px 1px rgb(0 0 0 / 0.45), 0 2px 4px -1px rgb(0 0 0 / 0.55);
+  --lift-key-hover: 0 1px 1px rgb(0 0 0 / 0.45), 0 5px 10px -3px rgb(0 0 0 / 0.6);
+  --lift-print: 0 0 0 1px rgb(0 0 0 / 0.45), 0 2px 3px rgb(0 0 0 / 0.4), 0 6px 12px -6px rgb(0 0 0 / 0.7);
+  --lift-print-hover: 0 0 0 1px rgb(0 0 0 / 0.45), 0 3px 4px rgb(0 0 0 / 0.4), 0 12px 22px -8px rgb(0 0 0 / 0.8);
+  --shadow-sheet: 0 0 0 1px rgb(0 0 0 / 0.5), 0 1px 0 #000, 0 2px 0 -0.5px #070706, 0 10px 18px -8px rgb(0 0 0 / 0.7),
+    0 36px 64px -28px rgb(0 0 0 / 0.85);
+  --shadow-pop: 0 0 0 1px rgb(0 0 0 / 0.6), 0 2px 4px rgb(0 0 0 / 0.35), 0 14px 30px -8px rgb(0 0 0 / 0.6),
+    0 34px 64px -20px rgb(0 0 0 / 0.7);
+  --card-lip: inset 0 1px 0 rgb(255 248 240 / 0.07), inset 1px 0 0 rgb(255 248 240 / 0.025);
+}
+:root[data-theme='dark'],
+:root[data-theme='dark'] [data-accent] {
+  --engrave: color-mix(in oklab, var(--accent-line) 88%, var(--accent));
+  --engrave-2: color-mix(in oklab, var(--accent-line) 58%, var(--paper));
+  --iris: oklch(from var(--accent-line) l c calc(h + 62));
+  --title-ink: color-mix(in oklab, var(--accent) 7%, var(--ink));
+  --stitch: color-mix(in oklab, var(--accent-line) 80%, var(--accent));
+
+  /* a passport's cover: suede dyed deep in the ink */
+  --cloth: color-mix(in oklab, var(--accent-deep) 54%, #1f1e1d);
+  --cloth-hi: color-mix(in oklab, var(--accent-deep) 64%, #2b2a28);
+  --cloth-lo: color-mix(in oklab, var(--accent-deep) 34%, #121110);
+  --cloth-edge: #0b0a0a;
+  --cloth-ink: #f3efea;
+  --cloth-ink-2: color-mix(in oklab, #f3efea 80%, var(--cloth));
+  --cloth-ink-3: color-mix(in oklab, #f3efea 70%, var(--cloth));
+  --cloth-bed: color-mix(in oklab, var(--cloth) 68%, #000);
+  --stitch-cloth: color-mix(in oklab, var(--accent) 58%, var(--cloth-hi));
+  /* its lining (the open volume's sidebar): the case's suede, the ink only a breath */
+  --lining: color-mix(in oklab, var(--accent-deep) 3%, var(--lining-base));
+  --lining-hi: color-mix(in oklab, var(--accent-deep) 3%, var(--lining-base-hi));
+  --lining-lo: var(--lining-base-lo);
+  --lining-bed: color-mix(in oklab, var(--lining) 78%, #000);
+  --lining-edge: #0b0a0a;
+  --lining-ink: var(--cloth-ink);
+  --lining-ink-2: color-mix(in oklab, var(--cloth-ink) 80%, var(--lining));
+  --lining-ink-3: color-mix(in oklab, var(--cloth-ink) 70%, var(--lining));
+  --lining-scroll-thumb: var(--cloth-scroll-thumb);
+  --lining-foil-hi: var(--foil-hi);
+  --lining-foil: var(--foil);
+  --lining-foil-mid: var(--foil-mid);
+  --lining-foil-lo: var(--foil-lo);
+
+  --wax: var(--accent-deep);
+  --wax-hi: color-mix(in oklab, var(--accent-deep) 58%, #ffffff);
+  --wax-lo: color-mix(in oklab, var(--accent-deep) 48%, #000000);
+
+  --key-accent-hi: color-mix(in oklab, var(--accent-deep) 88%, #ffffff);
+  --key-accent-lo: color-mix(in oklab, var(--accent-deep) 84%, #000000);
+  --key-accent-edge: color-mix(in oklab, var(--accent-deep) 40%, #000000);
+  --key-accent-press: color-mix(in oklab, var(--accent-deep) 76%, #000000);
+  --key-accent-ink: #fff6f2;
+
+  --ascii-accent: var(--accent);
+  --ascii-glyph: var(--accent);
+  --focus: var(--accent);
+  --select-ring: var(--accent);
+  --select-wash: color-mix(in oklab, var(--accent-soft) 62%, var(--paper));
+}

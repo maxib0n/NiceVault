@@ -1,0 +1,4 @@
+url,username,password,totp,extra,name,grouping,fav
+https://lp.example.com,lp-user,lp-pass-1,,,LastPass sito,Social,1
+http://sn,,,,"NoteType:Server
+Hostname:srv",Nota sicura,Note,0

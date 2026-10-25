@@ -1,0 +1,80 @@
+[package]
+name = "nicevault-app"
+description = "NiceVault desktop shell (Tauri 2)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "nicevault_app"
+path = "src/lib.rs"
+# staticlib/cdylib: the Android (.so) and iOS (.a) builds load the app as a library
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "nicevault"
+path = "src/main.rs"
+
+[features]
+# Serve the embedded app/ui/dist (what `tauri build` turns on). Build with
+# `--no-default-features` to load the Vite dev server (devUrl) instead.
+default = [
+    "custom-protocol",
+]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+nv-fs = { path = "../../crates/nv-fs" }
+nv-core = { path = "../../crates/nv-core" }
+nv-mount = { path = "../../crates/nv-mount" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2.5"
+zeroize = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+secrecy = "0.10"
+getrandom = "0.3"
+open = "5"
+# open_link: re-serialise links before the OS gets them (viewers.rs checked_link); already in the tree via tauri
+url = "2"
+dirs = "6"
+log = "0.4"
+base64 = "0.22"
+minisign-verify = "0.3.0"
+semver = "1.0.28"
+ureq = { version = "3.5.0", default-features = false, features = ["native-tls"] }
+sha2 = "0.10"
+fs4 = "0.13"
+zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# password manager site icons (pm_icons.rs): decode png/ico/jpeg/gif/webp, rasterise svg (no
+# text, no external images), re-encode as a small PNG; grid thumbnails at the size shown
+# (thumbs.rs): jpeg/png/webp/bmp. Pure-Rust decoders only.
+image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "gif", "webp", "bmp"] }
+resvg = { version = "0.49", default-features = false }
+
+[dev-dependencies]
+tempfile = "3"
+blake3 = "1"
+sha2 = "0.10"
+tiny_http = "0.12.0"
+minisign = "0.10.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Desktop only: Android and iOS are single-instance by the OS.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2.5.4"
+
+# Mobile only: picked files are content:// (Android) / security-scoped URLs (iOS), read through the fs plugin.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-fs = "2"
+
+# Android only: the DocumentsProvider calls into the app through JNI (docs.rs); already in the tree via tao/wry.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"

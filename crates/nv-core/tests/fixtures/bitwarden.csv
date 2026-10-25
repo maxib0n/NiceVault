@@ -1,0 +1,2 @@
+folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp
+Lavoro,1,login,Git,,"Team: core",0,"https://git.example.com,https://ci.example.com",bw-user,bw-pass-1,

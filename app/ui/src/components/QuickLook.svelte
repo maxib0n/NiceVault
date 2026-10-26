@@ -6,6 +6,7 @@
 <script lang="ts">
   import { pointerLast } from '../lib/modality';
   import { m } from '../paraglide/messages.js';
+  import { appLook } from '../lib/stores/applook.svelte';
   import { flushSync } from 'svelte';
   import { ChevronLeft, ChevronRight, Download, ExternalLink, Maximize2, Minimize2, X } from '@lucide/svelte';
   import { isTauri, previewUrl } from '../lib/api';
@@ -200,18 +201,21 @@
   function keydown(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
     const inMedia = t.tagName === 'VIDEO' || t.tagName === 'AUDIO' || e.altKey; // Alt+← = back: closes (FileBrowserView)
+    // a film in full screen: ←/→ seek inside it (MediaViewer), they don't change file
+    const film = full && appLook.videoArrows === 'seek' && !!el?.querySelector('[data-testid="viewer-media"][data-kind="video"]');
     // keys that scroll the document leave the chrome where it is
     if (full && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) wake();
     if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !isMobile && !t.closest('input, textarea')) {
       e.preventDefault();
       setFull(!fullChosen);
-    } else if (e.key === ' ' && !inMedia) {
+    } else if (e.key === ' ' && !inMedia && !el?.querySelector('[data-testid="viewer-media"]')) {
+      // a film or a song: Space is play/pause (MediaViewer), not close
       e.preventDefault();
       close();
-    } else if (e.key === 'ArrowRight' && !inMedia) {
+    } else if (e.key === 'ArrowRight' && !inMedia && !film) {
       e.preventDefault();
       browser.stepQuickLook(1);
-    } else if (e.key === 'ArrowLeft' && !inMedia) {
+    } else if (e.key === 'ArrowLeft' && !inMedia && !film) {
       e.preventDefault();
       browser.stepQuickLook(-1);
     }

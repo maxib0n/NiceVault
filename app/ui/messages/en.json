@@ -952,6 +952,9 @@
   "set_close_to_tray": "Stay in the tray when the window is closed",
   "set_close_to_tray_hint": "Closing the window hides it: NiceVault keeps running with its icon in the notification area, and open volumes stay open until auto-lock closes them. Quit in the icon’s menu locks them all and closes the app. If the desktop shows no notification icons, closing the window quits.",
   "set_new_like_app": "Like the app",
+  "set_video_arrows": "Arrow keys in full-screen video",
+  "set_video_arrows_seek": "Seek",
+  "set_video_arrows_step": "Previous and next file",
   "set_sounds": "Sounds",
   "set_sounds_hint": "Small, sober sounds for unlock, lock, copy, delete and finished operations. Low volume; never while the window is hidden.",
   "set_new_like_app_hint": "New volumes take the app’s theme and ink.",
@@ -1677,5 +1680,6 @@
   "space_body_growable": "Not enough space: {need} needed, {free} free on the drive. Free up space on the drive and try again.",
   "space_extend": "Extend the volume…",
   "space_cancel": "Cancel",
-  "space_ok": "OK"
+  "space_ok": "OK",
+  "maker_title": "maxib0n on GitHub"
 }

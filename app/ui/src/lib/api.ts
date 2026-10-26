@@ -471,6 +471,8 @@ export interface AppSettings {
   site_icons: boolean;
   /** subtle UI sounds, synthesized in the webview (default on) */
   sounds: boolean;
+  /** ←/→ in a full-screen video: seek inside it (default) or step to the previous / next file */
+  video_arrows: VideoArrows;
   /** the volume's sidebar folded to a slim rail (desktop; default off) */
   sidebar_collapsed: boolean;
   /** the app's own look, worn wherever no volume's look applies (lib/worn.ts) */
@@ -490,6 +492,8 @@ export interface AppSettings {
   gallery_save: boolean | null;
 }
 
+export type VideoArrows = 'seek' | 'step';
+
 export interface AppSettingsPatch {
   language?: string;
   defaults?: Partial<Settings>;
@@ -499,6 +503,7 @@ export interface AppSettingsPatch {
   new_like_app?: boolean;
   site_icons?: boolean;
   sounds?: boolean;
+  video_arrows?: VideoArrows;
   sidebar_collapsed?: boolean;
   start_at_login?: boolean;
   start_minimized?: boolean;

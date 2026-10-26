@@ -17,6 +17,7 @@
   import { lockedAccent, lockedFrame, lockedView } from '../lib/emblem';
   import Emblem from '../components/Emblem.svelte';
   import Brand from '../components/Brand.svelte';
+  import Maker from '../components/Maker.svelte';
   import UpdateNotice from '../components/UpdateNotice.svelte';
   import StickNotice from '../components/device/StickNotice.svelte';
   import Rosette from '../ornament/Rosette.svelte';
@@ -203,6 +204,7 @@
 
 
   <footer class="hint">{m.welcome_hint()}</footer>
+  <Maker />
   <UpdateNotice />
   <StickNotice />
 </main>

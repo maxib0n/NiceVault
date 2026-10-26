@@ -431,11 +431,6 @@ export function releaseBody(notes) {
   ].join("\n");
 }
 
-/** Only the latest release stays on the page: the tags of every other one (gh release list). */
-export function olderReleases(listJson, version) {
-  return JSON.parse(listJson).map((r) => r.tagName).filter((t) => t !== `v${version}`);
-}
-
 function releaseContext(args) {
   const version = currentVersion();
   const skew = allVersions().filter(([, v]) => v !== version);
@@ -509,12 +504,6 @@ function publish(args) {
     return;
   }
   if (ghCreate(target.repo, version, files, bodyFile, args.dryRun)) {
-    // the page shows the latest version only; old tags go with their releases
-    const list = execFileSync("gh", ["release", "list", "--repo", target.repo, "--limit", "100", "--json", "tagName"], { cwd: ROOT, encoding: "utf8" });
-    for (const tag of olderReleases(list, version)) {
-      execFileSync("gh", ["release", "delete", tag, "--repo", target.repo, "--yes", "--cleanup-tag"], { cwd: ROOT, stdio: "inherit" });
-      console.log(`removed ${tag} from ${target.repo}`);
-    }
     console.log("next, once for the 0.2.x apps: node scripts/release.mjs bridge");
   }
 }

@@ -497,7 +497,7 @@
               <p class="caps">{m.dev_entry()}</p>
               <p class="lead">{m.dev_entry_hint()}</p>
               <ul class="parts new">
-                <li><span class="p-label">NiceVault</span><span class="mono">exfat</span><span class="num">128 MB</span></li>
+                <li><span class="p-label">NiceVault</span><span class="mono">exfat</span><span class="num">{dev.formatDiskSize(dev.CLIENT_SIZE)}</span></li>
                 <li><span class="p-label">VaultData</span><span class="mono">…</span><span class="num">{m.dev_vol_mode_whole().toLowerCase()}</span></li>
               </ul>
             {:else}
@@ -681,7 +681,7 @@
                     <div>
                       <p class="caps">{m.dev_after()} · {plan.table.toUpperCase()}</p>
                       <ul class="parts new">
-                        <li><span class="p-label">NiceVault</span><span class="mono">exfat</span><span class="num">128 MB</span></li>
+                        <li><span class="p-label">NiceVault</span><span class="mono">exfat</span><span class="num">{dev.formatDiskSize(plan.client.size)}</span></li>
                         <li><span class="p-label">VaultData</span><span class="mono">{plan.data_fs}</span><span class="num">{dev.formatDiskSize(plan.data_size)}</span></li>
                       </ul>
                       {#if plan.first_volume}<p class="hint">{m.dev_after_volume({ name: plan.first_volume.name })}</p>{/if}

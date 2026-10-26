@@ -186,6 +186,9 @@ export const deviceFetchMissing = (job: JobId) => call<DeviceOutcome>('device_fe
 // pure helpers
 
 /** Drive sizes as the box says them: decimal GB / TB, one decimal ("30,8 GB"). */
+/** The NiceVault (programs) partition of a new device: device/mod.rs CLIENT_SIZE. */
+export const CLIENT_SIZE = 512 * 2 ** 20;
+
 export function formatDiskSize(bytes: number): string {
   if (bytes >= 1e12) return `${formatNumber(bytes / 1e12, 1)} TB`;
   if (bytes >= 1e9) return `${formatNumber(bytes / 1e9, 1)} GB`;

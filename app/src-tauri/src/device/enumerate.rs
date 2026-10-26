@@ -79,7 +79,8 @@ pub fn linux_disks(sys_block: &Path, udev_data: &Path, mountinfo: &str) -> Vec<D
         let canon = dir.to_string_lossy().into_owned();
         let bus = match get("ID_BUS").as_str() {
             "" if is_loop => "virtual".to_owned(),
-            "" if canon.contains("/usb") => "usb".to_owned(),
+            // a USB-SATA bridge (UAS) reports ID_BUS=ata: the sysfs path says where the disk hangs
+            _ if canon.contains("/usb") => "usb".to_owned(),
             "" if name.starts_with("mmcblk") => if get("ID_DRIVE_FLASH_SD") == "1" { "sd".into() } else { "mmc".into() },
             "" if name.starts_with("nvme") => "nvme".to_owned(),
             "" => "other".to_owned(),

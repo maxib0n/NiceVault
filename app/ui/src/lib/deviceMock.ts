@@ -181,7 +181,7 @@ export class DeviceMock {
       table,
       table_forced: false,
       data_fs: o.data_fs,
-      client: { label: 'NiceVault', fs: 'exfat', offset: MIB, size: 128 * MIB },
+      client: { label: 'NiceVault', fs: 'exfat', offset: MIB, size: 512 * MIB },
       data: { label: 'VaultData', fs: o.data_fs, offset: 129 * MIB, size: 0 },
       data_size: d.size - 130 * MIB,
       first_volume: o.first_volume,

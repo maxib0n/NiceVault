@@ -34,6 +34,7 @@
   import { m } from '../paraglide/messages.js';
   import sources from '../../SOURCES.md?raw';
   import Brand from '../components/Brand.svelte';
+  import Maker from '../components/Maker.svelte';
   import Dialog from '../components/Dialog.svelte';
   import Band from '../ornament/Band.svelte';
   import InkChip from '../components/InkChip.svelte';
@@ -84,6 +85,7 @@
   }
 
   // the app's own look: dark first (the default), then light, then the OS
+  const VIDEO_ARROWS = ['seek', 'step'] as const;
   const APP_THEMES: { id: ThemeId; label: () => string }[] = [
     { id: 'dark', label: m.theme_dark },
     { id: 'light', label: m.theme_light },
@@ -329,6 +331,15 @@
         </section>
       {/if}
 
+      <section class="block" aria-labelledby="set-va" data-testid="settings-video-arrows">
+        <h2 id="set-va" class="block-title display">{m.set_video_arrows()}</h2>
+        <div class="segmented" role="radiogroup" aria-labelledby="set-va" tabindex="-1" data-testid="video-arrows" onkeydown={(e) => radioKeys(e, VIDEO_ARROWS, appLook.videoArrows, (v) => setApp({ video_arrows: v }))}>
+          {#each VIDEO_ARROWS as v (v)}
+            <button type="button" role="radio" data-value={v} aria-checked={appLook.videoArrows === v} tabindex={appLook.videoArrows === v ? 0 : -1} onclick={() => setApp({ video_arrows: v })}>{v === 'seek' ? m.set_video_arrows_seek() : m.set_video_arrows_step()}</button>
+          {/each}
+        </div>
+      </section>
+
       <section class="block" aria-labelledby="set-snd" data-testid="settings-sounds">
         <h2 id="set-snd" class="block-title display">{m.set_sounds()}</h2>
         <div class="switch-row">
@@ -461,6 +472,7 @@
   </div>
 
   <footer class="imprint"><Brand /></footer>
+  <Maker />
 </main>
 
 <Dialog open={licences} title={m.set_licences()} variant="wide" onclose={() => (licences = false)}>
@@ -778,6 +790,8 @@
   .imprint {
     display: flex;
     justify-content: center;
+    align-items: center;
+    gap: var(--space-3);
     padding: 0 0 var(--space-4);
   }
 </style>

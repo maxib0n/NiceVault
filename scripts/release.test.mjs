@@ -23,7 +23,6 @@ import {
   changeFromMessage,
   computeNextVersion,
   ghReleaseArgs,
-  olderReleases,
   highestChange,
   platformKeysFor,
   readyNotes,
@@ -152,13 +151,6 @@ describe("buildLatestJson", () => {
   it("knows only the shipped artefacts", () => {
     assert.deepEqual(platformKeysFor("SHA256SUMS"), []);
     assert.deepEqual(platformKeysFor("NiceVault-linux-x86_64.sig"), []);
-  });
-});
-
-describe("olderReleases", () => {
-  it("keeps only the version just published", () => {
-    const list = JSON.stringify([{ tagName: "v1.2.3" }, { tagName: "v1.2.2" }, { tagName: "v1.1.0" }]);
-    assert.deepEqual(olderReleases(list, "1.2.3"), ["v1.2.2", "v1.1.0"]);
   });
 });
 

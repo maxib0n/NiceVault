@@ -18,6 +18,9 @@
   import { isMobile } from '../lib/platform';
   import { sidecarTracks } from '../lib/subtitles';
   import type { InfoReason } from './InfoViewer.svelte';
+  import { idle } from '../lib/stores/idle.svelte';
+  import { skipper } from '../lib/skip';
+  import { appLook } from '../lib/stores/applook.svelte';
 
   let {
     vault,
@@ -136,6 +139,10 @@
     }
     if (!watch) watch = requestAnimationFrame(endWatch);
   }
+  // playing counts as activity: the auto-lock never stops a film or a song halfway
+  function playing() {
+    if (mediaEl && !mediaEl.paused) idle.bump();
+  }
   function seeking() {
     atEnd = false; // the reader moved: play from there
   }
@@ -143,17 +150,25 @@
     if (watch) cancelAnimationFrame(watch);
   });
 
+  const skip = skipper();
   function key(e: KeyboardEvent) {
-    // j / l: back / forward 10 s, k: play/pause (the arrows stay "previous / next file")
+    // j / l: back / forward 10 s, k: play/pause (the arrows: see appLook.videoArrows)
     const el = mediaEl;
     if (!el || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     if (t?.closest('input, textarea')) return;
-    if (e.key === 'j' || e.key === 'l') {
+    // a film in full screen: ←/→ seek too, further with each quick press (lib/skip.ts)
+    const film = kind === 'video' && appLook.videoArrows === 'seek' && !!document.querySelector('.quick-look[data-full]');
+    if (film && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.shiftKey) {
+      e.preventDefault();
+      const dir = e.key === 'ArrowLeft' ? -1 : 1;
+      const d = skip(e.timeStamp, dir) * dir;
+      if (Number.isFinite(el.duration)) el.currentTime = Math.max(0, Math.min(el.duration, el.currentTime + d));
+    } else if (e.key === 'j' || e.key === 'l') {
       e.preventDefault();
       const d = e.key === 'j' ? -10 : 10;
       if (Number.isFinite(el.duration)) el.currentTime = Math.max(0, Math.min(el.duration, el.currentTime + d));
-    } else if (e.key === 'k') {
+    } else if (e.key === 'k' || (e.key === ' ' && !t?.closest('button, a, [role="slider"]'))) {
       e.preventDefault();
       if (el.paused) void el.play().catch(() => undefined);
       else el.pause();
@@ -181,6 +196,7 @@
         onerror={error}
         onplay={played}
         onseeking={seeking}
+        ontimeupdate={playing}
         ondblclick={() => !isMobile && window.dispatchEvent(new CustomEvent('nv:ql-fullscreen'))}
         onclick={() => (mediaEl?.paused ? void mediaEl.play().catch(() => undefined) : mediaEl?.pause())}
         use:decodeMedia={{ speed: 1, min: 0, key: `ql:${vault.id}:${node.id}` }}
@@ -190,7 +206,7 @@
   {:else}
     <div class="audio">
       <span class="vw-plate"><FileIcon type="audio" size={34} /></span>
-      <audio loop={via === 'stream'} src={src ?? undefined} preload="metadata" bind:this={mediaEl} onerror={error} onplay={played} onseeking={seeking}></audio>
+      <audio loop={via === 'stream'} src={src ?? undefined} preload="metadata" bind:this={mediaEl} onerror={error} onplay={played} onseeking={seeking} ontimeupdate={playing}></audio>
       <MediaControls media={mediaEl} kind="audio" />
       <p class="hint keys">{m.vw_media_keys()}</p>
     </div>
@@ -241,7 +257,8 @@
     position: absolute;
     left: 50%;
     bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    width: min(640px, calc(100% - 32px));
+    /* full screen: a long progress bar, grown smoothly from the window's 640 px */
+    width: min(1200px, calc(100% - 64px));
     z-index: 2;
     will-change: opacity;
     --nv-o: 1;
@@ -250,7 +267,8 @@
     transform: var(--nv-t);
     transition:
       --nv-o var(--dur-ui) var(--ease-out),
-      --nv-t var(--dur-ui) var(--ease-out);
+      --nv-t var(--dur-ui) var(--ease-out),
+      width 420ms var(--ease-out);
   }
   :global(.quick-look[data-full]:has(.ql-dock)) .player :global(.media-controls) {
     bottom: calc(108px + env(safe-area-inset-bottom, 0px));
@@ -260,8 +278,9 @@
     --nv-t: translate3d(-50%, 18px, 0);
     pointer-events: none;
   }
+  /* a definite width in both modes, so entering full screen animates it (see above) */
   .player :global(.media-controls) {
-    max-width: 640px;
+    width: min(640px, 100%);
   }
   .audio {
     display: flex;

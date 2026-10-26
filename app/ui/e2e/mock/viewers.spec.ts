@@ -197,6 +197,33 @@ test.describe('in-app viewers', () => {
     await expect(ql.getByTestId('viewer-media')).toHaveAttribute('data-via', 'scheme');
   });
 
+  test('video full screen: ←/→ seek by default, step to the next file with the "step" setting', async ({ page }) => {
+    for (const mode of ['seek', 'step']) {
+      const ql = await open(page, 'Video', 'Compleanno Giulia.webm', `&video_arrows=${mode}`);
+      const v = ql.locator('video');
+      await expect.poll(() => v.evaluate((e: HTMLVideoElement) => e.readyState)).toBeGreaterThanOrEqual(1);
+      await ql.getByTestId('mc-fullscreen').click();
+      await expect(page.locator('dialog[data-full="true"]')).toHaveCount(1);
+      await v.evaluate((e: HTMLVideoElement) => (e.currentTime = 0));
+      await page.keyboard.press('ArrowRight');
+      if (mode === 'seek') {
+        await expect.poll(() => v.evaluate((e: HTMLVideoElement) => e.currentTime)).toBeGreaterThan(0.5);
+        await expect(page.getByRole('dialog', { name: 'Anteprima di Compleanno Giulia.webm' })).toBeVisible();
+      } else {
+        await expect(page.getByRole('dialog', { name: 'Anteprima di Compleanno Giulia.webm' })).toHaveCount(0);
+        await expect(page.getByRole('dialog', { name: /^Anteprima di/ })).toBeVisible();
+      }
+    }
+  });
+
+  test('Impostazioni: the arrow-keys choice defaults to seek and switches', async ({ page }) => {
+    await boot(page, 'screen=settings');
+    const g = page.getByTestId('video-arrows');
+    await expect(g.getByRole('radio', { name: 'Avanti e indietro' })).toHaveAttribute('aria-checked', 'true');
+    await g.getByRole('radio', { name: 'File precedente e successivo' }).click();
+    await expect(g.getByRole('radio', { name: 'File precedente e successivo' })).toHaveAttribute('aria-checked', 'true');
+  });
+
   test('video: speed menu, own full screen (controls stay, Esc leaves), never the native player', async ({ page }) => {
     const ql = await open(page, 'Video', 'Compleanno Giulia.webm');
     const v = ql.locator('video');

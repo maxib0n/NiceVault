@@ -952,6 +952,9 @@
   "set_close_to_tray": "Resta nel vassoio quando chiudi la finestra",
   "set_close_to_tray_hint": "Chiudere la finestra la nasconde: NiceVault resta in esecuzione con la sua icona nell’area di notifica, i volumi aperti restano aperti finché il blocco automatico non li chiude. Esci dal menu dell’icona li blocca tutti e chiude l’app. Se il desktop non mostra icone di notifica, chiudere la finestra esce.",
   "set_new_like_app": "Come l’app",
+  "set_video_arrows": "Frecce nei video a schermo intero",
+  "set_video_arrows_seek": "Avanti e indietro",
+  "set_video_arrows_step": "File precedente e successivo",
   "set_sounds": "Suoni",
   "set_sounds_hint": "Piccoli suoni sobri per sblocco, blocco, copia, eliminazione e operazioni concluse. Volume basso; mai a finestra nascosta.",
   "set_new_like_app_hint": "Tema e inchiostro dei nuovi volumi seguono l’aspetto dell’app.",
@@ -1677,5 +1680,6 @@
   "space_body_growable": "Non c'è abbastanza spazio: servono {need}, liberi {free} sul disco. Libera spazio sul disco e riprova.",
   "space_extend": "Estendi il volume…",
   "space_cancel": "Annulla",
-  "space_ok": "Ho capito"
+  "space_ok": "Ho capito",
+  "maker_title": "maxib0n su GitHub"
 }

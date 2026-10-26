@@ -1373,6 +1373,7 @@ export class MockBackend {
   language = 'system';
   siteIcons = true;
   sounds = true;
+  videoArrows: 'seek' | 'step' = switches.video_arrows ?? 'seek';
   sidebarCollapsed = false;
   // the app's own look (?app_theme= / ?app_accent= / ?scale= start the session with another)
   appTheme: ThemeId = switches.app_theme ?? 'dark';
@@ -1405,6 +1406,7 @@ export class MockBackend {
       new_like_app: this.newLikeApp,
       site_icons: this.siteIcons,
       sounds: this.sounds,
+      video_arrows: this.videoArrows,
       sidebar_collapsed: this.sidebarCollapsed,
       start_at_login: this.startAtLogin,
       start_minimized: this.startMinimized,
@@ -1422,6 +1424,7 @@ export class MockBackend {
         new_like_app?: boolean;
         site_icons?: boolean;
         sounds?: boolean;
+        video_arrows?: string;
         sidebar_collapsed?: boolean;
         start_at_login?: boolean;
         start_minimized?: boolean;
@@ -1431,6 +1434,7 @@ export class MockBackend {
       if (p.language && ['system', 'it', 'en'].includes(p.language)) this.language = p.language;
       if (typeof p.site_icons === 'boolean') this.siteIcons = p.site_icons;
       if (typeof p.sounds === 'boolean') this.sounds = p.sounds;
+      if (p.video_arrows === 'seek' || p.video_arrows === 'step') this.videoArrows = p.video_arrows;
       if (typeof p.sidebar_collapsed === 'boolean') this.sidebarCollapsed = p.sidebar_collapsed;
       if (p.defaults) this.defaults = applySettings(this.defaults, p.defaults);
       if (p.app_theme && ['system', 'light', 'dark'].includes(p.app_theme)) this.appTheme = p.app_theme as ThemeId;

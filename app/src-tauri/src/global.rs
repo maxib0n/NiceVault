@@ -21,6 +21,8 @@ pub struct AppSettings {
     pub site_icons: bool,
     /// Subtle UI sounds (default on).
     pub sounds: bool,
+    /// ←/→ in a full-screen video: "seek" (default) or "step" (previous / next file).
+    pub video_arrows: String,
     /// The volume's sidebar folded to a slim rail (desktop; default off).
     pub sidebar_collapsed: bool,
     /// The app's own theme ("dark" | "light" | "system") and ink: Benvenuto, Impostazioni, the
@@ -52,6 +54,7 @@ pub struct AppSettingsPatch {
     pub defaults: Option<SettingsPatch>,
     pub site_icons: Option<bool>,
     pub sounds: Option<bool>,
+    pub video_arrows: Option<String>,
     pub sidebar_collapsed: Option<bool>,
     pub app_theme: Option<String>,
     pub app_accent: Option<String>,
@@ -87,6 +90,7 @@ impl AppState {
             new_like_app,
             site_icons: s.site_icons(),
             sounds: s.sounds(),
+            video_arrows: s.video_arrows().to_owned(),
             sidebar_collapsed: s.sidebar_collapsed(),
             start_at_login,
             start_minimized,
@@ -115,6 +119,9 @@ impl AppState {
             }
             if let Some(b) = patch.sounds {
                 s.set_sounds(b);
+            }
+            if let Some(v) = patch.video_arrows.as_deref() {
+                s.set_video_arrows(v);
             }
             if let Some(b) = patch.sidebar_collapsed {
                 s.set_sidebar_collapsed(b);

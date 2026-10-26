@@ -30,6 +30,8 @@ const GLOBAL_FILE: &str = "settings.json";
 pub const LANGUAGES: [&str; 3] = ["system", "it", "en"];
 /// Interface sizes (percent of the webview's natural zoom), Impostazioni > Aspetto dell'app.
 pub const UI_SCALES: [u32; 5] = [90, 100, 110, 125, 150];
+/// What ←/→ do in a full-screen video: seek inside it (default) or step to the previous / next file.
+pub const VIDEO_ARROWS: [&str; 2] = ["seek", "step"];
 /// The old per-stick file (recents + settings next to the exe). Imported once, then deleted.
 pub const LEGACY_FILE: &str = "NiceVault.json";
 const MAX_KNOWN: usize = 50;
@@ -161,6 +163,8 @@ pub struct Store {
     site_icons: bool,
     /// Subtle UI sounds (default on; played by the webview, nothing is written for them).
     sounds: bool,
+    /// ←/→ in a full-screen video: "seek" | "step".
+    video_arrows: String,
     /// The volume's sidebar folded to a slim rail (default off).
     sidebar_collapsed: bool,
     /// The app's own look, worn wherever no volume's look applies (Benvenuto, Impostazioni, the
@@ -274,6 +278,7 @@ impl Store {
         let mut language = LANGUAGES[0].to_owned();
         let mut site_icons = true;
         let mut sounds = true;
+        let mut video_arrows = VIDEO_ARROWS[0].to_owned();
         let mut sidebar_collapsed = false;
         let mut app_theme = crate::appearance::DEFAULT_THEME.to_owned();
         let mut app_accent = ACCENTS[0].to_owned();
@@ -299,6 +304,9 @@ impl Store {
                     }
                     if let Some(b) = map.get("sounds").and_then(|v| v.as_bool()) {
                         sounds = b;
+                    }
+                    if let Some(v) = map.get("video_arrows").and_then(|v| v.as_str()).filter(|v| VIDEO_ARROWS.contains(v)) {
+                        video_arrows = v.to_owned();
                     }
                     if let Some(b) = map.get("sidebar_collapsed").and_then(|v| v.as_bool()) {
                         sidebar_collapsed = b;
@@ -344,6 +352,7 @@ impl Store {
             new_like_app,
             site_icons,
             sounds,
+            video_arrows,
             sidebar_collapsed,
             global_raw,
             global_unreadable,
@@ -413,6 +422,7 @@ impl Store {
         self.global_raw.insert("language".into(), serde_json::Value::String(self.language.clone()));
         self.global_raw.insert("site_icons".into(), serde_json::Value::Bool(self.site_icons));
         self.global_raw.insert("sounds".into(), serde_json::Value::Bool(self.sounds));
+        self.global_raw.insert("video_arrows".into(), serde_json::Value::String(self.video_arrows.clone()));
         self.global_raw.insert("sidebar_collapsed".into(), serde_json::Value::Bool(self.sidebar_collapsed));
         self.global_raw.insert("app_theme".into(), serde_json::Value::String(self.app_theme.clone()));
         self.global_raw.insert("app_accent".into(), serde_json::Value::String(self.app_accent.clone()));
@@ -460,6 +470,18 @@ impl Store {
     pub fn set_sounds(&mut self, on: bool) {
         if on != self.sounds {
             self.sounds = on;
+            self.save_global();
+        }
+    }
+
+    /// ←/→ in a full-screen video: "seek" (default) or "step" (global setting).
+    pub fn video_arrows(&self) -> &str {
+        &self.video_arrows
+    }
+
+    pub fn set_video_arrows(&mut self, v: &str) {
+        if VIDEO_ARROWS.contains(&v) && v != self.video_arrows {
+            self.video_arrows = v.to_owned();
             self.save_global();
         }
     }
@@ -930,6 +952,23 @@ mod tests {
         assert_eq!(names(scan(d, 0)).len(), 2);
         assert!(on_removable(&d.join("x"), &[d.to_path_buf()]));
         assert_eq!(normalize(Path::new("/a/./b/../c")), Path::new("/a/c"));
+    }
+
+    /// An old settings.json without `video_arrows` loads with "seek"; junk values are ignored;
+    /// a chosen value persists.
+    #[test]
+    fn video_arrows_default_seek_and_round_trip() {
+        let t = tempfile::tempdir().unwrap();
+        let loc = || Locations { exe_dir: None, removable: Some(vec![]), config_dir: Some(t.path().to_path_buf()) };
+        std::fs::write(t.path().join(GLOBAL_FILE), r#"{"language":"it","sounds":false}"#).unwrap();
+        let mut st = Store::new(loc());
+        assert_eq!(st.video_arrows(), "seek");
+        st.set_video_arrows("nonsense");
+        assert_eq!(st.video_arrows(), "seek");
+        st.set_video_arrows("step");
+        assert_eq!(Store::new(loc()).video_arrows(), "step");
+        std::fs::write(t.path().join(GLOBAL_FILE), r#"{"video_arrows":"junk"}"#).unwrap();
+        assert_eq!(Store::new(loc()).video_arrows(), "seek");
     }
 
     /// known.json from a newer build: unknown keys survive a rewrite; a file this build cannot

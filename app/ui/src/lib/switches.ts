@@ -64,6 +64,8 @@ export interface Switches {
   /** mock: the app's own look (Impostazioni > Aspetto dell'app) the session starts with */
   app_theme: 'system' | 'light' | 'dark' | null;
   app_accent: AccentId | null;
+  /** mock: what ←/→ do in a full-screen video the session starts with */
+  video_arrows: 'seek' | 'step' | null;
   /** mock: interface size, percent (90 | 100 | 110 | 125 | 150) */
   scale: number | null;
   /** force every mock volume's emblem; hidden = opted out of showing it while locked */
@@ -151,6 +153,7 @@ export function parseSwitches(search: string): Switches {
     accent: pick(q.get('accent'), ACCENTS.map((a) => a.id)),
     app_theme: pick(q.get('app_theme'), ['system', 'light', 'dark'] as const),
     app_accent: pick(q.get('app_accent'), ACCENTS.map((a) => a.id)),
+    video_arrows: pick(q.get('video_arrows'), ['seek', 'step'] as const),
     scale: [90, 100, 110, 125, 150].includes(Number(q.get('scale'))) ? Number(q.get('scale')) : null,
     emblem: pick(q.get('emblem'), ['initial', 'icon', 'image', 'hidden'] as const),
     appearance: pick(q.get('appearance'), ['visible', 'encrypted'] as const),

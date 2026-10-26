@@ -66,6 +66,14 @@ describe('appearance (mock backend)', () => {
     await expect(api.vaultAppearanceSet(info.id, { visibility: 'boh' as never })).rejects.toMatchObject({ code: 'invalid_appearance' });
   });
 
+  it('video_arrows: seek by default, step when chosen, junk ignored', async () => {
+    expect((await api.appSettingsGet()).video_arrows).toBe('seek');
+    expect((await api.appSettingsSet({ video_arrows: 'step' })).video_arrows).toBe('step');
+    expect((await api.appSettingsSet({ video_arrows: 'nonsense' as never })).video_arrows).toBe('step');
+    expect((await api.appSettingsGet()).video_arrows).toBe('step');
+    expect((await api.appSettingsSet({ video_arrows: 'seek' })).video_arrows).toBe('seek');
+  });
+
   it('settings are per volume; no vault = the active one (bindActiveVault), none open = session defaults', async () => {
     const d = await api.settingsGet();
     expect(d).toEqual({ auto_lock_minutes: 15, accent: 'velluto', theme: 'dark', lock_on_sleep: true, lock_on_screen_lock: true, lock_scope: 'volume', grid_size: 'm', list_density: 'normal' });

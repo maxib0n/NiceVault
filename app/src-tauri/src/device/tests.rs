@@ -470,6 +470,12 @@ fn linux_sysfs_enumeration() {
     w(&sdd.join("sdd1/dev"), "8:49\n");
     w(&udev.join("b8:48"), "E:ID_BUS=usb\nE:ID_VENDOR=SanDisk\nE:ID_MODEL=Ultra\nE:ID_SERIAL_SHORT=4C530001071103235\n");
     w(&udev.join("b8:49"), "E:ID_FS_TYPE=vfat\nE:ID_FS_LABEL=MY_STICK\nE:ID_FS_LABEL_ENC=MY\\x20STICK\n");
+    // a 2.5" disk in a USB-SATA case: udev says ata, the path says usb
+    let sdc = t.path().join("sys/devices/pci0000:00/usb2/2-3/2-3:1.0/host8/block/sdc");
+    w(&sdc.join("size"), "1953525168\n");
+    w(&sdc.join("removable"), "0\n");
+    w(&sdc.join("dev"), "8:32\n");
+    w(&udev.join("b8:32"), "E:ID_BUS=ata\nE:ID_MODEL=ST1000LM025\n");
     // the internal NVMe with LUKS root
     let nvme = t.path().join("sys/devices/pci0000:00/nvme/nvme0/nvme0n1");
     w(&nvme.join("size"), "1000215216\n");
@@ -489,13 +495,14 @@ fn linux_sysfs_enumeration() {
     let sde = t.path().join("sys/devices/usb3/block/sde");
     w(&sde.join("size"), "0\n");
     std::fs::create_dir_all(&sys).unwrap();
-    for (n, p) in [("sdd", &sdd), ("nvme0n1", &nvme), ("loop0", &lo), ("sde", &sde), ("dm-0", &dm)] {
+    for (n, p) in [("sdc", &sdc), ("sdd", &sdd), ("nvme0n1", &nvme), ("loop0", &lo), ("sde", &sde), ("dm-0", &dm)] {
         std::os::unix::fs::symlink(p, sys.join(n)).unwrap();
     }
     let mi = "29 1 253:0 / / rw,relatime shared:1 - btrfs /dev/mapper/luks-x rw\n90 54 8:49 / /run/media/u/MY\\040STICK rw,nosuid shared:2 - vfat /dev/sdd1 rw\n";
     let d = super::enumerate::linux_disks(&sys, &udev, mi);
-    assert_eq!(d.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["/dev/loop0", "/dev/nvme0n1", "/dev/sdd"]);
-    let s = &d[2];
+    assert_eq!(d.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["/dev/loop0", "/dev/nvme0n1", "/dev/sdc", "/dev/sdd"]);
+    assert!(d[2].bus == "usb" && super::is_external(&d[2]), "a UAS bridge is external");
+    let s = &d[3];
     assert_eq!((s.vendor.as_str(), s.model.as_str(), s.serial.as_str(), s.bus.as_str()), ("SanDisk", "Ultra", "4C530001071103235", "usb"));
     assert_eq!((s.size, s.removable, s.is_system, s.is_virtual), (60062500 * 512, true, false, false));
     assert_eq!(s.partitions[0].label, "MY STICK");
@@ -505,7 +512,7 @@ fn linux_sysfs_enumeration() {
     assert_eq!((n.bus.as_str(), n.removable), ("nvme", false));
     assert!(d[0].is_virtual && d[0].bus == "virtual");
     let c = candidates(d, &HostCtx::default());
-    assert_eq!(c.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["/dev/sdd"]);
+    assert_eq!(c.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["/dev/sdd", "/dev/sdc"]);
 }
 
 #[test]

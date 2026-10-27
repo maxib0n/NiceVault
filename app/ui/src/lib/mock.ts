@@ -1,3 +1,4 @@
+import { BrowserLinkMock } from './browserLinkMock';
 import type {
   ApiError,
   AppearanceState,
@@ -123,6 +124,7 @@ const DEFAULT_SETTINGS: Settings = {
   lock_scope: 'volume',
   grid_size: 'm',
   list_density: 'normal',
+  browser_enabled: true,
 };
 
 export const MOCK_DURESS_PASSWORD = 'panico';
@@ -139,6 +141,7 @@ function applySettings(base: Settings, patch: Partial<Settings> | undefined): Se
   if ((LOCK_SCOPES as readonly string[]).includes(patch.lock_scope as string)) s.lock_scope = patch.lock_scope as Settings['lock_scope'];
   if ((GRID_SIZES as readonly string[]).includes(patch.grid_size as string)) s.grid_size = patch.grid_size as Settings['grid_size'];
   if ((LIST_DENSITIES as readonly string[]).includes(patch.list_density as string)) s.list_density = patch.list_density as Settings['list_density'];
+  if (typeof patch.browser_enabled === 'boolean') s.browser_enabled = patch.browser_enabled;
   return s;
 }
 
@@ -535,6 +538,7 @@ export class MockBackend {
   private fmtFull = new Set<string>();
   resize!: ResizeMock;
   viewers!: ViewersMock;
+  browserLink!: BrowserLinkMock;
   lastCreate: Record<string, unknown> | null = null;
 
   constructor(opts: Partial<MockOptions> = {}) {
@@ -557,6 +561,14 @@ export class MockBackend {
         emit: (event, payload) => this.emit(event, payload),
       },
       { fixed: this.opts.fixed, fail: this.opts.resizeFail },
+    );
+    this.browserLink = new BrowserLinkMock(
+      {
+        emit: (event, payload) => this.emit(event, payload),
+        installed: () => this.installed,
+        volumes: () => this.recentEntries().map((r) => ({ path: r.path, name: r.name })),
+      },
+      typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('browser'),
     );
     this.viewers = new ViewersMock({
       file: (vault, node) => {
@@ -1782,6 +1794,7 @@ export class MockBackend {
         }
         if (cmd === 'media_url' || cmd === 'media_release' || cmd === 'fs_open_mounted' || cmd === 'open_link') return this.viewers.invoke(cmd, a);
         if (cmd.startsWith('app_')) return this.global(cmd, a);
+        if (cmd.startsWith('browser_')) return this.browserLink.invoke(cmd, a);
         throw err('unknown_command', `Unknown command: ${cmd}`);
     }
   }

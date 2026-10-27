@@ -159,6 +159,20 @@ fn media_url_only_for_media() {
 }
 
 #[test]
+fn open_refuses_more_runners() {
+    use nicevault_app::state::{runs_code, sniffs_runnable};
+    for n in [
+        "a.rdp", "a.theme", "a.themepack", "a.deskthemepack", "a.msu", "a.wsb", "a.ps1xml", "a.psc1", "a.msh1", "a.msh2", "a.mshxml",
+        "a.mdb", "a.accdb", "a.cab", "a.iso", "a.img", "a.vhd", "a.vhdx", "a.afploc", "a.ftploc",
+    ] {
+        assert!(runs_code(n), "{n:?}");
+    }
+    assert!(sniffs_runnable(b"[KDE Desktop Entry]\nExec=id\n"));
+    assert!(sniffs_runnable(b"[Desktop Action x]\nExec=id\n"));
+    assert!(!sniffs_runnable(b"[Section]\nkey=value\n"));
+}
+
+#[test]
 fn open_refuses_unix_runners() {
     use nicevault_app::state::runs_code;
     for n in [

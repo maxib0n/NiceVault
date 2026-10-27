@@ -105,7 +105,7 @@ pub enum ImportKind {
     Csv,
 }
 
-fn schedule_clear(clip: Arc<dyn Clipboard>, value: Zeroizing<String>, after: Duration) {
+pub(crate) fn schedule_clear(clip: Arc<dyn Clipboard>, value: Zeroizing<String>, after: Duration) {
     std::thread::Builder::new()
         .name("nv-clipboard".into())
         .spawn(move || {

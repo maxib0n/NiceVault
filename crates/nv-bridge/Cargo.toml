@@ -1,0 +1,22 @@
+[package]
+name = "nv-bridge"
+description = "NiceVault's native-messaging host mode (run by the app binary) and its local IPC with the app"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "nv_bridge"
+path = "src/lib.rs"
+
+[dependencies]
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_IO", "Win32_Security", "Win32_Security_Authorization", "Win32_UI_WindowsAndMessaging", "Win32_System_Memory"] }
+
+[dev-dependencies]
+tempfile = "3"

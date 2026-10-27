@@ -8,6 +8,7 @@ pub mod emblem;
 pub mod error;
 pub mod external;
 pub mod fs_events;
+pub mod hardening;
 pub mod jobs;
 pub mod passwords;
 pub mod pm_icons;
@@ -22,6 +23,7 @@ pub mod updater;
 pub mod watch;
 pub mod autolock;
 pub mod autostart;
+pub mod browser;
 pub mod global;
 pub mod single;
 #[cfg(desktop)]
@@ -49,12 +51,97 @@ struct TauriEvents(tauri::AppHandle);
 
 impl Events for TauriEvents {
     fn emit(&self, event: &str, payload: serde_json::Value) {
+        if event == "vault-opened" || event == "vault-locked" || event == "vault-settings" {
+            browser_event(&self.0, event, &payload);
+        }
         if event == "vault-opened" || event == "vault-locked" {
             tray::refresh(&self.0);
             #[cfg(mobile)]
             mobile::docs_changed(&self.0);
         }
         let _ = self.0.emit(event, payload);
+    }
+}
+
+fn browser_event(app: &tauri::AppHandle, event: &str, payload: &serde_json::Value) {
+    let (app, opened, vault) = (app.clone(), event == "vault-opened", payload["vault"].as_str().map(str::to_owned));
+    std::thread::spawn(move || {
+        let Some(b) = app.try_state::<Arc<browser::Browser>>() else { return };
+        if !opened {
+            return b.notify();
+        }
+        let path = vault.and_then(|v| {
+            let st = app.try_state::<Arc<AppState>>()?;
+            let g = state::lock_or_recover(&st.vaults);
+            g.get(&v).map(|o| o.path.to_string_lossy().into_owned())
+        });
+        b.opened(path.as_deref());
+    });
+}
+
+struct BrowserHost(tauri::AppHandle);
+
+impl browser::Host for BrowserHost {
+    fn pair_prompt(&self, p: &browser::PairPrompt) {
+        #[cfg(desktop)]
+        tray::show_window(&self.0);
+        let _ = self.0.emit("browser-pair", p);
+    }
+    fn pair_closed(&self, id: &str) {
+        let _ = self.0.emit("browser-pair-closed", serde_json::json!({ "id": id }));
+    }
+    fn unlock_window(&self, path: &str) {
+        #[cfg(desktop)]
+        {
+            let (h, path) = (self.0.clone(), path.to_owned());
+            let _ = self.0.run_on_main_thread(move || compact_unlock(&h, &path));
+        }
+    }
+    fn unlock_done(&self) {
+        let h = self.0.clone();
+        let _ = self.0.run_on_main_thread(move || {
+            if let Some(w) = h.get_webview_window(UNLOCK_WINDOW) {
+                let _ = w.close();
+            }
+        });
+    }
+    fn clipboard(&self) -> Option<Arc<dyn passwords::Clipboard>> {
+        Some(Arc::new(passwords::TauriClipboard(self.0.clone())))
+    }
+    fn changed(&self) {
+        let _ = self.0.emit("browser-changed", ());
+    }
+    fn show_app(&self) {
+        #[cfg(desktop)]
+        tray::show_window(&self.0);
+    }
+}
+
+const UNLOCK_WINDOW: &str = "unlock";
+
+#[cfg(desktop)]
+fn compact_unlock(app: &tauri::AppHandle, path: &str) {
+    let spec = serde_json::json!({ "kind": "unlock", "path": path });
+    if let Some(w) = app.get_webview_window(UNLOCK_WINDOW) {
+        let _ = w.eval(format!("window.__nvCompactSet && window.__nvCompactSet({spec})"));
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        return;
+    }
+    let b = tauri::WebviewWindowBuilder::new(app, UNLOCK_WINDOW, tauri::WebviewUrl::App("index.html".into()))
+        .title("NiceVault")
+        .inner_size(440.0, 360.0)
+        .resizable(false)
+        .minimizable(false)
+        .maximizable(false)
+        .always_on_top(true)
+        .center()
+        .focused(true)
+        .background_color(tauri::window::Color(0x1b, 0x1a, 0x19, 0xff))
+        .initialization_script(format!("window.__NV_COMPACT__ = {spec};"));
+    if let Ok(w) = b.build() {
+        let _ = w.set_focus();
     }
 }
 
@@ -70,6 +157,8 @@ fn app_url(u: &tauri::Url) -> bool {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let minimized = autostart::launched_minimized(std::env::args_os());
+    let background = std::env::args_os().skip(1).any(|a| a == "--background");
+    let minimized = minimized || background;
     let mut builder = tauri::Builder::default();
     #[cfg(desktop)]
     if single::enabled() {
@@ -95,6 +184,11 @@ pub fn run() {
             #[cfg(desktop)]
             match event {
                 tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => window_geom::track(window),
+                tauri::WindowEvent::Destroyed if window.label() == UNLOCK_WINDOW => {
+                    if let Some(b) = window.app_handle().try_state::<Arc<browser::Browser>>() {
+                        b.unlock_cancelled();
+                    }
+                }
                 tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => {
                     window_geom::track(window);
                     if let Some(k) = window.app_handle().try_state::<window_geom::Keeper>() {
@@ -137,6 +231,14 @@ pub fn run() {
             let log_dir = if portable { std::env::temp_dir().join("NiceVault") } else { dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("NiceVault") };
             app.manage(device::job::DeviceCtx::new(device::backend::detect(), log_dir));
             app.manage(state);
+            let host = Box::new(BrowserHost(app.handle().clone()));
+            let br = browser::Browser::new(Arc::downgrade(app.state::<Arc<AppState>>().inner()), config_dir.clone(), host);
+            #[cfg(desktop)]
+            {
+                browser::listen(&br);
+                browser::sync_registration(&br);
+            }
+            app.manage(br);
             app.manage(Arc::new(viewers::MediaServer::default()));
             let launch = single::Launch::default();
             if let Ok(cwd) = std::env::current_dir()
@@ -159,7 +261,7 @@ pub fn run() {
                     let _ = w.show();
                 }
                 #[cfg(desktop)]
-                if minimized && !tray_up {
+                if minimized && !tray_up && !background {
                     let _ = w.minimize();
                 }
                 if minimized && tray_up {
@@ -243,6 +345,11 @@ pub fn run() {
             commands::app_settings_get,
             commands::app_settings_set,
             commands::app_info,
+            browser::cmd::browser_info,
+            browser::cmd::browser_set,
+            browser::cmd::browser_unpair,
+            browser::cmd::browser_pair_answer,
+            browser::cmd::browser_unlock_cancel,
             single::cmd::launch_path_take,
             updater::cmd::update_check,
             updater::cmd::update_download,

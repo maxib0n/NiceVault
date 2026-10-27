@@ -40,6 +40,7 @@ class Vaults {
   backends = $state<Backend[]>([]);
   unlockedAt = -1e9;
   mountBusy = $state(false);
+  creating = false;
 
   active = $derived(this.open.find((v) => v.id === this.activeId) ?? null);
   browser = $derived(this.activeId ? (this.browsers.get(this.activeId) ?? null) : null);
@@ -57,6 +58,18 @@ class Vaults {
     idle.startVault(info.id, info.settings?.auto_lock_minutes);
     void this.browsers.get(info.id)!.load();
     void this.loadBackends();
+  }
+
+  async adoptExternal(id: VaultId) {
+    if (this.unlock.phase === 'unlocking' || this.creating) return;
+    if (this.open.some((v) => v.id === id)) return;
+    const info = (await api.vaultListOpen().catch(() => [] as VaultInfo[])).find((v) => v.id === id);
+    if (!info || this.open.some((v) => v.id === id)) return;
+    const prev = this.activeId;
+    this.adopt(info);
+    if (app.screen === 'unlock' && app.unlockTarget?.path === info.path) app.goto('vault');
+    else if (prev) this.activeId = prev;
+    void app.loadRecents();
   }
 
   async unlockVault(target: RecentEntry, password: string): Promise<boolean> {
@@ -99,7 +112,13 @@ class Vaults {
   }
 
   async createVault(path: string, password: string, fixedSize?: number | null): Promise<VaultInfo> {
-    const info = await api.vaultCreate(path, password, 'strong', fixedSize);
+    this.creating = true;
+    let info: VaultInfo;
+    try {
+      info = await api.vaultCreate(path, password, 'strong', fixedSize);
+    } finally {
+      this.creating = false;
+    }
     this.adopt(info);
     void app.loadRecents();
     return info;

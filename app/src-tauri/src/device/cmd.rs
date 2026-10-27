@@ -204,6 +204,12 @@ pub fn fetch_missing(ctx: &DeviceCtx, job: &str) -> ApiResult<Outcome> {
 
 pub fn eject(ctx: &DeviceCtx, id: &str) -> ApiResult<()> {
     let d = ctx.find(id)?;
+    if d.is_system {
+        return Err(super::Refusal::System.error());
+    }
+    if !d.is_virtual && !super::is_external(&d) {
+        return Err(super::Refusal::Internal.error());
+    }
     let log = Log::open(&ctx.log_dir);
     ctx.ops.eject(&d, &log)
 }

@@ -131,6 +131,8 @@ const RUNS_ON_WINDOWS: &[&str] = &[
     "scr", "pif", "lnk", "cpl", "reg", "jar", "url", "inf", "scf", "application", "appref-ms", "gadget", "msc", "msh",
     "xll", "settingcontent-ms", "library-ms", "search-ms", "chm", "dll", "sys", "appx", "msix", "appinstaller", "diagcab",
     "py", "pyw", "pyz", "pyc", "ws", "wsc", "sct", "ade", "adp", "mde", "accde", "xbap", "jnlp", "vb", "msixbundle", "appxbundle",
+    "rdp", "theme", "themepack", "deskthemepack", "msu", "wsb", "ps1xml", "psc1", "msh1", "msh2", "mshxml", "mdb", "accdb",
+    "cab", "iso", "img", "vhd", "vhdx",
 ];
 const RUNS_ON_LINUX: &[&str] = &[
     "desktop", "kdesktop", "sh", "bash", "zsh", "csh", "ksh", "tcsh", "fish", "run", "bin", "appimage", "flatpak", "flatpakref",
@@ -139,6 +141,7 @@ const RUNS_ON_LINUX: &[&str] = &[
 const RUNS_ON_MACOS: &[&str] = &[
     "app", "command", "tool", "terminal", "webloc", "inetloc", "fileloc", "pkg", "mpkg", "scpt", "scptd", "applescript", "workflow",
     "action", "prefpane", "qlgenerator", "kext", "osax", "saver", "plugin", "bundle", "dylib", "mobileconfig", "dmg", "shortcut",
+    "afploc", "ftploc",
 ];
 
 pub fn runs_code(name: &str) -> bool {
@@ -150,7 +153,7 @@ pub fn runs_code(name: &str) -> bool {
 pub fn sniffs_runnable(h: &[u8]) -> bool {
     const MAGIC: &[&[u8]] = &[b"\x7fELF", b"MZ", b"#!", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"];
     MAGIC.iter().any(|m| h.starts_with(m)) || (h.starts_with(b"PK\x03\x04") && h.windows(20).any(|w| w == b"META-INF/MANIFEST.MF"))
-        || h.starts_with(b"[Desktop Entry]")
+        || [&b"[Desktop Entry]"[..], b"[KDE Desktop Entry]", b"[Desktop Action"].iter().any(|m| h.starts_with(m))
 }
 
 pub fn refuse_runnable(v: &Vault, n: &Node) -> ApiResult<()> {
@@ -558,6 +561,7 @@ impl AppState {
         if let Some(o) = lock_or_recover(&self.vaults).values_mut().find(|o| Arc::ptr_eq(&o.vault, &v)) {
             o.autolock = s.clone();
         }
+        self.emit("vault-settings", serde_json::json!({ "name": name }));
         Ok(s)
     }
 

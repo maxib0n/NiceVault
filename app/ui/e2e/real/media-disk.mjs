@@ -86,7 +86,7 @@ for (let i = 0; i < 100 && !(await wd.exec('return !!document.querySelector("[da
 const invoke = (cmd, args) =>
   wd.execAsync('const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke(arguments[0], arguments[1]).then((v) => done({ ok: v }), (e) => done({ err: e }));', cmd, args);
 
-async function scenario(name, srcExpr, { loop = false } = {}) {
+async function scenario(name, srcExpr, { loop = false, play = true } = {}) {
   await wd.execAsync(
     `const done = arguments[arguments.length - 1];
      (async () => {
@@ -96,7 +96,8 @@ async function scenario(name, srcExpr, { loop = false } = {}) {
        v.style = 'position:fixed;left:0;top:0;width:320px;z-index:99999';
        document.body.append(v);
        v.src = await (${srcExpr});
-       v.play().catch((e) => (window.__nvPlayErr = String(e)));
+       if (${play}) v.play().catch((e) => (window.__nvPlayErr = String(e)));
+       else { v.crossOrigin = 'anonymous'; v.addEventListener('loadedmetadata', () => { v.currentTime = Math.min(1, v.duration * 0.1); }, { once: true }); }
        done(true);
      })().catch((e) => done(String(e)));`,
   );
@@ -145,12 +146,13 @@ const ticket = `window.__TAURI_INTERNALS__.invoke('media_url', { vault: ${JSON.s
 const nv = `'nvault://' + encodeURIComponent(${JSON.stringify(vid)}) + '/${node.id}'`;
 const raw = await scenario('app loopback stream without loop', ticket);
 const looped = await scenario('app loopback stream + loop (MediaViewer)', ticket, { loop: true });
+const thumb = await scenario('app loopback stream as a video thumbnail (loop, seek, no play)', ticket, { loop: true, play: false });
 const scheme = await scenario('nvault:// scheme', nv);
 const blob = await scenario(
   'blob from nvault:// (ranged fetches, MediaViewer up to MEDIA_RAM_MAX)',
   `(async () => { const parts = []; for (let o = 0; o < ${video.length}; o += 8 << 20) { const r = await fetch(${nv}, { headers: { Range: 'bytes=' + o + '-' + (Math.min(${video.length}, o + (8 << 20)) - 1) } }); parts.push(await r.arrayBuffer()); } return URL.createObjectURL(new Blob(parts, { type: 'video/webm' })); })()`,
 );
-out.push(raw, looped, scheme, blob);
+out.push(raw, looped, thumb, scheme, blob);
 await invoke('vault_lock', { id: vid }).catch(() => undefined);
 await wd.quit().catch(() => undefined);
 server.close();
@@ -159,6 +161,7 @@ const fails = [];
 const played = (o) => o.st && !o.st.err && o.st.readyState >= 2 && o.st.t > 1;
 if (looped.disk || !played(looped)) fails.push('the looping stream buffered on disk or did not play');
 if (blob.disk || !played(blob)) fails.push('the blob buffered on disk or did not play');
+if (thumb.disk) fails.push('the thumbnail stream buffered on disk');
 if (!raw.disk) console.log('note: WebKit no longer disk-buffers a plain http stream (mechanism gone?)');
 if (!scheme.st?.err) console.log('note: nvault:// plays in <video> now: the loopback stream may be unnecessary');
 for (const f of fails) console.log(`FAIL ${f}`);

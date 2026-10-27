@@ -6,7 +6,6 @@ import sub from 'markdown-it-sub';
 import sup from 'markdown-it-sup';
 import mark from 'markdown-it-mark';
 import abbr from 'markdown-it-abbr';
-import anchor from 'markdown-it-anchor';
 import DOMPurify from 'dompurify';
 import { languageFor, tokenize } from './highlight';
 
@@ -110,6 +109,9 @@ function mathBlock(state: StateBlock, startLine: number, endLine: number, silent
     first = first.trim().slice(0, -2);
     found = true;
   }
+  const env = state.env as { nvNoMathClose?: Map<number, number> };
+  const noClose = env.nvNoMathClose?.get(endLine);
+  if (!found && noClose !== undefined && startLine >= noClose) return false;
   if (silent) return true;
   while (!found) {
     next++;
@@ -123,7 +125,10 @@ function mathBlock(state: StateBlock, startLine: number, endLine: number, silent
       found = true;
     }
   }
-  if (!found) return false;
+  if (!found) {
+    if (next >= endLine) (env.nvNoMathClose ??= new Map()).set(endLine, Math.min(noClose ?? startLine, startLine));
+    return false;
+  }
   state.line = next + 1;
   const t = state.push('math_block', 'div', 0);
   t.block = true;
@@ -171,7 +176,23 @@ function build(labels: Labels): MarkdownIt {
   });
   md.validateLink = () => true;
   md.linkify.set({ fuzzyEmail: false });
-  md.use(footnote).use(deflist).use(emoji).use(sub).use(sup).use(mark).use(abbr).use(anchor, { slugify, tabIndex: false });
+  md.use(footnote).use(deflist).use(emoji).use(sub).use(sup).use(mark).use(abbr);
+  md.core.ruler.push('md_heading_ids', (state) => {
+    const used = new Set<string>();
+    const next = new Map<string, number>();
+    const ts = state.tokens;
+    for (let i = 0; i + 1 < ts.length; i++) {
+      if (ts[i].type !== 'heading_open' || ts[i].attrGet('id') !== null) continue;
+      const text = (ts[i + 1].children ?? []).filter((c) => c.type === 'text' || c.type === 'code_inline').map((c) => c.content).join('');
+      const base = slugify(text);
+      let id = base;
+      let n = next.get(base) ?? 1;
+      while (used.has(id)) id = `${base}-${n++}`;
+      next.set(base, n);
+      used.add(id);
+      ts[i].attrSet('id', id);
+    }
+  });
   md.inline.ruler.after('escape', 'math_inline', mathInline);
   md.block.ruler.after('blockquote', 'math_block', mathBlock, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
 
@@ -320,7 +341,7 @@ export function sanitizeMath(html: string): string {
 
 export function sanitizeSvg(svg: string): string {
   purifier ??= DOMPurify(window);
-  return purifier.sanitize(svg, {
+  const clean = purifier.sanitize(svg, {
     USE_PROFILES: { svg: true, svgFilters: true },
     ADD_TAGS: ['style'],
     FORBID_TAGS: ['a', 'foreignObject', 'image', 'use', 'script', 'animate', 'set', 'animateTransform', 'animateMotion'],
@@ -328,6 +349,76 @@ export function sanitizeSvg(svg: string): string {
     ALLOW_DATA_ATTR: false,
     RETURN_TRUSTED_TYPE: false,
   }) as string;
+  if (!clean.includes('<style')) return clean;
+  const t = document.createElement('template');
+  t.innerHTML = clean;
+  for (const st of t.content.querySelectorAll('style')) {
+    const id = st.closest('svg')?.getAttribute('id') ?? '';
+    st.textContent = /^[\w-]+$/.test(id) ? scopedCss(st.textContent ?? '', `#${id}`) : '';
+  }
+  return t.innerHTML;
+}
+
+function cssBlocks(css: string): [string, string][] | null {
+  const out: [string, string][] = [];
+  let i = 0;
+  let start = 0;
+  let depth = 0;
+  let open = 0;
+  while (i < css.length) {
+    const c = css[i];
+    if (c === '"' || c === "'") {
+      for (i = i + 1; i < css.length && css[i] !== c; i++) if (css[i] === '\\') i++;
+      if (i >= css.length) return null;
+    } else if (c === '/' && css[i + 1] === '*') {
+      const j = css.indexOf('*/', i + 2);
+      if (j < 0) return null;
+      i = j + 1;
+    } else if (c === '{') {
+      if (depth++ === 0) open = i;
+    } else if (c === '}') {
+      if (--depth < 0) return null;
+      if (depth === 0) {
+        out.push([css.slice(start, open).trim(), css.slice(open + 1, i)]);
+        start = i + 1;
+      }
+    }
+    i++;
+  }
+  return depth === 0 ? out : null;
+}
+
+export function scopedCss(css: string, scope: string): string {
+  const blocks = cssBlocks(css);
+  if (!blocks) return '';
+  const own = (sel: string) => {
+    if (!(sel === scope || /^[ .:>[]/.test(sel.slice(scope.length, scope.length + 1))) || !sel.startsWith(scope)) return false;
+    const rest = sel.slice(scope.length);
+    let depth = 0;
+    for (let i = 0; i < rest.length; i++) {
+      const c = rest[i];
+      if (c === '(' || c === '[') depth++;
+      else if (c === ')' || c === ']') depth--;
+      else if (depth === 0 && (c === ' ' || c === '>' || c === '~' || c === '+')) {
+        const k = /[^\s]/.exec(rest.slice(i))?.[0];
+        return k !== '~' && k !== '+';
+      }
+    }
+    return true;
+  };
+  const flat = (body: string) => cssBlocks(body)?.length === 0;
+  const out: string[] = [];
+  for (const [prelude, body] of blocks) {
+    if (/^@keyframes\s+[\w-]+$/i.test(prelude)) {
+      if (!/[;{]\s*@|url\s*\(/i.test(body)) out.push(`${prelude}{${body}}`);
+    } else if (/^@media\b[^{};@]*$/i.test(prelude)) {
+      const inner = scopedCss(body, scope);
+      if (inner) out.push(`${prelude}{${inner}}`);
+    } else if (!prelude.startsWith('@') && prelude.split(',').every((x) => own(x.trim())) && flat(body) && !/@import|url\s*\(/i.test(body)) {
+      out.push(`${prelude}{${body}}`);
+    }
+  }
+  return out.join('');
 }
 
 const cache = new Map<string, MarkdownIt>();

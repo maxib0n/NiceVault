@@ -88,10 +88,16 @@ impl Local {
     }
 }
 
-fn verified_sig(pubkey: &str, file: &Path, bytes: &[u8]) -> Option<(String, Option<String>)> {
+fn verified_sig(pubkey: &str, file: &Path, bytes: &[u8], platforms: &[&str], min: &str) -> Option<(String, Option<String>)> {
     let sig = std::fs::read_to_string(updater::sibling(file, ".sig")).ok()?;
     let trusted = updater::verify_signature(pubkey, bytes, sig.trim()).ok()?;
-    Some((sig.trim().to_owned(), updater::signed_version(&trusted)))
+    let version = updater::signed_version(&trusted)?;
+    platforms.iter().find(|p| updater::check_binding_at_least(&trusted, &version, min, p).is_ok())?;
+    Some((sig.trim().to_owned(), Some(version)))
+}
+
+fn keys_for(os: Os, key: &'static str) -> Vec<&'static str> {
+    if os == Os::Linux { vec!["linux-x86_64-appimage", key] } else { vec![key] }
 }
 
 pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
@@ -108,12 +114,12 @@ pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
         }
         v
     };
-    for &(os, _, name) in BUILDS.iter().filter(|(o, _, _)| want.contains(o)) {
+    for &(os, key, name) in BUILDS.iter().filter(|(o, _, _)| want.contains(o)) {
         if os == l.os {
             match os {
                 Os::Linux | Os::Windows => {
                     if let Ok(bytes) = std::fs::read(&l.exe) {
-                        let s = verified_sig(&l.pubkey, &l.exe, &bytes);
+                        let s = verified_sig(&l.pubkey, &l.exe, &bytes, &keys_for(os, key), &l.version);
                         let version = s.as_ref().and_then(|s| s.1.clone()).or(Some(l.version.clone()));
                         out.files.push(Build { os, name: name.into(), sig: s.map(|s| s.0), bytes, version, origin: Origin::Running });
                         continue;
@@ -133,7 +139,7 @@ pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
         for d in &dirs {
             let candidates = if os == Os::Linux { vec![d.join(LINUX_APPIMAGE), d.join(name)] } else { vec![d.join(name)] };
             let Some((f, bytes)) = candidates.into_iter().find_map(|f| std::fs::read(&f).ok().map(|b| (f, b))) else { continue };
-            if let Some((sig, version)) = verified_sig(&l.pubkey, &f, &bytes) {
+            if let Some((sig, version)) = verified_sig(&l.pubkey, &f, &bytes, &keys_for(os, key), &l.version) {
                 out.files.push(Build { os, name: name.into(), bytes, sig: Some(sig), version, origin: Origin::Sibling });
                 break;
             }
@@ -212,7 +218,7 @@ pub fn write_verified(dir: &Path, name: &str, bytes: &[u8]) -> ApiResult<()> {
     let dest = dir.join(name);
     let part = dir.join(format!("{name}.part"));
     let r = (|| {
-        let mut f = std::fs::File::create(&part)?;
+        let mut f = create_fresh(&part)?;
         f.write_all(bytes)?;
         f.sync_all()?;
         drop(f);
@@ -269,6 +275,30 @@ pub(crate) fn bundle_matches_zip(zip_bytes: &[u8], app: &Path) -> bool {
         }
     }
     true
+}
+
+pub fn create_fresh(p: &Path) -> std::io::Result<std::fs::File> {
+    remove_any(p);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.custom_flags(libc::O_NOFOLLOW);
+    }
+    o.open(p)
+}
+
+pub fn create_fresh_private(p: &Path) -> std::io::Result<std::fs::File> {
+    remove_any(p);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.custom_flags(libc::O_NOFOLLOW).mode(0o600);
+    }
+    o.open(p)
 }
 
 pub fn remove_any(p: &Path) {
@@ -513,6 +543,26 @@ pub fn write_marker(dir: &Path, m: &Marker) -> ApiResult<()> {
     write_verified(dir, super::MARKER, &serde_json::to_vec_pretty(m).unwrap())
 }
 
+pub const MARKER_MAX: u64 = 64 << 10;
+
 pub fn read_marker(dir: &Path) -> Option<Marker> {
-    serde_json::from_slice(&std::fs::read(dir.join(super::MARKER)).ok()?).ok()
+    use std::io::Read;
+    let p = dir.join(super::MARKER);
+    let m = std::fs::symlink_metadata(&p).ok()?;
+    if !m.is_file() || m.len() > MARKER_MAX {
+        return None;
+    }
+    let mut o = std::fs::OpenOptions::new();
+    o.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let mut b = vec![];
+    o.open(&p).ok()?.take(MARKER_MAX + 1).read_to_end(&mut b).ok()?;
+    if b.len() as u64 > MARKER_MAX {
+        return None;
+    }
+    serde_json::from_slice(&b).ok()
 }

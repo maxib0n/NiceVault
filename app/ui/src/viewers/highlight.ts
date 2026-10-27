@@ -7,6 +7,7 @@ export interface Token {
 type Rule = [TokenClass | null | 'ident', RegExp];
 interface Lang {
   rules: Rule[];
+  plain?: RegExp;
   keywords?: Set<string>;
   literals?: Set<string>;
   types?: Set<string>;
@@ -22,6 +23,7 @@ const SQ: Rule = ['str', y(/'(?:\\[\s\S]|[^'\\\n])*'?/)];
 const BLOCK: Rule = ['com', y(/\/\*[\s\S]*?(?:\*\/|$)/)];
 const LINE: Rule = ['com', y(/\/\/[^\n]*/)];
 const HASH: Rule = ['com', y(/#[^\n]*/)];
+const DOTTED = /[\w$.:-]+|\s+|./y;
 
 const cLike = (kw: string, lit: string, extra: Rule[] = [], types = ''): Lang => ({
   rules: [BLOCK, LINE, ...extra, DQ, SQ, NUM, IDENT],
@@ -79,12 +81,15 @@ const LANGS: Record<string, Lang> = {
       ['attr', y(/[\w:.-]+(?==)/)],
       ['meta', y(/&[#\w]+;/)],
     ],
+    plain: DOTTED,
   },
   yaml: {
     rules: [HASH, ['meta', y(/^---$|^\.\.\.$/m)], ['key', y(/[\w.-]+(?=\s*:(?:\s|$))/)], DQ, SQ, NUM, ['lit', y(/\b(?:true|false|null|yes|no|on|off)\b/i)], ['meta', y(/[&*][\w-]+|![\w!-]*/)]],
+    plain: DOTTED,
   },
   ini: {
     rules: [['com', y(/[#;][^\n]*/)], ['meta', y(/^\s*\[[^\]\n]*\]?/m)], ['key', y(/[\w.-]+(?=\s*=)/)], ['str', y(/"""[\s\S]*?(?:"""|$)/)], DQ, SQ, NUM, ['lit', y(/\b(?:true|false)\b/)]],
+    plain: DOTTED,
   },
   sql: {
     rules: [['com', y(/--[^\n]*/)], BLOCK, SQ, DQ, NUM, IDENT],
@@ -172,7 +177,7 @@ export function tokenize(text: string, lang: string | null): Token[] {
       i += s.length;
       continue outer;
     }
-    const w = /[\w$]+|\s+|./y;
+    const w = L.plain ?? /[\w$]+|\s+|./y;
     w.lastIndex = i;
     const s = w.exec(text)![0];
     push(null, s);

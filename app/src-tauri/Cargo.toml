@@ -49,6 +49,12 @@ fs4 = "0.13"
 zip = { version = "9.1.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "gif", "webp", "bmp"] }
 resvg = { version = "0.49", default-features = false }
+nv-bridge = { path = "../../crates/nv-bridge" }
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
+hkdf = "0.12"
+hmac = "0.12"
+aes-gcm = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
 
 [dev-dependencies]
 tempfile = "3"

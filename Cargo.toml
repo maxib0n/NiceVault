@@ -1,12 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/nv-fs", "crates/nv-core", "crates/nv-mount", "app/src-tauri",
+    "crates/nv-fs", "crates/nv-core", "crates/nv-mount", "crates/nv-bridge", "app/src-tauri",
 ]
 
 [workspace.package]
 edition = "2024"
-version = "0.3.2"
+version = "0.3.3"
 license = "GPL-3.0-or-later"
 
 [profile.release]

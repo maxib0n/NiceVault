@@ -151,6 +151,16 @@ describe("buildLatestJson", () => {
     assert.deepEqual(platformKeysFor("SHA256SUMS"), []);
     assert.deepEqual(platformKeysFor("NiceVault-linux-x86_64.sig"), []);
   });
+  it("serves each key exactly the file the app's updater accepts for it (updater.rs artefact_for)", () => {
+    const artefactFor = (key) =>
+      key.endsWith("-appimage") ? `NiceVault-${key.slice(0, -"-appimage".length)}.AppImage`
+      : key.startsWith("darwin-") ? "NiceVault-macos-universal.zip"
+      : key.startsWith("windows-") ? `NiceVault-${key}.exe`
+      : `NiceVault-${key}`;
+    for (const f of ARTEFACTS) {
+      for (const key of platformKeysFor(f)) assert.equal(artefactFor(key), f, key);
+    }
+  });
 });
 
 describe("ghReleaseArgs", () => {

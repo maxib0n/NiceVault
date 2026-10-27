@@ -153,6 +153,7 @@ export interface Settings {
   lock_scope: LockScope;
   grid_size: GridSize;
   list_density: ListDensity;
+  browser_enabled: boolean;
 }
 
 export type LockScope = 'volume' | 'all';
@@ -196,6 +197,10 @@ export interface EventMap {
   'update-progress': UpdateProgress;
   'pm-icons': { vault: VaultId; done: number; total: number };
   'open-path': null;
+  'vault-opened': { vault: VaultId };
+  'browser-pair': import('./browserLink').PairPrompt;
+  'browser-pair-closed': { id: string };
+  'browser-changed': null;
 }
 
 export type EventName = keyof EventMap;

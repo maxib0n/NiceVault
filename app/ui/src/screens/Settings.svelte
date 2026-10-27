@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowLeft, FilePlus2, HardDrive, Info, KeyRound, Languages, Palette, Power, RefreshCw, ScrollText } from '@lucide/svelte';
+  import { ArrowLeft, FilePlus2, Globe, HardDrive, Info, KeyRound, Languages, Palette, Power, RefreshCw, ScrollText } from '@lucide/svelte';
   import { onMount } from 'svelte';
   import * as api from '../lib/api';
   import type { AppInfo, AppSettings } from '../lib/api';
@@ -22,6 +22,7 @@
   import Band from '../ornament/Band.svelte';
   import InkChip from '../components/InkChip.svelte';
   import Stitch from '../ornament/Stitch.svelte';
+  import BrowserSettings from '../components/BrowserSettings.svelte';
 
   let settings = $state<AppSettings | null>(null);
   let info = $state<AppInfo | null>(null);
@@ -291,6 +292,13 @@
         </div>
         <p class="hint" id="set-icons-hint">{m.set_site_icons_hint()}</p>
       </section>
+
+      {#if !isMobile}
+        <section class="block" aria-labelledby="set-browser" data-testid="settings-browser">
+          <h2 id="set-browser" class="block-title display"><span class="mark" aria-hidden="true"><Globe size={15} strokeWidth={1.6} /></span>{m.set_browser()}</h2>
+          <div><BrowserSettings /></div>
+        </section>
+      {/if}
 
       {#if isMobile}
         <section class="block" aria-labelledby="set-gallery-t" data-testid="settings-gallery">

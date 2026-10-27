@@ -34,7 +34,9 @@ impl Launch {
 }
 
 pub fn on_second(app: &AppHandle, args: Vec<String>, cwd: String) {
-    crate::tray::show_window(app);
+    if !args.iter().skip(1).any(|a| a == "--background") {
+        crate::tray::show_window(app);
+    }
     if let (Some(path), Some(launch)) = (volume_arg(&args, Path::new(&cwd)), app.try_state::<Launch>()) {
         launch.put(path);
         let _ = app.emit("open-path", ());

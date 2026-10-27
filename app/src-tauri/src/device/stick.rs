@@ -148,7 +148,7 @@ fn newer(current: Option<&str>, candidate: &str) -> bool {
 }
 
 pub fn is_device(d: &Disk) -> bool {
-    d.by_label(CLIENT_LABEL).is_some() && d.by_label(DATA_LABEL).is_some()
+    d.by_label(CLIENT_LABEL).is_some_and(|p| p.fs.eq_ignore_ascii_case("exfat")) && d.by_label(DATA_LABEL).is_some()
 }
 
 fn under(p: &Path, root: &Path) -> bool {
@@ -360,7 +360,7 @@ pub fn replace_file(dir: &Path, name: &str, bytes: &[u8]) -> ApiResult<()> {
 fn write_part(dir: &Path, name: &str, bytes: &[u8]) -> ApiResult<std::path::PathBuf> {
     let part = dir.join(format!("{name}.part"));
     let r = (|| {
-        let mut f = std::fs::File::create(&part)?;
+        let mut f = client::create_fresh(&part)?;
         f.write_all(bytes)?;
         f.sync_all()?;
         Ok::<_, std::io::Error>(())

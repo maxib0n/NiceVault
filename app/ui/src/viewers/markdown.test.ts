@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { localImagePath, renderMarkdown, resolveVolumePath, sanitizeSvg, sanitizeMath, splitFrontMatter } from './markdown';
+import { localImagePath, renderMarkdown, resolveVolumePath, sanitizeSvg, sanitizeMath, scopedCss, splitFrontMatter } from './markdown';
 
 const sample = (n: string) => readFileSync(resolve(__dirname, '../../public/mock/v', n), 'utf8');
 const dom = (html: string) => {
@@ -113,5 +113,52 @@ describe('markdown renderer', () => {
   it('KaTeX / Mermaid output is sanitized again', () => {
     expect(sanitizeSvg('<svg><script>alert(1)</script><a href="javascript:x"><text>t</text></a><foreignObject><div>h</div></foreignObject><rect onload="x"/></svg>')).not.toMatch(/script|javascript|foreignObject|onload/);
     expect(sanitizeMath('<span style="height:1em" onclick="x"><a href="https://x">y</a><img src=x></span>')).toBe('<span style="height:1em">y</span>');
+  });
+});
+
+describe('pathological input stays fast', () => {
+  const time = (f: () => unknown) => {
+    const t = performance.now();
+    f();
+    return performance.now() - t;
+  };
+  it('unclosed $$ blocks', () => {
+    expect(time(() => renderMarkdown('$$x\n'.repeat(40000)))).toBeLessThan(2000);
+  });
+  it('many headings with the same name', () => {
+    const r = renderMarkdown('# a\n'.repeat(3));
+    expect([...dom(r.html).querySelectorAll('h1')].map((h) => h.id)).toEqual(['md-a', 'md-a-1', 'md-a-2']);
+    expect(time(() => renderMarkdown('# a\n'.repeat(40000)))).toBeLessThan(2000);
+  });
+  it('dotted keys without a separator in config and markup', async () => {
+    const { tokenize, languageFor } = await import('./highlight');
+    for (const name of ['x.yaml', 'x.toml', 'x.ini', 'x.html', 'x.xml']) {
+      expect(time(() => tokenize('a.'.repeat(40000), languageFor(name))), name).toBeLessThan(500);
+    }
+    const t = tokenize('a.b: 1\n', languageFor('x.yaml'));
+    expect(t[0]).toEqual({ c: 'key', s: 'a.b' });
+  });
+});
+
+describe('diagram CSS stays in the diagram', () => {
+  it('drops rules not scoped to the svg', () => {
+    const out = sanitizeSvg('<svg id="nv-mmd-1"><style>body{display:none} .vw-bar{opacity:0} #nv-mmd-1 .node rect{fill:red} #nv-mmd-1{font-family:"trebuchet ms",verdana}</style><rect/></svg>');
+    expect(out).not.toContain('body{');
+    expect(out).not.toContain('.vw-bar');
+    expect(out).toContain('#nv-mmd-1 .node rect{fill:red}');
+    expect(out).toContain('trebuchet ms');
+  });
+  it('keeps keyframes and scoped media, refuses tricks', () => {
+    expect(scopedCss('@keyframes dash{to{stroke-dashoffset:0;}}', '#a')).toBe('@keyframes dash{to{stroke-dashoffset:0;}}');
+    expect(scopedCss('@media (min-width:1px){#a p{x:1} body{y:2}}', '#a')).toBe('@media (min-width:1px){#a p{x:1}}');
+    expect(scopedCss('#a p{background:url(https://x/)}', '#a')).toBe('');
+    expect(scopedCss('@import "x.css";#a p{x:1}', '#a')).toBe('');
+    expect(scopedCss('#a p, body{x:1}', '#a')).toBe('');
+    expect(scopedCss('#ab p{x:1}', '#a')).toBe('');
+    expect(scopedCss('#a p{content:"}"} body{x:1}', '#a')).toBe('#a p{content:"}"}');
+    expect(scopedCss('#a p{x:1', '#a')).toBe('');
+    expect(scopedCss('#a ~ .vw-bar{x:1} #a+div{x:1} #a.b~p{x:1}', '#a')).toBe('');
+    expect(scopedCss('#a .x ~ .y{x:1} #a li:nth-child(2n+1){x:1}', '#a')).toBe('#a .x ~ .y{x:1}#a li:nth-child(2n+1){x:1}');
+    expect(scopedCss('#a{& ~ .vw-bar{x:1}}', '#a')).toBe('');
   });
 });

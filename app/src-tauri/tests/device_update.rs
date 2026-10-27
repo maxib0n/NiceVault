@@ -37,8 +37,18 @@ impl Key {
         B64.encode(self.pk.to_box().unwrap().to_string())
     }
     fn sign(&self, data: &[u8], version: &str, platforms: &str) -> String {
-        let tc = format!("timestamp:1\tfile:x\tversion:{version}\tplatform:{platforms}");
+        let file = published_name(platforms.split(',').next().unwrap());
+        let tc = format!("timestamp:1\tfile:{file}\tversion:{version}\tplatform:{platforms}");
         B64.encode(minisign::sign(Some(&self.pk), &self.sk, data, Some(&tc), Some("sig")).unwrap().to_string())
+    }
+}
+
+fn published_name(platform: &str) -> String {
+    match platform {
+        "linux-x86_64-appimage" => "NiceVault-linux-x86_64.AppImage".into(),
+        p if p.starts_with("darwin-") => "NiceVault-macos-universal.zip".into(),
+        p if p.starts_with("windows-") => format!("NiceVault-{p}.exe"),
+        p => format!("NiceVault-{p}"),
     }
 }
 
@@ -501,4 +511,83 @@ fn scarica_ora_on_a_128_mib_stick_clears_leftovers_first() {
     assert!(leftovers(&w.client).is_empty(), "{:?}", leftovers(&w.client));
     assert!(marker(&w).mac_app.is_some());
     assert_eq!(snapshot(&w.data), data_before);
+}
+
+#[cfg(unix)]
+#[test]
+fn update_never_writes_through_a_part_symlink() {
+    let k = Key::new();
+    let w = world(serve(&k, "0.2.0", &[]), k.pubkey_b64(), true, false);
+    let victim = w.t.path().join("home-victim.nvault");
+    std::fs::write(&victim, b"the user's own file").unwrap();
+    for f in ["README.txt.part", "LEGGIMI.txt.part", ".nicevault-device.json.part", "NiceVault-windows-x86_64.exe.sig.part"] {
+        std::os::unix::fs::symlink(&victim, w.client.join(f)).unwrap();
+    }
+    run(&w).unwrap();
+    assert_eq!(std::fs::read(&victim).unwrap(), b"the user's own file", "written through a planted link");
+    assert!(!std::fs::read_to_string(w.client.join("README.txt")).unwrap().contains("missing"));
+}
+
+#[test]
+fn a_nicevault_partition_that_is_not_exfat_is_not_a_device() {
+    let w = world("http://127.0.0.1:9/latest.json".into(), Key::new().pubkey_b64(), true, false);
+    let mut f: FakeFile = serde_json::from_slice(&std::fs::read(&w.file).unwrap()).unwrap();
+    f.disks[0].partitions[0].fs = "ext4".into();
+    std::fs::write(&w.file, serde_json::to_vec(&f).unwrap()).unwrap();
+    assert!(stick::sticks(w.ctx.ops.as_ref(), &w.ctx.local, None).is_empty());
+    assert!(run(&w).is_err());
+    assert_eq!(std::fs::read(w.client.join("README.txt")).unwrap(), b"old readme");
+}
+
+#[cfg(unix)]
+#[test]
+fn write_verified_never_writes_through_a_part_symlink() {
+    let t = tempfile::tempdir().unwrap();
+    let victim = t.path().join("victim");
+    std::fs::write(&victim, b"keep me").unwrap();
+    let dir = t.path().join("NiceVault");
+    std::fs::create_dir(&dir).unwrap();
+    std::os::unix::fs::symlink(&victim, dir.join("README.txt.part")).unwrap();
+    nicevault_app::device::client::write_verified(&dir, "README.txt", b"readme").unwrap();
+    assert_eq!(std::fs::read(&victim).unwrap(), b"keep me");
+    assert_eq!(std::fs::read(dir.join("README.txt")).unwrap(), b"readme");
+}
+
+#[test]
+fn local_builds_refuse_wrong_platform_and_older_sibling() {
+    let k = Key::new();
+    let t = tempfile::tempdir().unwrap();
+    let exe = t.path().join("nicevault");
+    std::fs::write(&exe, b"running").unwrap();
+    let win = t.path().join("NiceVault-windows-x86_64.exe");
+    std::fs::write(&win, b"some genuine build").unwrap();
+    let l = Local { exe, os: Os::Linux, version: "0.1.0".into(), pubkey: k.pubkey_b64() };
+    let take = |version: &str, platform: &str| {
+        std::fs::write(t.path().join("NiceVault-windows-x86_64.exe.sig"), k.sign(b"some genuine build", version, platform)).unwrap();
+        nicevault_app::device::client::local_builds(&l, &[Os::Windows]).has(Os::Windows)
+    };
+    assert!(!take("0.0.9", "windows-x86_64"), "older than this app");
+    assert!(!take("0.2.0", "linux-x86_64"), "another platform's build");
+    assert!(take("0.2.0", "windows-x86_64"));
+    assert!(take("0.1.0", "windows-x86_64"));
+}
+
+#[test]
+fn marker_reads_are_capped_and_never_follow_links() {
+    let w = world("http://127.0.0.1:9/latest.json".into(), Key::new().pubkey_b64(), true, false);
+    let m = w.client.join(".nicevault-device.json");
+    let good = std::fs::read(&m).unwrap();
+    assert!(nicevault_app::device::client::read_marker(&w.client).is_some());
+    let mut big = good.clone();
+    big.extend(std::iter::repeat_n(b' ', 1 << 20));
+    std::fs::write(&m, &big).unwrap();
+    assert!(nicevault_app::device::client::read_marker(&w.client).is_none(), "1 MiB marker parsed");
+    #[cfg(unix)]
+    {
+        let elsewhere = w.t.path().join("marker-elsewhere.json");
+        std::fs::write(&elsewhere, &good).unwrap();
+        std::fs::remove_file(&m).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &m).unwrap();
+        assert!(nicevault_app::device::client::read_marker(&w.client).is_none(), "marker read through a link");
+    }
 }

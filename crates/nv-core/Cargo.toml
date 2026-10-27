@@ -31,6 +31,10 @@ sha1 = "0.10"
 rand_core = { version = "0.6", features = ["getrandom"] }
 keepass = "0.17"
 csv = "1"
+url = "2"
+idna = "1"
+psl = "2"
+unicode-security = "0.1"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }

@@ -21,6 +21,8 @@
   import Toasts from './components/Toasts.svelte';
   import RollbackNotice from './components/RollbackNotice.svelte';
   import SpaceDialog from './components/SpaceDialog.svelte';
+  import BrowserPairPrompt from './components/BrowserPairPrompt.svelte';
+  import { onBrowser } from './lib/browserLink';
   import CreateWizard from './screens/CreateWizard.svelte';
   import DeviceWizard from './screens/DeviceWizard.svelte';
   import Unlock from './screens/Unlock.svelte';
@@ -61,6 +63,7 @@
       await jobs.listen();
       disposers.push(await api.onVaultLocked((e) => vaults.handleLocked(e)));
       disposers.push(await drives.listen());
+      disposers.push(await onBrowser<{ vault: string }>('vault-opened', (p) => void vaults.adoptExternal(p.vault)));
       try {
         const s = await api.settingsGet();
         idle.setMinutes(s.auto_lock_minutes);
@@ -123,6 +126,7 @@
   <Toasts />
   <RollbackNotice />
   <SpaceDialog />
+  <BrowserPairPrompt />
 </div>
 
 <style>

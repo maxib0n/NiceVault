@@ -25,9 +25,21 @@ impl Key {
         B64.encode(sig.to_string())
     }
     fn sign_release(&self, data: &[u8], version: &str, platforms: &str) -> String {
-        let tc = format!("timestamp:1\tfile:NiceVault-linux-x86_64\tversion:{version}\tplatform:{platforms}");
+        self.sign_file(data, &published_name(platforms.rsplit(',').next().unwrap()), version, platforms)
+    }
+    fn sign_file(&self, data: &[u8], file: &str, version: &str, platforms: &str) -> String {
+        let tc = format!("timestamp:1\tfile:{file}\tversion:{version}\tplatform:{platforms}");
         let sig = minisign::sign(Some(&self.pk), &self.sk, data, Some(&tc), Some("signature from tauri secret key")).unwrap();
         B64.encode(sig.to_string())
+    }
+}
+
+fn published_name(platform: &str) -> String {
+    match platform {
+        "linux-x86_64-appimage" => "NiceVault-linux-x86_64.AppImage".into(),
+        p if p.starts_with("darwin-") => "NiceVault-macos-universal.zip".into(),
+        p if p.starts_with("windows-") => format!("NiceVault-{p}.exe"),
+        p => format!("NiceVault-{p}"),
     }
 }
 
@@ -347,7 +359,7 @@ fn end_to_end_refuses_rollback_and_wrong_platform() {
     ok.check(false, 0).unwrap();
     ok.download(&mut |_, _| {}).unwrap();
     assert_eq!(std::fs::read(&exe).unwrap(), b"old");
-    assert!(updater::check_binding("timestamp:1\tfile:x\tversion:0.2.0\tplatform:a,b", "0.2.0", "0.1.0", "b").is_ok());
+    assert!(updater::check_binding("timestamp:1\tfile:NiceVault-linux-x86_64\tversion:0.2.0\tplatform:a,linux-x86_64", "0.2.0", "0.1.0", "linux-x86_64").is_ok());
 }
 
 #[test]
@@ -401,4 +413,44 @@ fn appimage_updates_from_its_own_manifest_key() {
     assert!(matches!(u.install().unwrap(), InstallOutcome::Replaced { .. }));
     assert_eq!(std::fs::read(&exe).unwrap(), image);
     assert_eq!(std::fs::read(sibling(&exe, ".old")).unwrap(), b"old appimage");
+}
+
+#[test]
+fn end_to_end_refuses_another_artefact_of_the_same_release() {
+    let key = Key::new();
+    let plat = updater::platform_key();
+    let archive = b"\x1f\x8b a tar.gz of the same release".to_vec();
+    let sig = key.sign_file(&archive, &format!("{}.tar.gz", published_name(plat)), "0.2.0", plat);
+    let url = serve(|url| {
+        vec![
+            ("/latest.json".into(), manifest("0.2.0", plat, &format!("{url}/{}", published_name(plat)), &sig)),
+            (format!("/{}", published_name(plat)), archive.clone()),
+        ]
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("nv");
+    std::fs::write(&exe, b"old").unwrap();
+    let u = updater(&url, &key, &exe, None, dir.path(), true);
+    assert!(matches!(u.check(false, 0).unwrap(), UpdateStatus::Available { .. }));
+    assert_eq!(u.download(&mut |_, _| {}).unwrap_err().code, "update_signature");
+    assert_eq!(u.install().unwrap_err().code, "update_none");
+    assert_eq!(std::fs::read(&exe).unwrap(), b"old");
+
+    let tc = |file: &str, p: &str| format!("timestamp:1\tfile:{file}\tversion:0.2.0\tplatform:{p}");
+    for p in ["linux-x86_64", "linux-x86_64-appimage", "windows-x86_64", "darwin-aarch64", "darwin-x86_64"] {
+        assert!(updater::check_binding(&tc(&published_name(p), p), "0.2.0", "0.1.0", p).is_ok(), "{p}");
+        assert!(updater::check_binding_at_least(&tc(&published_name(p), p), "0.2.0", "0.1.0", p).is_ok(), "{p}");
+    }
+    for (file, p) in [
+        ("NiceVault-linux-x86_64.tar.gz", "linux-x86_64"),
+        ("NiceVault-windows-x86_64.zip", "windows-x86_64"),
+        ("NiceVault-linux-x86_64", "linux-x86_64-appimage"),
+        ("NiceVault-linux-x86_64.AppImage", "linux-x86_64"),
+        ("NiceVault-windows-x86_64.exe", "darwin-aarch64"),
+    ] {
+        assert!(updater::check_binding(&tc(file, p), "0.2.0", "0.1.0", p).is_err(), "{file} as {p}");
+        assert!(updater::check_binding_at_least(&tc(file, p), "0.2.0", "0.1.0", p).is_err(), "{file} as {p}");
+    }
+    let spaced = "timestamp:1\tfile:NiceVault-linux-x86_64 version:9.9.9\tversion:0.2.0\tplatform:linux-x86_64";
+    assert!(updater::check_binding(spaced, "9.9.9", "0.1.0", "linux-x86_64").is_err());
 }

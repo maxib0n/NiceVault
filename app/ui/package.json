@@ -2,14 +2,14 @@
   "name": "nicevault-ui",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "check": "pnpm -s i18n >/dev/null && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings=false",
-    "test": "pnpm -s i18n >/dev/null && vitest run && node --test ../../scripts/release.test.mjs",
+    "test": "pnpm -s i18n >/dev/null && vitest run && node --test ../../scripts/release.test.mjs ../../extension/test/*.test.mjs",
     "mock-assets": "bash scripts/gen-mock-assets.sh",
     "shots": "node e2e/shots/shots.mjs",
     "tauri": "tauri",
@@ -22,6 +22,7 @@
     "e2e:real:videos": "NV_E2E_SCRIPT=video-matrix.mjs bash e2e/real/e2e-real.sh",
     "e2e:real:window": "NV_E2E_SCRIPT=window.mjs bash e2e/real/e2e-real.sh",
     "e2e:real:markdown": "NV_E2E_SCRIPT=markdown.mjs bash e2e/real/e2e-real.sh",
+    "e2e:real:browser": "NV_E2E_SCRIPT=browser-ext.mjs bash e2e/real/e2e-real.sh",
     "i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide"
   },
   "dependencies": {
@@ -38,7 +39,6 @@
     "katex": "^0.19.1",
     "markdown-it": "^15.0.3",
     "markdown-it-abbr": "^2.0.0",
-    "markdown-it-anchor": "^10.0.0",
     "markdown-it-deflist": "^4.0.0",
     "markdown-it-emoji": "^3.1.0",
     "markdown-it-footnote": "^4.0.0",

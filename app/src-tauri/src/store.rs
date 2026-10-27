@@ -121,6 +121,8 @@ pub struct Store {
     start_minimized: bool,
     close_to_tray: bool,
     gallery_save: Option<bool>,
+    browser_link: bool,
+    pm_default_volume: Option<String>,
     autostart: Option<crate::autostart::Autostart>,
     scan_dirs: Vec<PathBuf>,
 }
@@ -211,6 +213,8 @@ impl Store {
         let (mut start_at_login, mut start_minimized) = (false, false);
         let mut close_to_tray = loc.config_dir.is_some();
         let mut gallery_save = None;
+        let mut browser_link = false;
+        let mut pm_default_volume = None;
         if let Some(bytes) = loc.config_dir.as_ref().and_then(|d| std::fs::read(d.join(GLOBAL_FILE)).ok()) {
             match serde_json::from_slice::<serde_json::Value>(&bytes) {
                 Ok(serde_json::Value::Object(map)) => {
@@ -255,6 +259,10 @@ impl Store {
                         close_to_tray = b;
                     }
                     gallery_save = map.get("gallery_save").and_then(|v| v.as_bool());
+                    if let Some(b) = map.get("browser_link").and_then(|v| v.as_bool()) {
+                        browser_link = b;
+                    }
+                    pm_default_volume = map.get("pm_default_volume").and_then(|v| v.as_str()).filter(|v| !v.is_empty()).map(str::to_owned);
                     global_raw = map;
                 }
                 _ => global_unreadable = true,
@@ -281,6 +289,8 @@ impl Store {
             start_minimized,
             close_to_tray,
             gallery_save,
+            browser_link,
+            pm_default_volume,
             autostart: None,
             scan_dirs: Vec::new(),
         }
@@ -349,6 +359,8 @@ impl Store {
         if let Some(b) = self.gallery_save {
             self.global_raw.insert("gallery_save".into(), serde_json::Value::Bool(b));
         }
+        self.global_raw.insert("browser_link".into(), serde_json::Value::Bool(self.browser_link));
+        self.global_raw.insert("pm_default_volume".into(), self.pm_default_volume.clone().map_or(serde_json::Value::Null, serde_json::Value::String));
         let mut d = match self.global_raw.remove("defaults") {
             Some(serde_json::Value::Object(o)) => o,
             _ => serde_json::Map::new(),
@@ -470,6 +482,29 @@ impl Store {
     pub fn set_gallery_save(&mut self, on: bool) {
         if self.gallery_save != Some(on) {
             self.gallery_save = Some(on);
+            self.save_global();
+        }
+    }
+
+    pub fn browser_link(&self) -> bool {
+        self.installed() && self.browser_link
+    }
+
+    pub fn set_browser_link(&mut self, on: bool) {
+        if self.installed() && on != self.browser_link {
+            self.browser_link = on;
+            self.save_global();
+        }
+    }
+
+    pub fn pm_default_volume(&self) -> Option<String> {
+        self.pm_default_volume.clone()
+    }
+
+    pub fn set_pm_default_volume(&mut self, path: Option<String>) {
+        let path = path.filter(|p| !p.is_empty());
+        if path != self.pm_default_volume {
+            self.pm_default_volume = path;
             self.save_global();
         }
     }

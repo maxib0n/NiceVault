@@ -19,9 +19,8 @@ pub struct Log {
 
 impl Log {
     pub fn open(dir: &Path) -> Log {
-        let _ = std::fs::create_dir_all(dir);
         let path = dir.join(format!("device-{}.log", crate::updater::now_ms()));
-        let file = std::fs::File::create(&path).ok();
+        let file = private_dir(dir).then(|| super::client::create_fresh_private(&path).ok()).flatten();
         Log { path, file: Mutex::new(file) }
     }
     pub fn null() -> Log {
@@ -40,6 +39,24 @@ impl Log {
     pub fn command(&self, prog: &str, args: &[String], code: Option<i32>, out: &str, err: &str, took: Duration) {
         self.event("command", json!({ "prog": prog, "args": args, "exit": code, "stdout": out, "stderr": err, "ms": took.as_millis() as u64 }));
     }
+}
+
+fn private_dir(dir: &Path) -> bool {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    if b.create(dir).is_err() {
+        return false;
+    }
+    let Ok(m) = std::fs::symlink_metadata(dir) else { return false };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        m.is_dir() && m.uid() == unsafe { libc::geteuid() } && m.mode() & 0o022 == 0
+    }
+    #[cfg(not(unix))]
+    m.is_dir()
 }
 
 #[derive(Clone, Debug, Serialize, Default)]
@@ -159,13 +176,17 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, p
 
     r.step("check", 0, 0, true);
     fault("check")?;
-    let now = ops.disks().into_iter().find(|d| d.id == plan.disk.id).ok_or_else(|| ApiError::new("device_gone", "The drive was disconnected."))?;
-    if !now.same_as(&plan.disk) {
-        return Err(ApiError::new("device_changed", "The drive changed since it was chosen."));
-    }
-    if let Some(why) = super::refusal(&now, &ctx.host_ctx(st)) {
-        return Err(why.error());
-    }
+    let check = || -> ApiResult<()> {
+        let now = ops.disks().into_iter().find(|d| d.id == plan.disk.id).ok_or_else(|| ApiError::new("device_gone", "The drive was disconnected."))?;
+        if !now.same_as(&plan.disk) || (!resume && !now.same_layout(&plan.disk)) {
+            return Err(ApiError::new("device_changed", "The drive changed since it was chosen."));
+        }
+        if let Some(why) = super::refusal(&now, &ctx.host_ctx(st)) {
+            return Err(why.error());
+        }
+        Ok(())
+    };
+    check()?;
     r.cancelled()?;
 
     let builds: Builds = if plan.download {
@@ -184,6 +205,7 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, p
     };
 
     if !resume {
+        check()?;
         let mut cur = String::new();
         ops.partition(plan, log, &mut |s| {
             cur = s.to_owned();

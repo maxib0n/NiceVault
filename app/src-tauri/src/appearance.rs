@@ -33,6 +33,7 @@ pub struct Settings {
     pub lock_scope: String,
     pub grid_size: String,
     pub list_density: String,
+    pub browser_enabled: bool,
 }
 
 impl Default for Settings {
@@ -46,6 +47,7 @@ impl Default for Settings {
             lock_scope: LOCK_SCOPES[0].into(),
             grid_size: GRID_SIZES[1].into(),
             list_density: LIST_DENSITIES[1].into(),
+            browser_enabled: true,
         }
     }
 }
@@ -60,6 +62,7 @@ pub struct SettingsPatch {
     pub lock_scope: Option<String>,
     pub grid_size: Option<String>,
     pub list_density: Option<String>,
+    pub browser_enabled: Option<bool>,
 }
 
 impl Settings {
@@ -97,6 +100,10 @@ impl Settings {
             self.list_density = d;
             set.push("list_density");
         }
+        if let Some(b) = p.browser_enabled {
+            self.browser_enabled = b;
+            set.push("browser_enabled");
+        }
         set
     }
 
@@ -127,6 +134,9 @@ impl Settings {
         }
         if let Some(b) = bool_of("lock_on_screen_lock") {
             s.lock_on_screen_lock = b;
+        }
+        if let Some(b) = bool_of("browser_enabled") {
+            s.browser_enabled = b;
         }
         s.sanitized()
     }

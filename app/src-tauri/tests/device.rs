@@ -59,8 +59,18 @@ impl Key {
         B64.encode(self.pk.to_box().unwrap().to_string())
     }
     fn sign(&self, data: &[u8], version: &str, platforms: &str) -> String {
-        let tc = format!("timestamp:1\tfile:x\tversion:{version}\tplatform:{platforms}");
+        let file = published_name(platforms.split(',').next().unwrap());
+        let tc = format!("timestamp:1\tfile:{file}\tversion:{version}\tplatform:{platforms}");
         B64.encode(minisign::sign(Some(&self.pk), &self.sk, data, Some(&tc), Some("sig")).unwrap().to_string())
+    }
+}
+
+fn published_name(platform: &str) -> String {
+    match platform {
+        "linux-x86_64-appimage" => "NiceVault-linux-x86_64.AppImage".into(),
+        p if p.starts_with("darwin-") => "NiceVault-macos-universal.zip".into(),
+        p if p.starts_with("windows-") => format!("NiceVault-{p}.exe"),
+        p => format!("NiceVault-{p}"),
     }
 }
 
@@ -438,4 +448,85 @@ fn dry_run_never_reaches_the_real_backend() {
     assert!(spy.calls.lock().unwrap().is_empty(), "mutating calls leaked: {:?}", spy.calls.lock().unwrap());
     let log = cmd::log_text(&ctx, &job).unwrap();
     assert!(log.contains("would_run") && log.contains("mount_instead"));
+}
+
+#[test]
+fn a_drive_swapped_during_the_download_is_never_formatted() {
+    let disks = Arc::new(Mutex::new(None::<PathBuf>));
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/latest.json", server.server_addr().to_ip().unwrap());
+    let swap = disks.clone();
+    std::thread::spawn(move || {
+        for req in server.incoming_requests() {
+            if let Some(file) = swap.lock().unwrap().as_ref() {
+                let mut f: FakeFile = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+                f.disks[0].serial = "OTHER-STICK-0001".into();
+                std::fs::write(file, serde_json::to_vec(&f).unwrap()).unwrap();
+            }
+            let _ = req.respond(tiny_http::Response::empty(503));
+        }
+    });
+    let w = world(url, Key::new().pubkey_b64(), |_| {});
+    let p = cmd::make_plan(&w.ctx, &w.st, &opts()).unwrap();
+    *disks.lock().unwrap() = Some(w.file.clone());
+    let done = w.rec.done(&cmd::create(&w.ctx, &w.st, &p.id, "SanDisk Ultra").unwrap());
+    assert_eq!(done["error"]["code"], "device_changed", "{done}");
+    assert_eq!(disk_now(&w).partitions[0].label, "STICK", "the other drive was formatted");
+}
+
+#[test]
+fn a_serialless_drive_swapped_during_the_download_is_never_formatted() {
+    let disks = Arc::new(Mutex::new(None::<PathBuf>));
+    let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/latest.json", server.server_addr().to_ip().unwrap());
+    let swap = disks.clone();
+    std::thread::spawn(move || {
+        for req in server.incoming_requests() {
+            if let Some(file) = swap.lock().unwrap().as_ref() {
+                let mut f: FakeFile = serde_json::from_slice(&std::fs::read(file).unwrap()).unwrap();
+                f.disks[0].partitions[0].label = "BACKUP".into();
+                std::fs::write(file, serde_json::to_vec(&f).unwrap()).unwrap();
+            }
+            let _ = req.respond(tiny_http::Response::empty(503));
+        }
+    });
+    let w = world(url, Key::new().pubkey_b64(), |f| f.disks[0].serial = String::new());
+    let p = cmd::make_plan(&w.ctx, &w.st, &opts()).unwrap();
+    *disks.lock().unwrap() = Some(w.file.clone());
+    let done = w.rec.done(&cmd::create(&w.ctx, &w.st, &p.id, "SanDisk Ultra").unwrap());
+    assert_eq!(done["error"]["code"], "device_changed", "{done}");
+    assert_eq!(disk_now(&w).partitions[0].label, "BACKUP", "the other drive was formatted");
+}
+
+#[test]
+fn eject_refuses_system_and_internal_disks() {
+    let w = world("http://127.0.0.1:9/latest.json".into(), Key::new().pubkey_b64(), |f| {
+        let mut sys = f.disks[0].clone();
+        (sys.id, sys.os_path, sys.serial, sys.is_system) = ("/dev/fake9".into(), "/dev/fake9".into(), "SYS".into(), true);
+        sys.partitions.clear();
+        let mut int = sys.clone();
+        (int.id, int.os_path, int.is_system, int.removable, int.bus) = ("/dev/fake8".into(), "/dev/fake8".into(), false, false, "nvme".into());
+        f.disks.push(sys);
+        f.disks.push(int);
+    });
+    assert_eq!(cmd::eject(&w.ctx, "/dev/fake9").unwrap_err().code, "device_refused");
+    assert_eq!(cmd::eject(&w.ctx, "/dev/fake8").unwrap_err().code, "device_refused");
+}
+
+#[cfg(unix)]
+#[test]
+fn device_log_is_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = tempfile::tempdir().unwrap();
+    let ok = t.path().join("logs");
+    let log = nicevault_app::device::job::Log::open(&ok);
+    log.event("x", serde_json::json!({}));
+    assert_eq!(std::fs::metadata(&ok).unwrap().permissions().mode() & 0o777, 0o700);
+    assert_eq!(std::fs::metadata(log.path()).unwrap().permissions().mode() & 0o777, 0o600);
+    let shared = t.path().join("shared");
+    std::fs::create_dir(&shared).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let log = nicevault_app::device::job::Log::open(&shared);
+    log.event("x", serde_json::json!({ "serial": "4C53" }));
+    assert_eq!(std::fs::read_dir(&shared).unwrap().count(), 0, "logged into a shared folder");
 }

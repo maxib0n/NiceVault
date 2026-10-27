@@ -184,6 +184,14 @@ impl Disk {
     pub fn same_as(&self, other: &Disk) -> bool {
         self.id == other.id && self.size == other.size && self.serial.trim() == other.serial.trim()
     }
+
+    pub fn same_layout(&self, other: &Disk) -> bool {
+        if !self.serial.trim().is_empty() {
+            return true;
+        }
+        let key = |d: &Disk| d.partitions.iter().map(|p| (p.path.clone(), p.size, p.label.clone(), p.fs.clone())).collect::<Vec<_>>();
+        key(self) == key(other)
+    }
 }
 
 pub fn is_external(d: &Disk) -> bool {

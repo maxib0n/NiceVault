@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NiceVault</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="page">
+    <main class="sheet">
+      <h1 data-i18n="pair_title"></h1>
+      <p data-i18n="pair_intro"></p>
+      <div id="code-box" class="code-box" hidden>
+        <span class="t2" data-i18n="pair_code_label"></span>
+        <output id="code" class="code" data-testid="pair-code"></output>
+      </div>
+      <p id="status" class="msg" data-testid="pair-status" aria-live="polite"></p>
+      <button id="start" type="button" class="btn primary" data-i18n="pair_start"></button>
+      <div id="perm-box" hidden>
+        <p class="note" data-i18n="opt_permission_hint"></p>
+        <button id="perm" type="button" class="btn" data-i18n="opt_permission"></button>
+      </div>
+      <p class="note rule" data-i18n="pair_rule"></p>
+    </main>
+    <script type="module" src="pair.js"></script>
+  </body>
+</html>

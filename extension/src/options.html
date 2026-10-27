@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NiceVault</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="page">
+    <main class="sheet">
+      <h1 data-i18n="opt_title"></h1>
+
+      <section>
+        <h2 data-i18n="opt_link"></h2>
+        <p id="link-state" class="msg" data-testid="opt-link"></p>
+        <div class="actions">
+          <button id="pair" type="button" class="btn primary" data-i18n="act_pair"></button>
+          <button id="unpair" type="button" class="btn" data-i18n="opt_unlink" hidden></button>
+        </div>
+        <div id="perm-box" hidden>
+          <p class="note" data-i18n="opt_permission_hint"></p>
+          <button id="perm" type="button" class="btn" data-i18n="opt_permission"></button>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-i18n="opt_when_closed"></h2>
+        <label class="radio"><input type="radio" name="launch" value="auto" /> <span data-i18n="opt_launch_auto"></span></label>
+        <label class="radio"><input type="radio" name="launch" value="ask" /> <span data-i18n="opt_launch_ask"></span></label>
+        <p class="note" data-i18n="opt_launch_hint"></p>
+      </section>
+
+      <section>
+        <label class="check"><input type="checkbox" id="fieldIcon" /> <span data-i18n="opt_field_icon"></span></label>
+        <label class="check"><input type="checkbox" id="copyTotp" /> <span data-i18n="opt_copy_totp"></span></label>
+        <label class="check"><input type="checkbox" id="siteMemory" /> <span data-i18n="opt_memory"></span></label>
+        <p class="note" data-i18n="opt_memory_hint"></p>
+        <div class="actions"><button id="forget" type="button" class="btn" data-i18n="opt_forget"></button> <span id="forgotten" class="note" hidden data-i18n="opt_forgotten"></span></div>
+      </section>
+
+      <section id="help">
+        <h2 data-i18n="opt_help"></h2>
+        <p data-i18n="help_install"></p>
+        <p data-i18n="help_sandbox"></p>
+        <p class="note" data-i18n="help_limits"></p>
+        <p class="note rule" data-i18n="pair_rule"></p>
+      </section>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

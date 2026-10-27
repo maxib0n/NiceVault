@@ -289,11 +289,12 @@ impl DiskOps for Windows {
         let dir = std::env::temp_dir().join(format!("nv-device-{}", crate::state::random_id()));
         std::fs::create_dir_all(&dir).map_err(ApiError::io)?;
         let plan_file = dir.join("plan.json");
-        let progress = dir.join("progress.jsonl");
-        let req = super::helper::Request { plan: plan.clone(), progress: progress.to_string_lossy().into_owned() };
-        std::fs::write(&plan_file, serde_json::to_vec(&req).unwrap()).map_err(ApiError::io)?;
+        let progress = super::helper::progress_path(&plan_file);
+        let req = super::helper::Request { plan: plan.clone() };
+        let bytes = serde_json::to_vec(&req).unwrap();
+        std::fs::write(&plan_file, &bytes).map_err(ApiError::io)?;
         let exe = std::env::current_exe().map_err(ApiError::io)?;
-        let params = format!("--device-helper \"{}\"", plan_file.display());
+        let params = format!("--device-helper \"{}\" {}", plan_file.display(), super::helper::plan_hash(&bytes));
         log.event("elevate", serde_json::json!({ "exe": exe.to_string_lossy(), "params": params }));
         let (verb, file, par) = (wide("runas"), wide(&exe.to_string_lossy()), wide(&params));
         let mut info: ShellExecuteInfoW = unsafe { std::mem::zeroed() };

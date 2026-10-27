@@ -189,7 +189,7 @@ pub fn run_command(exe: &Path, minimized: bool) -> String {
 }
 
 #[cfg(windows)]
-mod registry {
+pub(crate) mod registry {
     use std::ffi::c_void;
 
     type Hkey = isize;

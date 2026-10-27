@@ -7,7 +7,23 @@ use std::path::Path;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Request {
     pub plan: Plan,
-    pub progress: String,
+}
+
+pub fn plan_hash(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+pub fn progress_path(plan_path: &Path) -> std::path::PathBuf {
+    plan_path.with_file_name("progress.jsonl")
+}
+
+pub fn load(plan_path: &Path, hash: Option<&str>) -> Option<Request> {
+    let bytes = std::fs::read(plan_path).ok()?;
+    if hash? != plan_hash(&bytes) {
+        return None;
+    }
+    serde_json::from_slice(&bytes).ok()
 }
 
 pub fn recheck(plan: &Plan, now: Option<&Disk>, ctx: &HostCtx) -> Result<(), i32> {
@@ -27,12 +43,12 @@ fn line(path: &Path, v: serde_json::Value) {
     }
 }
 
-pub fn run(plan_path: &Path) -> i32 {
-    let req: Request = match std::fs::read(plan_path).ok().and_then(|b| serde_json::from_slice(&b).ok()) {
-        Some(r) => r,
-        None => return 2,
+pub fn run(plan_path: &Path, hash: Option<&str>) -> i32 {
+    let progress = progress_path(plan_path);
+    let Some(req) = load(plan_path, hash) else {
+        line(&progress, serde_json::json!({ "exit": 2, "reason": "plan" }));
+        return 2;
     };
-    let progress = Path::new(&req.progress).to_path_buf();
     line(&progress, serde_json::json!({ "step": "check", "helper": std::process::id() }));
     run_os(&req, &progress)
 }

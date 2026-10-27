@@ -62,7 +62,12 @@ pub fn linux_disks(sys_block: &Path, udev_data: &Path, mountinfo: &str) -> Vec<D
         let bus = match get("ID_BUS").as_str() {
             "" if is_loop => "virtual".to_owned(),
             _ if canon.contains("/usb") => "usb".to_owned(),
-            "" if name.starts_with("mmcblk") => if get("ID_DRIVE_FLASH_SD") == "1" { "sd".into() } else { "mmc".into() },
+            "" if name.starts_with("mmcblk") => match read(&dir.join("device/type")).as_str() {
+                "SD" => "sd".into(),
+                "MMC" => "emmc".into(),
+                _ if get("ID_DRIVE_FLASH_SD") == "1" => "sd".into(),
+                _ => "mmc".into(),
+            },
             "" if name.starts_with("nvme") => "nvme".to_owned(),
             "" => "other".to_owned(),
             "ata" => "sata".to_owned(),

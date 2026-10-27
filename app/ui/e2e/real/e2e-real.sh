@@ -41,12 +41,12 @@ PIDS=()
 cleanup() {
   set +e
   for p in "${PIDS[@]}"; do kill "$p" 2>/dev/null; done
-  pkill -f "$WORK/stick/nicevault" 2>/dev/null
-  pkill -f "$HERE/drag-source.py" 2>/dev/null
-  [ -n "${WL:-}" ] && pkill -f "kwin_wayland --virtual --socket $WL" 2>/dev/null
+  pkill -s 0 -f "$WORK/stick/nicevault" 2>/dev/null
+  pkill -s 0 -f "$HERE/drag-source.py" 2>/dev/null
+  [ -n "${WL:-}" ] && pkill -s 0 -f "kwin_wayland --virtual --socket $WL" 2>/dev/null
   sleep 0.5
   for p in "${PIDS[@]}"; do kill -9 "$p" 2>/dev/null; done
-  pkill -9 -f "$WORK/stick/nicevault" 2>/dev/null
+  pkill -9 -s 0 -f "$WORK/stick/nicevault" 2>/dev/null
   grep -o " $WORK/run/[^ ]*" /proc/mounts 2>/dev/null | while read -r mp; do fusermount3 -u "$mp" || fusermount3 -uz "$mp"; done
   if grep -q " $WORK/" /proc/mounts; then echo "WARNING: still mounted under $WORK"; else rm -rf "$WORK"; fi
 }
@@ -78,6 +78,7 @@ if [ -n "${WL:-}" ]; then
 else
   export DISPLAY=":$DISP" GDK_BACKEND=x11 WAYLAND_DISPLAY=
 fi
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
 export XDG_RUNTIME_DIR="$WORK/run" NO_AT_BRIDGE=1 HOME="$WORK/home"
 export NICEVAULT_FAKE_DRIVES="$WORK/drives.json"
 [ "${NV_E2E_DBUS:-0}" = 1 ] || export NICEVAULT_ALLOW_MULTI=1

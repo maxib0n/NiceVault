@@ -336,6 +336,13 @@
             <span class="knob"></span>
           </button>
         </div>
+        <div class="switch-row">
+          <span class="switch-label" id="browser-enabled-label">{m.det_browser_enabled()}</span>
+          <button type="button" class="switch" role="switch" aria-checked={settings?.browser_enabled ?? true} aria-labelledby="browser-enabled-label" aria-describedby="browser-enabled-hint" disabled={!settings} data-testid="browser-enabled" onclick={() => setAutoLock({ browser_enabled: !(settings?.browser_enabled ?? true) })}>
+            <span class="knob"></span>
+          </button>
+        </div>
+        <p class="hint" id="browser-enabled-hint">{m.det_browser_enabled_hint()}</p>
         <h3 id="scope-title" class="sub-title caps">{m.det_scope()}</h3>
         <div
           class="segmented"

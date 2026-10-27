@@ -43,7 +43,7 @@ describe('videoThumb fallback', () => {
         const v: Record<string, unknown> = {
           videoWidth: 100, videoHeight: 50, duration: 0, muted: false, playsInline: false, preload: '',
           setAttribute() {}, removeAttribute() {}, load() {},
-          addEventListener(ev: string, cb: () => void) { if (ev === 'loadeddata') setTimeout(cb, 0); },
+          addEventListener(ev: string, cb: () => void) { if (['loadeddata', 'loadedmetadata', 'seeked'].includes(ev)) setTimeout(cb, 0); },
           removeEventListener() {},
         };
         Object.defineProperty(v, 'src', { set: (x: string) => srcs.push(x), get: () => '' });
@@ -67,5 +67,45 @@ describe('videoThumb fallback', () => {
     expect(u).toBe('blob:thumb');
     expect(srcs[0]).toBe('http://127.0.0.1:1/m/x');
     expect(srcs).toHaveLength(2);
+  });
+});
+
+describe('videoThumb over the loopback stream', () => {
+  it('never asks WebKit to download-buffer the decrypted stream', async () => {
+    vi.resetModules();
+    vi.doMock('./api', () => ({
+      isTauri: true,
+      mediaUrl: async () => 'http://127.0.0.1:1/m/x',
+      mediaRelease: vi.fn(),
+      onVaultLocked: () => undefined,
+      previewUrl: () => 'nvault://x',
+    }));
+    vi.doMock('./mediaBlob', () => ({ fetchAsBlob: async () => new Blob(['x']) }));
+    const atSrc: { src: string; loop: unknown; preload: unknown }[] = [];
+    vi.stubGlobal('document', { createElement: ((tag: string) => {
+      if (tag === 'video') {
+        const v: Record<string, unknown> = {
+          videoWidth: 100, videoHeight: 50, duration: 30, muted: false, playsInline: false, preload: '', loop: false, currentTime: 0,
+          setAttribute() {}, removeAttribute() {}, load() {},
+          addEventListener(ev: string, cb: () => void) { if (['loadeddata', 'loadedmetadata', 'seeked'].includes(ev)) setTimeout(cb, 0); },
+          removeEventListener() {},
+          crossOrigin: null,
+        };
+        Object.defineProperty(v, 'src', { set: (x: string) => atSrc.push({ src: x, loop: v.loop, preload: v.preload }), get: () => '' });
+        return v as unknown as HTMLVideoElement;
+      }
+      if (tag === 'canvas') {
+        return { width: 0, height: 0, getContext: () => ({ drawImage() {} }), toBlob: (cb: (b: Blob) => void) => cb(new Blob(['j'])) } as unknown as HTMLCanvasElement;
+      }
+      throw new Error(tag);
+    }) });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:thumb');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const { videoThumb } = await import('./videoThumb');
+    expect(await videoThumb('v', { id: 2, mtime: 1, size: 64 << 20 } as never, 128)).toBe('blob:thumb');
+    const s = atSrc.find((x) => x.src.startsWith('http://127.0.0.1'));
+    expect(s).toBeTruthy();
+    expect(s!.loop).toBe(true);
+    expect(s!.preload).not.toBe('auto');
   });
 });

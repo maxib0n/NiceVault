@@ -129,26 +129,50 @@ pub fn verify_signature(pubkey_b64: &str, data: &[u8], signature_b64: &str) -> A
     Ok(sig.trusted_comment().to_owned())
 }
 
+fn signed_field<'a>(trusted: &'a str, key: &str) -> Option<&'a str> {
+    trusted.split('\t').find_map(|f| f.strip_prefix(key))
+}
+
+pub fn artefact_for(platform: &str) -> String {
+    if let Some(base) = platform.strip_suffix("-appimage") {
+        format!("NiceVault-{base}.AppImage")
+    } else if platform.starts_with("darwin-") {
+        "NiceVault-macos-universal.zip".to_owned()
+    } else if platform.starts_with("windows-") {
+        format!("NiceVault-{platform}.exe")
+    } else {
+        format!("NiceVault-{platform}")
+    }
+}
+
+fn bound_version<'a>(trusted: &'a str, version: &str, platform: &str) -> ApiResult<&'a str> {
+    let signed = signed_field(trusted, "version:").ok_or_else(bad_signature)?;
+    let platform_ok = signed_field(trusted, "platform:").is_some_and(|p| p.split(',').any(|x| x == platform));
+    let file_ok = signed_field(trusted, "file:") == Some(artefact_for(platform).as_str());
+    if signed != version || !platform_ok || !file_ok {
+        return Err(bad_signature());
+    }
+    Ok(signed)
+}
+
 pub fn check_binding(trusted: &str, version: &str, current: &str, platform: &str) -> ApiResult<()> {
-    let field = |k: &str| trusted.split(['\t', ' ']).find_map(|f| f.strip_prefix(k));
-    let signed = field("version:").ok_or_else(bad_signature)?;
-    if signed != version || !is_newer(current, signed)? || !field("platform:").is_some_and(|p| p.split(',').any(|x| x == platform)) {
+    let signed = bound_version(trusted, version, platform)?;
+    if !is_newer(current, signed)? {
         return Err(bad_signature());
     }
     Ok(())
 }
 
 pub fn check_binding_at_least(trusted: &str, version: &str, min: &str, platform: &str) -> ApiResult<()> {
-    let field = |k: &str| trusted.split(['\t', ' ']).find_map(|f| f.strip_prefix(k));
-    let signed = field("version:").ok_or_else(bad_signature)?;
-    if signed != version || is_newer(signed, min)? || !field("platform:").is_some_and(|p| p.split(',').any(|x| x == platform)) {
+    let signed = bound_version(trusted, version, platform)?;
+    if is_newer(signed, min)? {
         return Err(bad_signature());
     }
     Ok(())
 }
 
 pub fn signed_version(trusted: &str) -> Option<String> {
-    trusted.split(['\t', ' ']).find_map(|f| f.strip_prefix("version:")).map(str::to_owned)
+    signed_field(trusted, "version:").map(str::to_owned)
 }
 
 pub fn artifact_name(url: &str) -> String {
@@ -574,7 +598,7 @@ impl Updater {
         let bytes = fetch(&asset.url, MAX_ARTIFACT, Duration::from_secs(30 * 60), progress)?;
         let trusted = verify_signature(&self.cfg.pubkey, &bytes, &asset.signature)?;
         check_binding(&trusted, &version, &self.cfg.current_version, &self.cfg.platform)?;
-        let file_name = artifact_name(&asset.url);
+        let file_name = artefact_for(&self.cfg.platform);
         *lock(&self.staged) = Some(Staged { version, file_name, bytes });
         Ok(())
     }

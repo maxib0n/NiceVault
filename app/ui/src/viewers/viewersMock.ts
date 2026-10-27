@@ -12,7 +12,7 @@ export const checkedLink = (url: string): string | null => safeHref(url);
 
 const MEDIA = /\.(mp4|m4v|mov|webm|mkv|ogv|avi|mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i;
 const RUNS =
-  /\.(exe|com|bat|cmd|ps1|psm1|psd1|vbs|vbe|js|jse|wsf|wsh|hta|msi|msp|mst|scr|pif|lnk|cpl|reg|jar|url|inf|scf|application|appref-ms|gadget|msc|msh|xll|settingcontent-ms|library-ms|search-ms|chm|dll|sys|appx|msix|appinstaller|diagcab|py|pyw|pyz|pyc|ws|wsc|sct|ade|adp|mde|accde|xbap|jnlp|vb|msixbundle|appxbundle|desktop|kdesktop|sh|bash|zsh|csh|ksh|tcsh|fish|run|bin|appimage|flatpak|flatpakref|flatpakrepo|snap|deb|rpm|pl|rb|so|ko|x86_64|app|command|tool|terminal|webloc|inetloc|fileloc|pkg|mpkg|scpt|scptd|applescript|workflow|action|prefpane|qlgenerator|kext|osax|saver|plugin|bundle|dylib|mobileconfig|dmg|shortcut)[. ]*$/i;
+  /\.(exe|com|bat|cmd|ps1|psm1|psd1|vbs|vbe|js|jse|wsf|wsh|hta|msi|msp|mst|scr|pif|lnk|cpl|reg|jar|url|inf|scf|application|appref-ms|gadget|msc|msh|xll|settingcontent-ms|library-ms|search-ms|chm|dll|sys|appx|msix|appinstaller|diagcab|py|pyw|pyz|pyc|ws|wsc|sct|ade|adp|mde|accde|xbap|jnlp|vb|msixbundle|appxbundle|desktop|kdesktop|sh|bash|zsh|csh|ksh|tcsh|fish|run|bin|appimage|flatpak|flatpakref|flatpakrepo|snap|deb|rpm|pl|rb|so|ko|x86_64|app|command|tool|terminal|webloc|inetloc|fileloc|pkg|mpkg|scpt|scptd|applescript|workflow|action|prefpane|qlgenerator|kext|osax|saver|plugin|bundle|dylib|mobileconfig|dmg|shortcut|rdp|theme|themepack|deskthemepack|msu|wsb|ps1xml|psc1|msh1|msh2|mshxml|mdb|accdb|cab|iso|img|vhd|vhdx|afploc|ftploc)[. ]*$/i;
 export const runsCode = (name: string): boolean => RUNS.test(name);
 
 export class ViewersMock {

@@ -560,3 +560,48 @@ fn real_release_downloads() {
         eprintln!("NOTE {n}");
     }
 }
+
+#[test]
+fn linux_emmc_is_internal_and_sd_is_external() {
+    let t = tempfile::tempdir().unwrap();
+    let sys = t.path().join("sys/block");
+    let udev = t.path().join("udev");
+    let emmc = t.path().join("sys/devices/platform/mmc0/mmc_host/mmc0/mmc0:0001/block/mmcblk0");
+    w(&emmc.join("size"), "122142720\n");
+    w(&emmc.join("removable"), "0\n");
+    w(&emmc.join("dev"), "179:0\n");
+    w(&t.path().join("sys/devices/platform/mmc0/mmc_host/mmc0/mmc0:0001/type"), "MMC\n");
+    let sd = t.path().join("sys/devices/pci0000:00/mmc1/mmc_host/mmc1/mmc1:aaaa/block/mmcblk1");
+    w(&sd.join("size"), "62333952\n");
+    w(&sd.join("removable"), "0\n");
+    w(&sd.join("dev"), "179:32\n");
+    w(&t.path().join("sys/devices/pci0000:00/mmc1/mmc_host/mmc1/mmc1:aaaa/type"), "SD\n");
+    std::os::unix::fs::symlink(t.path().join("sys/devices/platform/mmc0/mmc_host/mmc0/mmc0:0001"), emmc.join("device")).unwrap();
+    std::os::unix::fs::symlink(t.path().join("sys/devices/pci0000:00/mmc1/mmc_host/mmc1/mmc1:aaaa"), sd.join("device")).unwrap();
+    std::fs::create_dir_all(&sys).unwrap();
+    std::fs::create_dir_all(&udev).unwrap();
+    std::os::unix::fs::symlink(&emmc, sys.join("mmcblk0")).unwrap();
+    std::os::unix::fs::symlink(&sd, sys.join("mmcblk1")).unwrap();
+    let d = super::enumerate::linux_disks(&sys, &udev, "");
+    assert_eq!(d.len(), 2);
+    assert!(!super::is_external(&d[0]), "eMMC offered as external: bus {}", d[0].bus);
+    assert!(super::is_external(&d[1]) && d[1].bus == "sd");
+    assert_eq!(candidates(d, &HostCtx::default()).iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), ["/dev/mmcblk1"]);
+}
+
+#[test]
+fn helper_takes_only_the_plan_it_was_given() {
+    let t = tempfile::tempdir().unwrap();
+    let plan_file = t.path().join("plan.json");
+    let req = super::helper::Request { plan: plan(&stick(), &opts(DataFs::Exfat), Os::Linux, &ctx(), "x").unwrap() };
+    let bytes = serde_json::to_vec(&req).unwrap();
+    std::fs::write(&plan_file, &bytes).unwrap();
+    let hash = super::helper::plan_hash(&bytes);
+    assert!(super::helper::load(&plan_file, Some(&hash)).is_some());
+    assert!(super::helper::load(&plan_file, None).is_none(), "no hash: refused");
+    let mut other = req.clone();
+    other.plan.disk.serial = "SOMEONE-ELSE".into();
+    std::fs::write(&plan_file, serde_json::to_vec(&other).unwrap()).unwrap();
+    assert!(super::helper::load(&plan_file, Some(&hash)).is_none(), "edited plan accepted");
+    assert_eq!(super::helper::progress_path(&plan_file), t.path().join("progress.jsonl"));
+}

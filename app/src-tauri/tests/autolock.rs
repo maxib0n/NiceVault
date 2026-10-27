@@ -57,7 +57,7 @@ fn settings_defaults_and_patch() {
         serde_json::to_value(&a.settings).unwrap(),
         serde_json::json!({ "auto_lock_minutes": 15, "accent": "velluto", "theme": "dark",
                             "lock_on_sleep": true, "lock_on_screen_lock": true, "lock_scope": "volume",
-                            "grid_size": "m", "list_density": "normal" })
+                            "grid_size": "m", "list_density": "normal", "browser_enabled": true })
     );
     let s = st
         .settings_set(patch(r#"{"auto_lock_minutes": 0, "lock_on_sleep": false, "lock_scope": "all", "lock_on_screen_lock": null}"#), Some(&a.id))

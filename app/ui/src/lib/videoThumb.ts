@@ -231,19 +231,24 @@ async function frame(job: Job, signal: AbortSignal, loopback: boolean): Promise<
     isBlob = true;
   }
   const v = document.createElement("video");
-  if (ticket) v.crossOrigin = "anonymous";
   v.muted = true;
   v.playsInline = true;
   v.setAttribute("playsinline", "");
-  v.preload = "auto";
+  if (ticket) {
+    v.crossOrigin = "anonymous";
+    v.loop = true;
+    v.preload = "metadata";
+  } else {
+    v.preload = "auto";
+  }
   try {
     const work = (async () => {
-      const meta = once(v, "loadeddata", signal);
+      const meta = once(v, ticket ? "loadedmetadata" : "loadeddata", signal);
       v.src = src;
       await meta;
       const d = Number.isFinite(v.duration) ? v.duration : 0;
       const t = d > 0 ? Math.min(1, d * 0.1) : 0;
-      if (t > 0) {
+      if (t > 0 || ticket) {
         const seeked = once(v, "seeked", signal);
         v.currentTime = t;
         await seeked;

@@ -73,7 +73,7 @@ describe('appearance (mock backend)', () => {
 
   it('settings are per volume; no vault = the active one (bindActiveVault), none open = session defaults', async () => {
     const d = await api.settingsGet();
-    expect(d).toEqual({ auto_lock_minutes: 15, accent: 'velluto', theme: 'dark', lock_on_sleep: true, lock_on_screen_lock: true, lock_scope: 'volume', grid_size: 'm', list_density: 'normal' });
+    expect(d).toEqual({ auto_lock_minutes: 15, accent: 'velluto', theme: 'dark', lock_on_sleep: true, lock_on_screen_lock: true, lock_scope: 'volume', grid_size: 'm', list_density: 'normal', browser_enabled: true });
     expect((await api.settingsSet({ accent: 'seppia' })).accent).toBe('seppia');
     await api.appSettingsSet({ app_accent: 'ottanio', app_theme: 'light' });
     const like = await api.vaultCreate(`${STICK}/Come app.nvault`, 'pw-lunga-123');

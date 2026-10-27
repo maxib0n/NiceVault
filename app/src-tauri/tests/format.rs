@@ -1,8 +1,3 @@
-//! Format through the functions the Tauri commands call: vault_create makes single-file (v2)
-//! volumes; "Aggiorna formato" (vault_upgrade_format) makes an old (v1) volume single-file
-//! (VaultInfo says so), the session and its files go on, the volume reopens as one file; fixed-size
-//! volumes too (new ones are single-file; a nearly full one answers `volume_full`).
-
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, NoEvents};
 use nv_fs::{Fs, Kind, ROOT};
@@ -25,7 +20,6 @@ fn upgrade_format_end_to_end() {
     let new = st.vault_create(stick.path().join("Nuovo.nvault").to_str().unwrap(), pw("pw"), Some("fast")).unwrap();
     assert!(new.single_file && !new.can_upgrade_format, "new volumes are single-file");
     st.vault_lock(&new.id, "user").unwrap();
-    // an old (v1) volume: a copy of a 2026-10-24 fixture (written by e6e385c)
     let path = stick.path().join("Lavoro.nvault");
     std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/nv-core/tests/fixtures/compat/2026-10-24/cifrato.nvault"), &path).unwrap();
     let info = st.vault_open(path.to_str().unwrap(), pw("cifrato-pw")).unwrap();
@@ -53,7 +47,6 @@ fn upgrade_format_end_to_end() {
     drop(v);
     st.vault_lock(&again.id, "user").unwrap();
 
-    // fixed-size: new ones are single-file; one made before (side-file journal) is upgraded in place
     let fixed = st.vault_create_sized(stick.path().join("Fisso.nvault").to_str().unwrap(), pw("pw"), Some("fast"), Some(8 << 20)).unwrap();
     assert!(fixed.single_file && !fixed.can_upgrade_format);
     st.vault_lock(&fixed.id, "user").unwrap();
@@ -67,7 +60,6 @@ fn upgrade_format_end_to_end() {
     assert_eq!(std::fs::metadata(&old).unwrap().len(), 16 << 20);
     assert!(!stick.path().join("Chiavetta.nvault-journal").exists());
 
-    // too full for the region: `volume_full`, nothing changed; extended, it upgrades
     let full = stick.path().join("Pieno.nvault");
     {
         let v = nv_core::Vault::create_fixed_as(&full, &pw("pw"), nv_core::KdfPreset::Fast, 8 << 20, false).unwrap();

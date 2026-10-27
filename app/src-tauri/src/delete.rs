@@ -1,19 +1,3 @@
-//! Deleting as a job (`fs_delete`): "616 elementi, 1,1 GB" took long and showed nothing.
-//!
-//! SQLCipher keeps `secure_delete` on, so every freed page is overwritten — and journaled first:
-//! deleting 1 GB in one transaction wrote ~2 GB and needed ~1 GB of journal room (on a nearly full
-//! fixed-size volume, past its capacity). Now the selection is expanded into a post-order list
-//! (children before their folder) and removed in **batches**, each one a durability point
-//! (`Fs::flush`, whose slow part runs outside the store lock): at most [`BATCH_ITEMS`] items,
-//! [`BATCH_BYTES`] of file data or [`BATCH_TIME`] per batch. A file bigger than a batch is cut
-//! from its end, [`BATCH_BYTES`] per commit, then removed. Between batches the folders that
-//! changed are announced (`fs-changed`) so the listing follows.
-//!
-//! Cancel: takes effect before the next item (a big file being cut is finished first); what was
-//! deleted stays deleted. Errors: `NotFound` = already gone (counted as deleted); `Locked`, `Io`
-//! and `Corrupt` stop the job (`no_room_to_delete` when the store or the drive is full); anything
-//! else is recorded for that item, which stays — and so do the folders holding it.
-
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use nv_fs::{Fs, Kind, NodeId, ROOT};
@@ -23,22 +7,14 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-/// File data freed per commit (also the step a big file is cut by). Freeing it writes about twice
-/// as much (secure delete), part of it synced under the store lock (the journal must reach the
-/// device before the pages it saved are overwritten): 16 MiB held listings ~1.5 s on a 15 MB/s
-/// stick, 4 MiB ~0.4 s (cancel-hang, tests/cancel_hang.rs).
 pub const BATCH_BYTES: u64 = 4 << 20;
-/// Items removed per commit.
 pub const BATCH_ITEMS: u64 = 128;
-/// A batch is committed at the latest this long after its first item.
 pub const BATCH_TIME: Duration = Duration::from_millis(750);
 
-/// One node to remove, in removal order.
 #[derive(Debug, Clone)]
 pub struct Entry {
     pub id: NodeId,
     pub parent: NodeId,
-    /// Index of the parent's entry when the parent is removed too.
     pub parent_idx: Option<usize>,
     pub kind: Kind,
     pub size: u64,
@@ -53,35 +29,25 @@ pub struct ItemError {
     pub message: String,
 }
 
-/// `job-done.outcome` of a delete job.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct DeleteOutcome {
-    /// Items removed and committed (folders included).
     pub deleted: u64,
     pub total: u64,
-    /// File data removed and committed.
     pub freed_bytes: u64,
-    /// Items that stay (their folders stay too, silently).
     pub errors: Vec<ItemError>,
 }
 
-/// What a delete reports as it goes.
 pub struct Progress<'a> {
     pub done_items: u64,
     pub total_items: u64,
     pub done_bytes: u64,
     pub total_bytes: u64,
     pub current: &'a str,
-    /// A commit was just made (a batch, or one step of cutting a big file).
     pub committed: bool,
-    /// The folders whose listing that batch changed.
     pub committed_dirs: &'a [NodeId],
 }
 
-/// The selection as a post-order list; nodes already gone are skipped, a node selected with one
-/// of its folders is taken once.
 pub fn plan(fs: &dyn Fs, nodes: &[NodeId]) -> ApiResult<Vec<Entry>> {
-    // post-order: a folder right after everything inside it
     fn walk(fs: &dyn Fs, n: nv_fs::Node, out: &mut Vec<Entry>, seen: &mut HashSet<NodeId>) -> ApiResult<()> {
         if !seen.insert(n.id) {
             return Ok(());
@@ -123,13 +89,11 @@ pub fn plan(fs: &dyn Fs, nodes: &[NodeId]) -> ApiResult<Vec<Entry>> {
     Ok(out)
 }
 
-/// The store or the drive is full (SQLITE_FULL, ENOSPC).
 fn is_full(m: &str) -> bool {
     let m = m.to_ascii_lowercase();
     m.contains("disk is full") || m.contains("no space") || m.contains("os error 28")
 }
 
-/// `Some(error)` when `e` must stop the whole delete.
 pub fn fatal(e: &nv_fs::Error) -> Option<ApiError> {
     use nv_fs::Error as E;
     match e {
@@ -148,14 +112,11 @@ fn fail(e: nv_fs::Error) -> ApiError {
     fatal(&e).unwrap_or_else(|| e.into())
 }
 
-/// Removes `entries` (from [`plan`]) in committed batches. Returns what was done, and the error
-/// that stopped it (`cancelled` included); what was committed stays deleted either way.
-#[allow(unused_assignments)] // the batch macros also reset the batch right before a return
+#[allow(unused_assignments)]
 pub fn run(fs: &dyn Fs, entries: &[Entry], cancel: &AtomicBool, mut report: impl FnMut(&Progress)) -> (DeleteOutcome, ApiResult<()>) {
     let total_bytes: u64 = entries.iter().map(|e| e.size).sum();
     let mut out = DeleteOutcome { total: entries.len() as u64, ..Default::default() };
     let mut kept = vec![false; entries.len()];
-    // the batch not committed yet
     let mut items = 0u64;
     let mut bytes = 0u64;
     let mut dirs = BTreeSet::new();
@@ -190,7 +151,6 @@ pub fn run(fs: &dyn Fs, entries: &[Entry], cancel: &AtomicBool, mut report: impl
             }
         }};
     }
-    // stop on a fatal error: what the open batch did is kept if it still commits
     macro_rules! stop {
         ($e:expr) => {{
             let err = $e;
@@ -216,7 +176,6 @@ pub fn run(fs: &dyn Fs, entries: &[Entry], cancel: &AtomicBool, mut report: impl
         let mut size = e.size;
         if e.kind == Kind::File && size > BATCH_BYTES {
             commit!(&e.name);
-            // cut from the end, one committed step at a time
             while size > BATCH_BYTES {
                 let next = (size - 1) / BATCH_BYTES * BATCH_BYTES;
                 match fs.set_size(e.id, next).and_then(|()| fs.flush()) {
@@ -257,16 +216,12 @@ pub fn run(fs: &dyn Fs, entries: &[Entry], cancel: &AtomicBool, mut report: impl
     (out, Ok(()))
 }
 
-/// Plans and runs a delete on the calling thread (no progress, not cancellable).
 pub fn delete_now(fs: &dyn Fs, nodes: &[NodeId]) -> ApiResult<DeleteOutcome> {
     let entries = plan(fs, nodes)?;
     let (out, r) = run(fs, &entries, &AtomicBool::new(false), |_| {});
     r.map(|()| out)
 }
 
-/// `fs_delete`: the job. Events `job-progress { job, done_bytes, total_bytes, current, done_items,
-/// total_items }` (bytes = file data freed), `fs-changed { vault, dirs }` after every committed
-/// batch, `job-done { job, error, outcome: DeleteOutcome }`.
 pub fn fs_delete(state: &AppState, vault_id: &str, nodes: Vec<NodeId>) -> ApiResult<String> {
     let v = state.vault(vault_id)?;
     if nodes.contains(&ROOT) {

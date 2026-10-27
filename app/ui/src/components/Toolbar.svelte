@@ -1,8 +1,3 @@
-<!--
-  The page head: the path and the view controls on the first line; the folder's
-  name set in Bodoni with what it holds, and the actions (Importa is the one
-  primary) on the second; a running band of guilloché closes the head.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { ArrowDownUp, ArrowUp, ChevronDown, ListFilter, Search, Download, FileUp, FolderPlus, Images, LayoutGrid, Library, List, Rows2, Rows3, Rows4, Tag as TagIcon, Upload } from '@lucide/svelte';
@@ -27,7 +22,6 @@
 
   let sortBtn: HTMLButtonElement | undefined = $state();
   let sortMenu = $state<{ x: number; y: number } | null>(null);
-  // a phone: Importa asks what from (the camera roll, or files), as a sheet
   let importKey: HTMLButtonElement | undefined = $state();
   let importMenu = $state<{ x: number; y: number } | null>(null);
   const importItems: MenuItem[] = [
@@ -40,7 +34,6 @@
     importMenu = { x: r?.left ?? 0, y: r?.top ?? 0 };
   }
 
-  // search results: their own order (relevance first), asked of the backend
   const resultItems = $derived.by<MenuItem[]>(() => {
     const rs = browser.resultSort;
     const dir = rs?.dir ?? 'asc';
@@ -70,13 +63,11 @@
 
   const folderName = $derived(browser.trail[browser.trail.length - 1]?.name ?? '');
   const results = $derived(browser.resultsMode);
-  // results are always a list (each hit shows where it is)
   const layout = $derived(results ? 'list' : prefs.view);
   const resultsTitle = $derived(m.sr_results_title({ count: browser.hitTotal, n: formatNumber(browser.hitTotal), q: browser.appliedQuery.trim() }));
   let tagKey: HTMLButtonElement | undefined = $state();
   const filesBytes = $derived(browser.entries.reduce((n, e) => n + (e.kind === 'file' ? e.size : 0), 0));
 
-  // view size of this volume: S M L XL tiles, or compact / normal / comfortable rows
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
   const MOD = isMac ? '⌘' : 'Ctrl';
   const SIZE_LABEL: Record<GridSize, () => string> = { s: m.size_s, m: m.size_m, l: m.size_l, xl: m.size_xl };
@@ -85,7 +76,6 @@
   const grid = $derived(viewSize.grid(browser.vault.id));
   const density = $derived(viewSize.density(browser.vault.id));
 
-  // a phone has no room for S M L XL in the head: they are in the sort sheet, below the order
   const sizeItems = $derived<MenuItem[]>(
     !isMobile
       ? []
@@ -106,12 +96,9 @@
           })),
   );
 
-  // a phone: search and the filters are keys in the head, opened when wanted (two lines of chips
-  // and a field took a third of the screen); the field fills the head while searching
   let phoneFilters = $state(false);
   let viewSheet = $state(false);
   const showSearch = $derived(!isMobile || browser.searchOpen);
-  // nothing to filter in a folder with no items (unless a filter is already set)
   const bare = $derived(browser.loaded && browser.entries.length === 0 && !browser.filtering && !browser.searchOpen);
   const showFilters = $derived(!bare && (!isMobile || phoneFilters || browser.filtering || browser.searchOpen));
 
@@ -129,7 +116,6 @@
   <div class="toolbar" role="toolbar" aria-label={m.fb_menu_folder()}>
     <div class="line nav-line" data-phone-search={isMobile && browser.searchOpen ? '' : undefined}>
       {#if isMobile && browser.trail.length <= 1}
-        <!-- a phone has no cover to list the open volumes: above a volume's root is the shelf -->
         <button type="button" class="btn ghost icon shelf" aria-label={m.mob_shelf()} title={m.mob_shelf()} data-testid="mobile-shelf" onclick={() => app.goto('welcome')}>
           <Library size={18} />
         </button>
@@ -220,7 +206,6 @@
       {/if}
 
       {#if isMobile}
-        <!-- a phone: grid / list and the size in one sheet ("Vista"), as findable as desktop's keys -->
         <button type="button" class="btn ghost icon phone-key" aria-label={m.tb_view()} title={m.tb_view()} aria-haspopup="dialog" aria-expanded={viewSheet} data-testid="phone-view" onclick={() => (viewSheet = true)}>
           {#if layout === 'grid'}<LayoutGrid size={17} />{:else}<List size={17} />{/if}
         </button>
@@ -287,7 +272,6 @@
         {/if}
       </div>
       <div class="actions">
-        <!-- results come from many folders: what makes or fills a folder is not offered there -->
         {#if !results}
           <button type="button" class="btn" onclick={() => browser.newFolder()} title={m.tb_new_folder_title()}>
             <FolderPlus size={16} aria-hidden="true" /> <span class="label-text">{m.fb_new_folder()}</span>
@@ -389,7 +373,6 @@
     border-radius: 50%;
     background: var(--accent);
   }
-  /* searching on a phone: the field has the head (and its x closes it) */
   .nav-line[data-phone-search] > :not(:global(.search-box)) {
     display: none;
   }
@@ -404,7 +387,6 @@
     flex: none;
   }
 
-  /* the view switch: two latching keys in one pressed-in bed; the chosen one stays up */
   .view-toggle {
     display: flex;
     flex: none;
@@ -446,7 +428,6 @@
   .sizes {
     margin-right: var(--space-1);
   }
-  /* S M L XL: a tile drawn at four sizes on one baseline, its picture area tinted */
   .size-glyph {
     display: block;
     align-self: end;
@@ -494,15 +475,12 @@
     color: var(--ink-3);
   }
 
-  /* the folder's name, set like a title on a page */
   .title-line {
     align-items: flex-end;
     flex-wrap: wrap;
     gap: var(--space-2) var(--space-4);
     padding: 2px 0 14px var(--space-2);
   }
-  /* the name keeps whole words: when the actions leave it too little room (large UI scale,
-     narrow window) they move under it instead of cutting a word in two */
   .title-block {
     flex: 1 1 300px;
     min-width: 0;
@@ -519,8 +497,6 @@
     line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    /* Bodoni's ink reaches past its line box (descenders 0.27 em under the baseline, accents
-       0.99 em over it): the clamp's box gets that room as padding, given back as margin */
     padding-block: 0.12em 0.16em;
     margin-block: -0.12em -0.16em;
   }
@@ -549,10 +525,7 @@
     padding-bottom: 2px;
   }
 
-  /* a narrow head (large UI size, small window): the sort key keeps only its icon and caret;
-     its name stays for assistive tech */
   @container (max-width: 560px) {
-    /* the sizes are in the sort menu too */
     .sizes {
       display: none;
     }
@@ -569,7 +542,6 @@
     }
   }
 
-  /* narrow windows: the actions keep their names for assistive tech */
   @media (max-width: 1080px) {
     .actions .label-text {
       position: absolute;

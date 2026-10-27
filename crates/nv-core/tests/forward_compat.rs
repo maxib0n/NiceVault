@@ -1,8 +1,3 @@
-//! Downgrade safety: a volume last written by a NEWER build (unknown header version, slot kind,
-//! emblem kind or header field) must make this build answer `UnsupportedVersion` — not
-//! "corrupt", not "wrong password" — and leave every byte of the file as it was.
-//!
-
 use nv_core::{Appearance, KdfPreset, LockedEmblem, OpenError, Vault};
 use secrecy::SecretString;
 use std::path::Path;
@@ -21,8 +16,6 @@ fn volume(dir: &Path, appearance: Option<Appearance>) -> std::path::PathBuf {
     p
 }
 
-/// Edits the checksummed part of header copy `which` (0, 1) and fixes its checksum, as a newer
-/// build writing its own format would.
 fn edit_copy(path: &Path, which: usize, f: impl Fn(&mut [u8])) {
     let mut raw = std::fs::read(path).unwrap();
     let c = &mut raw[which * COPY_LEN..(which + 1) * COPY_LEN];
@@ -43,7 +36,6 @@ fn files(path: &Path) -> Vec<Option<Vec<u8>>> {
         .collect()
 }
 
-/// Open (password), peek and peek_appearance all say "newer version"; nothing on disk changed.
 fn refused_untouched(path: &Path) {
     let before = files(path);
     for _ in 0..2 {
@@ -62,7 +54,7 @@ fn newer_header_version_is_unsupported() {
     let t = tempfile::tempdir().unwrap();
     let p = volume(t.path(), None);
     for c in 0..2 {
-        edit_copy(&p, c, |b| b[8] = 3); // version varint right after the magic (new volumes are 2)
+        edit_copy(&p, c, |b| b[8] = 3);
     }
     refused_untouched(&p);
 }
@@ -71,7 +63,6 @@ fn newer_header_version_is_unsupported() {
 fn unknown_slot_kind_is_unsupported() {
     let t = tempfile::tempdir().unwrap();
     let p = volume(t.path(), None);
-    // magic 8 | version 1 | volume_id 16 | seq 1 (< 128) | slot count 1 | Some 1 | Slot tag
     for c in 0..2 {
         edit_copy(&p, c, |b| {
             assert_eq!(b[28], 0, "Slot::Password tag");
@@ -101,14 +92,11 @@ fn unknown_trailing_header_field_is_unsupported() {
     let t = tempfile::tempdir().unwrap();
     let p = volume(t.path(), Some(Appearance { accent: Some("prussia".into()), emblem: None }));
     for c in 0..2 {
-        edit_copy(&p, c, |b| b[COPY_LEN - 33] = 1); // in the padding after every known field
+        edit_copy(&p, c, |b| b[COPY_LEN - 33] = 1);
     }
     refused_untouched(&p);
 }
 
-/// Only the newest copy is in the newer format (the other still holds the previous, older
-/// header): falling back to the older copy and "repairing" would lose what the newer build
-/// wrote, so the volume is refused as well.
 #[test]
 fn one_newer_copy_is_enough_to_refuse() {
     let t = tempfile::tempdir().unwrap();
@@ -117,7 +105,6 @@ fn one_newer_copy_is_enough_to_refuse() {
     refused_untouched(&p);
 }
 
-/// Control: a torn copy (checksum mismatch) is still damage, repaired from the other copy.
 #[test]
 fn torn_copy_still_opens() {
     let t = tempfile::tempdir().unwrap();

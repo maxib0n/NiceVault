@@ -1,11 +1,8 @@
-// Formatting helpers in the UI language (i18n.tag for Intl, messages for words). Pure functions.
 import { i18n } from './i18n.svelte';
 import { m } from '../paraglide/messages.js';
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
-// Intl formatters are costly to build (a folder of 500 formats two values per row): one per
-// language and options, kept for the session.
 const formatters = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat>();
 function cached<T extends Intl.NumberFormat | Intl.DateTimeFormat>(key: string, make: () => T): T {
   const k = `${i18n.tag}|${key}`;
@@ -14,12 +11,10 @@ function cached<T extends Intl.NumberFormat | Intl.DateTimeFormat>(key: string, 
   return f;
 }
 
-/** A number in the UI's locale: 1234.5 -> "1.234,5" (it) / "1,234.5" (en). */
 export function formatNumber(n: number, digits = 0): string {
   return cached(`n${digits}`, () => new Intl.NumberFormat(i18n.tag, { maximumFractionDigits: digits, minimumFractionDigits: 0 })).format(n);
 }
 
-/** 1536 -> "1,5 KB" (base 1024, one decimal under 10). */
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';
   let i = 0;
@@ -32,13 +27,11 @@ export function formatBytes(n: number): string {
   return `${formatNumber(v, digits)} ${UNITS[i]}`;
 }
 
-/** unix ns -> Date */
 export const nsToDate = (ns: number) => new Date(ns / 1_000_000);
 
 const dateFmt = () => cached('date', () => new Intl.DateTimeFormat(i18n.tag, { day: 'numeric', month: 'short', year: 'numeric' }));
 const timeFmt = () => cached('time', () => new Intl.DateTimeFormat(i18n.tag, { hour: '2-digit', minute: '2-digit' }));
 
-/** "oggi 14:02", "ieri 09:10", "3 mar 2024" */
 export function formatDate(d: Date, now: Date = new Date()): string {
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diff = Math.round((day(now) - day(d)) / 86_400_000);
@@ -47,16 +40,10 @@ export function formatDate(d: Date, now: Date = new Date()): string {
   return dateFmt().format(d);
 }
 
-/** A full date and time ("3 mar 2024, 14:02"). */
 export function formatDateTime(ms: number): string {
   return cached('datetime', () => new Intl.DateTimeFormat(i18n.tag, { dateStyle: 'medium', timeStyle: 'short' })).format(new Date(ms));
 }
 
-/**
- * When something happened, as it reads best in the UI language: "adesso", "5 minuti fa",
- * "oggi 14:02", "ieri 09:10", "3 giorni fa", then the date ("3 mar 2024"). Pair it with
- * formatDateTime in a title for the exact moment.
- */
 export function formatWhen(ms: number, now: number = Date.now()): string {
   const s = Math.round((now - ms) / 1000);
   if (s >= 0 && s < 60) return m.fmt_now();
@@ -71,7 +58,6 @@ export function formatWhen(ms: number, now: number = Date.now()): string {
   return dateFmt().format(d);
 }
 
-/** relative "2 ore fa" for recent volumes */
 export function formatAgo(ms: number, now: number = Date.now()): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
   if (s < 60) return m.fmt_now();
@@ -85,7 +71,6 @@ export function formatAgo(ms: number, now: number = Date.now()): string {
   return dateFmt().format(new Date(ms));
 }
 
-/** 754_000 ms -> "12:34" */
 export function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000));
   const mm = Math.floor(total / 60);
@@ -93,8 +78,6 @@ export function formatCountdown(ms: number): string {
   return `${mm}:${String(s).padStart(2, '0')}`;
 }
 
-/** "3 elementi" / "3 items" */
 export const itemCount = (count: number) => m.fmt_items({ count, n: formatNumber(count) });
-/** "3 file" / "3 files" */
 export const fileCount = (count: number) => m.fmt_files({ count, n: formatNumber(count) });
 

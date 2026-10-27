@@ -1,8 +1,3 @@
-<!--
-  Under the system-drive switch when this OS's backend is missing something that can be
-  downloaded (WinFsp): "Scarica WinFsp", then a confirm before the browser opens it
-  (open_link, viewers.rs: http(s) only). Cancel has the focus, like the Markdown viewer's links.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { openLink } from '../viewers/actions';

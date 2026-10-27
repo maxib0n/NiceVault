@@ -1,4 +1,3 @@
-<!-- Modal dialog on the native <dialog> element: focus trap, Esc and inert background for free. -->
 <script lang="ts">
   import { pointerLast } from '../lib/modality';
   import type { Snippet } from 'svelte';
@@ -24,7 +23,6 @@
     describedby?: string;
   } = $props();
 
-  // a phone's slip from the bottom (styles/mobile.css): a dialog with nothing to type; a form is a page
   const SHEET = ':is([data-variant="danger"], :not(:has(input:not([type="hidden"]), textarea, select)))';
   let el: HTMLDialogElement | undefined = $state();
   const titleId = `dlg-${Math.random().toString(36).slice(2, 8)}`;
@@ -33,10 +31,6 @@
     if (!el) return;
     if (open && !el.open) {
       el.showModal();
-      // the modal focuses its first focusable element (or the autofocus one). A field keeps it
-      // (the caret is where typing goes). Otherwise, opened by a click, the sheet itself takes
-      // focus: no control lights up until a key is pressed (lib/modality.ts); opened from the
-      // keyboard, a radiogroup's own box hands focus to its checked radio, as a Tab would.
       queueMicrotask(() => {
         const a = document.activeElement;
         if (!(a instanceof HTMLElement) || !el?.contains(a)) return;
@@ -89,7 +83,6 @@
 </dialog>
 
 <style>
-  /* a sheet of the document's paper, lifted off the page; its head printed with a band */
   .dialog {
     padding: 0;
     border: 0;
@@ -122,8 +115,6 @@
     gap: var(--space-4);
     padding: 14px var(--space-5) var(--space-5);
   }
-  /* the band, title, text and buttons sit on one rhythm (the panel's gap): no part adds space of
-     its own, so the sheet is exactly as tall as what it says */
   .title {
     font-family: var(--font-display);
     font-size: 24px;
@@ -145,11 +136,9 @@
     color: var(--ink-2);
     overflow-wrap: anywhere;
   }
-  /* a dialog whose content rendered nothing leaves no empty row (and its gap) behind */
   .body:empty {
     display: none;
   }
-  /* the last line of text ends the body: no margin trailing after it */
   .body > :global(:last-child) {
     margin-bottom: 0;
   }

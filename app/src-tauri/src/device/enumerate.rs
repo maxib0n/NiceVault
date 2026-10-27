@@ -1,21 +1,7 @@
-//! Whole-disk enumeration, read-only and without any prompt on every OS:
-//!  - Linux: `/sys/block` (size, removable, ro, vendor/model, partitions), the udev database
-//!    (`/run/udev/data/b<maj>:<min>`: bus, serial, labels, file systems) and
-//!    `/proc/self/mountinfo` (mount points, also through device-mapper holders). No D-Bus.
-//!  - Windows: one PowerShell script printing `Get-Disk`, `Get-Partition` and `Get-Volume` as
-//!    JSON (no elevation needed to read them).
-//!  - macOS: `diskutil list -plist` and `diskutil info -plist`, turned into JSON by `plutil`.
-//!
-//! The parsers take text / a directory tree, so the tests feed them fixtures.
-
 use super::{Disk, Partition};
 use std::collections::HashMap;
 use std::path::Path;
 
-// ---------------------------------------------------------------------------------------------
-// Linux
-
-/// `E:KEY=value` lines of a udev database entry.
 pub fn parse_udev(text: &str) -> HashMap<String, String> {
     text.lines().filter_map(|l| l.strip_prefix("E:")).filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.to_owned(), v.to_owned())).collect()
 }
@@ -24,7 +10,6 @@ fn read(p: &Path) -> String {
     std::fs::read_to_string(p).map(|s| s.trim().to_owned()).unwrap_or_default()
 }
 
-/// Mount points per `major:minor` from mountinfo text.
 pub fn mounts_by_devno(mountinfo: &str) -> HashMap<String, Vec<String>> {
     let mut m: HashMap<String, Vec<String>> = HashMap::new();
     for l in mountinfo.lines().filter_map(crate::drives::parse_mountinfo_line) {
@@ -39,7 +24,6 @@ pub fn mounts_by_devno(mountinfo: &str) -> HashMap<String, Vec<String>> {
     m
 }
 
-/// Mount points of a block device and of everything stacked on it (LUKS, LVM: `holders/`).
 fn mounts_of(sys_dev: &Path, mounts: &HashMap<String, Vec<String>>, depth: u8) -> Vec<String> {
     let mut out = mounts.get(&read(&sys_dev.join("dev"))).cloned().unwrap_or_default();
     if depth < 4
@@ -56,8 +40,6 @@ fn mounts_of(sys_dev: &Path, mounts: &HashMap<String, Vec<String>>, depth: u8) -
 
 const SYSTEM_MOUNTS: [&str; 6] = ["/", "/boot", "/boot/efi", "/efi", "/usr", "/home"];
 
-/// Every whole disk under `sys_block` (normally `/sys/block`), `udev_data` the udev database
-/// folder, `mountinfo` the text of /proc/self/mountinfo.
 pub fn linux_disks(sys_block: &Path, udev_data: &Path, mountinfo: &str) -> Vec<Disk> {
     let mounts = mounts_by_devno(mountinfo);
     let Ok(rd) = std::fs::read_dir(sys_block) else { return vec![] };
@@ -71,7 +53,7 @@ pub fn linux_disks(sys_block: &Path, udev_data: &Path, mountinfo: &str) -> Vec<D
         let dir = std::fs::canonicalize(sys_block.join(&name)).unwrap_or_else(|_| sys_block.join(&name));
         let size = read(&dir.join("size")).parse::<u64>().unwrap_or(0) * 512;
         if size == 0 {
-            continue; // empty card reader, unattached loop
+            continue;
         }
         let udev = parse_udev(&std::fs::read_to_string(udev_data.join(format!("b{}", read(&dir.join("dev"))))).unwrap_or_default());
         let get = |k: &str| udev.get(k).cloned().unwrap_or_default();
@@ -79,7 +61,6 @@ pub fn linux_disks(sys_block: &Path, udev_data: &Path, mountinfo: &str) -> Vec<D
         let canon = dir.to_string_lossy().into_owned();
         let bus = match get("ID_BUS").as_str() {
             "" if is_loop => "virtual".to_owned(),
-            // a USB-SATA bridge (UAS) reports ID_BUS=ata: the sysfs path says where the disk hangs
             _ if canon.contains("/usb") => "usb".to_owned(),
             "" if name.starts_with("mmcblk") => if get("ID_DRIVE_FLASH_SD") == "1" { "sd".into() } else { "mmc".into() },
             "" if name.starts_with("nvme") => "nvme".to_owned(),
@@ -132,10 +113,6 @@ pub fn os_disks() -> Vec<Disk> {
     linux_disks(Path::new("/sys/block"), Path::new("/run/udev/data"), &mi)
 }
 
-// ---------------------------------------------------------------------------------------------
-// Windows
-
-/// Read-only: prints `{disks, partitions, volumes}` as JSON.
 pub const WINDOWS_LIST_SCRIPT: &str = "$ProgressPreference='SilentlyContinue'; \
 $d=@(Get-Disk | Select-Object Number,FriendlyName,Manufacturer,Model,SerialNumber,@{n='BusType';e={[int]$_.BusType}},Size,IsBoot,IsSystem,BootFromDisk,IsReadOnly,Path); \
 $p=@(Get-Partition -ErrorAction SilentlyContinue | Select-Object DiskNumber,PartitionNumber,DriveLetter,Size,AccessPaths,@{n='VolumePath';e={($_ | Get-Volume -ErrorAction SilentlyContinue).Path}}); \
@@ -153,11 +130,10 @@ fn arr(v: &serde_json::Value) -> Vec<serde_json::Value> {
     match v {
         serde_json::Value::Array(a) => a.clone(),
         serde_json::Value::Null => vec![],
-        o => vec![o.clone()], // ConvertTo-Json unwraps one-element arrays
+        o => vec![o.clone()],
     }
 }
 
-/// BusType numbers of MSFT_Disk.
 pub fn windows_bus(n: u64) -> &'static str {
     match n {
         7 => "usb",
@@ -228,7 +204,7 @@ pub fn powershell(script: &str) -> std::io::Result<std::process::Output> {
     let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
     std::process::Command::new(format!(r"{root}\System32\WindowsPowerShell\v1.0\powershell.exe"))
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", &super::commands::encode_ps(script)])
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .creation_flags(0x0800_0000)
         .stdin(std::process::Stdio::null())
         .output()
 }
@@ -239,11 +215,6 @@ pub fn os_disks() -> Vec<Disk> {
     parse_windows(&String::from_utf8_lossy(&o.stdout), &std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()))
 }
 
-// ---------------------------------------------------------------------------------------------
-// macOS
-
-/// `list`: `diskutil list -plist external physical` as JSON; `info(id)`: `diskutil info -plist`
-/// of that whole disk as JSON; `root_store`: the whole disk(s) holding `/`.
 pub fn parse_macos(list: &str, info: impl Fn(&str) -> Option<serde_json::Value>, root_disks: &[String]) -> Vec<Disk> {
     let Ok(l) = serde_json::from_str::<serde_json::Value>(list) else { return vec![] };
     let mut out = vec![];
@@ -316,7 +287,6 @@ fn plist_json(args: &[&str]) -> Option<serde_json::Value> {
 #[cfg(target_os = "macos")]
 pub fn os_disks() -> Vec<Disk> {
     let Some(list) = plist_json(&["list", "-plist", "physical"]) else { return vec![] };
-    // the whole disk(s) of "/" (APFS: the physical store behind the container)
     let root = plist_json(&["info", "-plist", "/"]).unwrap_or_default();
     let mut roots = vec![s(&root, "ParentWholeDisk")];
     for st in arr(&root["APFSPhysicalStores"]) {

@@ -1,7 +1,3 @@
-//! Auto-lock triggers from the OS: the drive holding a volume disappears, the system goes to
-//! sleep, the session's screen locks. Which volumes lock is decided per volume by
-//! `AppState::lock_event` (autolock.rs); drive removal always locks just that volume.
-
 use crate::state::{AppState, lock_or_recover};
 use std::path::{Path, PathBuf};
 use std::sync::Weak;
@@ -12,7 +8,6 @@ fn reachable(path: &Path) -> bool {
     std::fs::read_dir(dir).is_ok() && std::fs::metadata(path).is_ok_and(|m| m.is_file())
 }
 
-/// Checks every second that the volume file is still there; locks with "removed" if not.
 pub fn spawn_removal_watcher(state: Weak<AppState>, id: String, path: PathBuf) {
     let _ = std::thread::Builder::new().name("nv-removal".into()).spawn(move || {
         loop {
@@ -29,7 +24,6 @@ pub fn spawn_removal_watcher(state: Weak<AppState>, id: String, path: PathBuf) {
     });
 }
 
-/// The app state the native callbacks (Windows window procedure, macOS C callbacks) reach.
 #[cfg(any(windows, target_os = "macos"))]
 static TRIGGER_STATE: std::sync::OnceLock<Weak<AppState>> = std::sync::OnceLock::new();
 
@@ -40,18 +34,6 @@ fn fire(reason: &str) {
     }
 }
 
-/// Starts the sleep and screen-lock triggers ([`AppState::lock_event`] "sleep" / "screen"):
-///  - Linux: `gdbus monitor` children (no D-Bus crate): logind's `PrepareForSleep(true)`
-///    (before suspend), the session's `Lock` signal / `LockedHint = true`, and the session
-///    bus screensavers' `ActiveChanged(true)` (org.freedesktop.ScreenSaver: KDE, Xfce, ...;
-///    org.gnome.ScreenSaver: GNOME);
-///  - Windows: a hidden top-level window: `WM_POWERBROADCAST / PBT_APMSUSPEND` (before sleep)
-///    and `WM_WTSSESSION_CHANGE / WTS_SESSION_LOCK` (WTSRegisterSessionNotification);
-///  - macOS: `IORegisterForSystemPower` `kIOMessageSystemWillSleep` (before sleep; the C side
-///    of NSWorkspaceWillSleepNotification) and the distributed notification
-///    `com.apple.screenIsLocked`;
-///  - everywhere: a wall-clock vs monotonic-clock gap after resume (the monotonic clock stops
-///    during suspend on Linux and macOS), as a fallback "sleep".
 pub fn spawn_sleep_watcher(state: Weak<AppState>) {
     #[cfg(target_os = "linux")]
     linux::spawn(state.clone());
@@ -77,7 +59,6 @@ pub fn spawn_sleep_watcher(state: Weak<AppState>) {
     });
 }
 
-/// sd_bus_path_encode: every byte that is not `[A-Za-z0-9]` (and a leading digit) becomes `_xx`.
 pub fn bus_path_escape(s: &str) -> String {
     if s.is_empty() {
         return "_".into();
@@ -93,9 +74,6 @@ pub fn bus_path_escape(s: &str) -> String {
     out
 }
 
-/// What one `gdbus monitor` line means for auto-lock: `Some("sleep")`, `Some("screen")` or
-/// nothing. `session` = this process's logind session object path (`None` = unknown: any
-/// session's lock counts, the safe direction).
 pub fn classify_dbus_line(line: &str, session: Option<&str>) -> Option<&'static str> {
     let ours = || session.is_none_or(|p| line.starts_with(p) && line[p.len()..].starts_with(':'));
     if line.contains(".PrepareForSleep (true") {
@@ -129,7 +107,6 @@ mod linux {
     fn monitor(args: &[&str], state: Weak<AppState>, session: Option<String>) {
         let mut cmd = Command::new("gdbus");
         cmd.arg("monitor").args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-        // SAFETY: prctl is async-signal-safe; the child dies with us even if we abort.
         unsafe {
             cmd.pre_exec(|| {
                 libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
@@ -225,7 +202,6 @@ mod win {
 
     unsafe extern "system" fn wnd_proc(h: Hwnd, m: u32, w: usize, l: isize) -> isize {
         match (m, w) {
-            // Runs before the system suspends (the lock completes inside the callback).
             (WM_POWERBROADCAST, PBT_APMSUSPEND) => {
                 super::fire("sleep");
                 1
@@ -234,12 +210,10 @@ mod win {
                 super::fire("screen");
                 0
             }
-            // a volume (drive letter) arrived or went: drives.rs re-enumerates
             (WM_DEVICECHANGE, DBT_DEVICEARRIVAL | DBT_DEVICEREMOVECOMPLETE) => {
                 crate::drives::wake();
                 1
             }
-            // SAFETY: forwarding the arguments the system gave us.
             _ => unsafe { DefWindowProcW(h, m, w, l) },
         }
     }
@@ -247,9 +221,6 @@ mod win {
     pub(super) fn spawn() {
         let _ = std::thread::Builder::new().name("nv-oswatch".into()).spawn(|| {
             let class: Vec<u16> = "NiceVaultAutoLock".encode_utf16().chain([0]).collect();
-            // SAFETY: plain Win32 calls with NUL-terminated strings that outlive them; the
-            // window is never shown (top-level so it gets WM_POWERBROADCAST, which
-            // message-only windows do not) and lives as long as this thread.
             unsafe {
                 let instance = GetModuleHandleW(std::ptr::null());
                 let wc = WndClassW {
@@ -309,8 +280,8 @@ mod mac {
 
     const UTF8: u32 = 0x0800_0100;
     const DELIVER_IMMEDIATELY: isize = 4;
-    const SYSTEM_WILL_SLEEP: u32 = 0xE000_0280; // kIOMessageSystemWillSleep
-    const CAN_SYSTEM_SLEEP: u32 = 0xE000_0270; // kIOMessageCanSystemSleep
+    const SYSTEM_WILL_SLEEP: u32 = 0xE000_0280;
+    const CAN_SYSTEM_SLEEP: u32 = 0xE000_0270;
     static ROOT_PORT: AtomicU32 = AtomicU32::new(0);
     static OBSERVER: u8 = 0;
 
@@ -321,11 +292,9 @@ mod mac {
     extern "C" fn on_power(_: *mut c_void, _: u32, msg: u32, arg: *mut c_void) {
         match msg {
             SYSTEM_WILL_SLEEP => {
-                super::fire("sleep"); // done before we allow the sleep
-                // SAFETY: acknowledging the notification IOKit just sent us.
+                super::fire("sleep");
                 unsafe { IOAllowPowerChange(ROOT_PORT.load(Ordering::Relaxed), arg as isize) };
             }
-            // SAFETY: as above (idle sleep asks first; never veto it).
             CAN_SYSTEM_SLEEP => unsafe {
                 IOAllowPowerChange(ROOT_PORT.load(Ordering::Relaxed), arg as isize);
             },
@@ -335,8 +304,6 @@ mod mac {
 
     pub(super) fn spawn() {
         let _ = std::thread::Builder::new().name("nv-oswatch".into()).spawn(|| {
-            // SAFETY: CoreFoundation / IOKit C calls with valid arguments; the string and the
-            // port live for the whole process; the run loop never returns while sources exist.
             unsafe {
                 let name = CFStringCreateWithCString(std::ptr::null(), c"com.apple.screenIsLocked".as_ptr(), UTF8);
                 let observer = &OBSERVER as *const u8 as *const c_void;
@@ -361,7 +328,6 @@ mod mac {
     }
 }
 
-/// Stops helper processes (app exit).
 pub fn shutdown() {
     #[cfg(target_os = "linux")]
     for mut c in lock_or_recover(&linux::MONITORS).drain(..) {

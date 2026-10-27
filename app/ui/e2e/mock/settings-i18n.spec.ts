@@ -1,5 +1,3 @@
-// Impostazioni (global settings) and the UI language. Selectors are testids / data-* hooks,
-// so the same steps run in Italian and English.
 import { boot, expect, expectScreen, test } from './helpers';
 
 test('Impostazioni opens from Benvenuto, the sidebar and Ctrl+, ; back returns', async ({ page }) => {
@@ -26,11 +24,9 @@ test('Impostazioni is a page of its own: the whole window, one column, mouse bac
   await boot(page, 'screen=welcome');
   await page.getByTestId('open-settings').click();
   await expectScreen(page, 'settings');
-  // fills the window, scrolled by itself (no narrow column on a modal)
   const box = await page.getByTestId('settings').boundingBox();
   expect(box?.width).toBe(1280);
   expect(box?.height).toBe(640);
-  // no index on the side: the sections flow down one centred column
   await expect(page.getByRole('navigation', { name: 'Sezioni' })).toHaveCount(0);
   const app = await page.getByTestId('settings-app').boundingBox();
   const about = await page.getByTestId('settings-about').boundingBox();
@@ -74,7 +70,6 @@ test('?lang=en: the volume, its files and its details in English', async ({ page
 
 test('defaults for new volumes: a volume created afterwards starts with them', async ({ page }) => {
   await boot(page, 'screen=settings');
-  // their own theme and ink, not the app's ("Come l'app" is on by default)
   await page.getByTestId('new-like-app').click();
   await page.getByTestId('default-accent').locator('[data-accent="prussia"]').click();
   await page.getByTestId('default-minutes').getByRole('radio', { name: 'Mai' }).click();
@@ -88,7 +83,6 @@ test('defaults for new volumes: a volume created afterwards starts with them', a
   await page.getByRole('button', { name: 'Apri il volume' }).click();
   await expectScreen(page, 'vault');
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'prussia');
-  // auto-lock "Mai": no countdown in the sidebar
   await expect(page.getByText(/Blocco automatico tra/)).toHaveCount(0);
 });
 

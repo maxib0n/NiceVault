@@ -1,4 +1,3 @@
-//! Mounts an in-memory Fs through FUSE and drives it with plain std::fs.
 #![cfg(target_os = "linux")]
 
 mod common;
@@ -50,11 +49,9 @@ fn end_to_end() {
     let root = h.mountpoint().to_path_buf();
     assert!(is_mounted(&root));
 
-    // Nested dirs.
     fs::create_dir_all(root.join("a/b/c")).unwrap();
     assert!(root.join("a/b/c").is_dir());
 
-    // 3 MiB file, written in odd-sized pieces, then patched via seeks.
     let big = root.join("a/b/big.bin");
     let mut data = pattern(3 << 20);
     {
@@ -80,7 +77,6 @@ fn end_to_end() {
         f.read_to_end(&mut tail).unwrap();
         assert_eq!(tail, &data[data.len() - 10..]);
     }
-    // Writing past EOF zero-fills.
     {
         let mut f = OpenOptions::new().write(true).open(&big).unwrap();
         f.seek(SeekFrom::Start((3 << 20) + 100)).unwrap();
@@ -90,43 +86,35 @@ fn end_to_end() {
     assert_eq!(got.len(), (3 << 20) + 103);
     assert!(got[3 << 20..(3 << 20) + 100].iter().all(|&b| b == 0));
 
-    // Truncate (shrink, then grow).
     OpenOptions::new().write(true).open(&big).unwrap().set_len(10).unwrap();
     assert_eq!(fs::read(&big).unwrap(), &data[..10]);
     OpenOptions::new().write(true).open(&big).unwrap().set_len(20).unwrap();
     let got = fs::read(&big).unwrap();
     assert_eq!(&got[..10], &data[..10]);
     assert_eq!(&got[10..], &[0u8; 10]);
-    // O_TRUNC.
     fs::write(&big, b"short").unwrap();
     assert_eq!(fs::read(&big).unwrap(), b"short");
 
-    // Rename over an existing file.
     fs::write(root.join("a/x.txt"), b"x").unwrap();
     fs::write(root.join("a/y.txt"), b"yyyy").unwrap();
     fs::rename(root.join("a/x.txt"), root.join("a/y.txt")).unwrap();
     assert!(!root.join("a/x.txt").exists());
     assert_eq!(fs::read(root.join("a/y.txt")).unwrap(), b"x");
-    // Move across dirs.
     fs::rename(root.join("a/y.txt"), root.join("a/b/c/moved.txt")).unwrap();
     assert_eq!(fs::read(root.join("a/b/c/moved.txt")).unwrap(), b"x");
-    // Rename a dir onto a non-empty dir fails.
     fs::create_dir(root.join("empty")).unwrap();
     assert!(fs::rename(root.join("empty"), root.join("a/b")).is_err());
 
-    // readdir.
     let mut names: Vec<String> =
         fs::read_dir(root.join("a/b")).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
     names.sort();
     assert_eq!(names, ["big.bin", "c"]);
-    // Many entries (forces multiple readdir calls).
     fs::create_dir(root.join("many")).unwrap();
     for i in 0..500 {
         fs::write(root.join(format!("many/file-with-a-longish-name-{i:04}.txt")), i.to_string()).unwrap();
     }
     assert_eq!(fs::read_dir(root.join("many")).unwrap().count(), 500);
 
-    // Delete.
     fs::remove_file(root.join("a/b/big.bin")).unwrap();
     assert!(!root.join("a/b/big.bin").exists());
     assert!(fs::remove_dir(root.join("a/b")).is_err(), "non-empty dir must not be removed");
@@ -136,7 +124,6 @@ fn end_to_end() {
     fs::remove_dir(root.join("empty")).unwrap();
     assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
 
-    // statfs works (df).
     let st = unsafe {
         let mut s: libc::statvfs = std::mem::zeroed();
         let c = std::ffi::CString::new(root.as_os_str().as_encoded_bytes()).unwrap();
@@ -145,7 +132,6 @@ fn end_to_end() {
     };
     assert!(st.f_blocks > 0);
 
-    // mtime set via utimes.
     fs::write(root.join("t"), b"t").unwrap();
     let f = OpenOptions::new().write(true).open(root.join("t")).unwrap();
     let when = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
@@ -193,7 +179,6 @@ fn busy_unmount_detaches() {
     let mut open = fs::File::create(root.join("held-open")).unwrap();
     h.unmount().unwrap();
     assert!(!is_mounted(&root));
-    // The open handle keeps working until closed.
     open.write_all(b"still alive").unwrap();
 }
 
@@ -222,7 +207,6 @@ fn read_only() {
     assert!(fs::remove_file(root.join("r.txt")).is_err());
 }
 
-/// A real vault behind FUSE, recording what the kernel sends.
 struct Spy {
     v: Arc<nv_core::Vault>,
     flushes: std::sync::atomic::AtomicU64,
@@ -250,9 +234,6 @@ impl nv_fs::Fs for Spy {
     fn stats(&self) -> nv_fs::Result<nv_fs::Stats> { self.v.stats() }
 }
 
-/// Copying files into a mounted vault: the kernel sends 1 MiB writes, closing a file is not a
-/// durability point (no Fs::flush, no sync of the store), fsync(2) is, and the data is there
-/// after unmount + reopen.
 #[test]
 fn vault_big_writes_no_sync_on_close() {
     use nv_fs::Fs as _;
@@ -287,7 +268,6 @@ fn vault_big_writes_no_sync_on_close() {
     }
     assert_eq!(fs::metadata(root.join("big.bin")).unwrap().blksize(), 1 << 20, "preferred I/O size");
     assert_eq!(spy.flushes.load(Relaxed), 0, "close(2) must not be a durability point");
-    // (The vault's own timer may have made a durability point if this ran slowly.)
     let syncs = nv_core::io_counters().total_syncs() - syncs0;
     assert!(syncs <= 8, "{syncs} syncs while copying 201 files");
     assert!(spy.max_write.load(Relaxed) >= 1 << 20, "max write {} B: big_writes / max_pages not negotiated", spy.max_write.load(Relaxed));

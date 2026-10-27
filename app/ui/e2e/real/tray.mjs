@@ -1,13 +1,3 @@
-// "Resta nel vassoio quando chiudi la finestra" in the real app (installed mode), on a private
-// session bus with a stand-in tray (sni-watcher.py: the StatusNotifierWatcher a KDE panel owns):
-//   1. on by default; the tray icon registers with the tray;
-//   2. closing the window (WM_DELETE_WINDOW, what the window manager's × sends) hides it, the
-//      process keeps running and the page keeps working (a volume would stay open);
-//   3. a second launch (single instance, on that bus) shows the window again and exits;
-//   4. Esci in the icon's menu quits the process;
-//   5. no tray on the desktop (the watcher gone): closing the window quits — never an invisible
-//      process.
-// Run: NV_E2E_DBUS=1 NV_E2E_SCRIPT=tray.mjs pnpm e2e:real     (X11: xdotool + python-xlib)
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -35,7 +25,6 @@ async function until(fn, timeout = 10000) {
   }
   return false;
 }
-/** Our app processes only (the binary copied into this run's own folder). */
 const appPids = () => spawnSync('pgrep', ['-f', `${WORK}/stick/nicevault`]).stdout.toString().split('\n').filter(Boolean);
 const xids = (visible) => spawnSync(XDO, ['search', ...(visible ? ['--onlyvisible'] : []), '--class', '^nicevault$']).stdout.toString().split('\n').filter(Boolean);
 function mainWindow() {
@@ -49,7 +38,6 @@ const shown = () => {
   const id = mainWindow();
   return !!id && xids(true).includes(id);
 };
-/** What the window manager's close button sends. */
 function closeWindow() {
   const id = mainWindow();
   execFileSync('python3', ['-c', `
@@ -77,7 +65,6 @@ async function main() {
   check(await until(registered, 10000), `the tray icon registered with the tray: ${existsSync(LOG) ? readFileSync(LOG, 'utf8').trim() : 'nothing'}`);
   check(shown(), 'the window is shown at start');
 
-  // a volume open (vault_create opens it) when the window is closed
   const inv = (cmd, args) => wd.cmd('POST', '/execute/async', { script: 'const [c, a, done] = arguments; window.__TAURI_INTERNALS__.invoke(c, a).then((r) => done({ ok: r }), (e) => done({ err: e }))', args: [cmd, args] });
   const made = await inv('vault_create', { path: join(WORK, 'stick', 'Vassoio.nvault'), password: 'cavallo batteria graffetta corretta', kdf: 'fast' });
   check(!!made.ok, `a volume is open before closing (${JSON.stringify(made.err ?? '')})`);
@@ -98,7 +85,6 @@ async function main() {
   check(menu.status === 0 && gone, `Esci in the icon's menu quits (${appPids().length} process(es) left)`);
   await wd.quit().catch(() => undefined);
 
-  // no tray on this desktop: the watcher goes, closing quits
   watcher.kill('SIGTERM');
   await sleep(800);
   await start();

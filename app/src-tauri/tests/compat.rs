@@ -1,10 +1,3 @@
-//! Volume-format compatibility, app half: every fixture volume in
-//! crates/nv-core/tests/fixtures/compat/<date>/ must look and behave in this build's app as the
-//! manifest recorded from the build that wrote it (Benvenuto entry, VaultInfo, appearance,
-//! settings, slots, password list, the header section after an unlock), and keep doing so after
-//! this build changes settings and appearance. Works on temp copies only; the fixture files are
-//! checked byte-identical afterwards. Core half: crates/nv-core/tests/compat.rs.
-
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use nicevault_app::appearance::{SettingsPatch, Visibility};
@@ -37,7 +30,6 @@ fn sets() -> Vec<(PathBuf, Value)> {
     }).collect()
 }
 
-/// `want` is contained in `got` (same rule as the core test: later builds may add fields).
 fn contained(want: &Value, got: &Value, at: &str) {
     match (want, got) {
         (Value::Object(w), Value::Object(g)) => {
@@ -85,14 +77,12 @@ fn check_volume(dir: &Path, vol: &Value) {
     let path = p.to_str().unwrap();
     let st = portable(stick.path());
 
-    // locked: Benvenuto's entry from the header only
     let recent = st.recent_list();
     assert_eq!(recent.len(), 1, "{name}");
     let r = &recent[0];
     let got = json!({"name": r.name, "accent": r.accent, "emblem": r.emblem, "show_when_locked": r.show_when_locked});
     contained(&app["recent_before_open"], &got, &format!("{name}:recent"));
 
-    // unlocked
     let info = st.vault_open(path, pw(main_pw)).unwrap();
     contained(&app["vault_info"], &serde_json::to_value(&info).unwrap(), &format!("{name}:vault_info"));
     contained(&app["appearance"], &serde_json::to_value(st.vault_appearance_get(&info.id).unwrap()).unwrap(), &format!("{name}:appearance"));
@@ -102,7 +92,6 @@ fn check_volume(dir: &Path, vol: &Value) {
     st.vault_lock(&info.id, "user").unwrap();
     contained(&vol["header_after_app_open"], &appearance_json(nv_core::peek_appearance(&p).unwrap().as_ref()), &format!("{name}:header"));
 
-    // migration path: this build changes settings and toggles the look, then reopens
     let settings: SettingsPatch = serde_json::from_value(json!({"theme": "light", "auto_lock_minutes": 7})).unwrap();
     let info = st.vault_open(path, pw(main_pw)).unwrap();
     let s = st.settings_set(settings, Some(&info.id)).unwrap();
@@ -136,7 +125,6 @@ fn every_fixture_volume_looks_the_same_in_the_app() {
     }
 }
 
-/// The retired accent of the 2026-10-24 set must keep reading as its replacement.
 #[test]
 fn bordeaux_reads_as_velluto() {
     let (_, m) = sets().into_iter().find(|(d, _)| d.ends_with("2026-10-24")).unwrap();

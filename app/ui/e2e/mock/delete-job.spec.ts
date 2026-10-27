@@ -1,13 +1,8 @@
-// "616 elementi, 1,1 GB — sembra non fare nulla": a delete is a job (src-tauri delete.rs). The
-// confirmation stays; then the tray shows items and space freed, the listing follows each committed
-// batch, Annulla stops it (what went stays gone), the end is a toast, a full volume says so.
-// Mock: ?slow_delete=<ms per batch of 128>, ?error=delete.
 import type { Page } from '@playwright/test';
 import { boot, expect, item, listed, test } from './helpers';
 
 const N = 600;
 
-/** A folder "Tanti" of N files in the root; with `inside`, opened. */
 async function bigFolder(page: Page, query: string, inside = false) {
   await boot(page, `screen=vault&view=list&${query}`);
   await listed(page);
@@ -53,7 +48,6 @@ test('the listing follows the committed batches; Annulla stops it and keeps what
   await bigFolder(page, 'slow_delete=600', true);
   await page.keyboard.press('ControlOrMeta+a');
   await confirmDelete(page, `Eliminare ${N} elementi?`);
-  // after the first batch, fewer items but not none, while the job still runs
   await expect(page.getByText(new RegExp(`^${N - 128} elementi$`)).first()).toBeVisible({ timeout: 10_000 });
   await expect(tray(page)).toContainText(/Eliminazione/);
   await tray(page).getByRole('button', { expanded: false }).click();
@@ -63,7 +57,6 @@ test('the listing follows the committed batches; Annulla stops it and keeps what
   const left = Number((await page.getByText(/^\d+ elementi$/).first().textContent())!.split(' ')[0]);
   expect(left).toBeGreaterThan(0);
   expect(left).toBeLessThan(N);
-  // nothing more goes after the cancel
   await page.waitForTimeout(1300);
   await expect(page.getByText(`${left} elementi`).first()).toBeVisible();
 });
@@ -83,7 +76,6 @@ test('a full volume stops the delete with a clear message (Estendi)', async ({ p
   await item(page, 'Tanti').click();
   await confirmDelete(page, 'Eliminare “Tanti”?');
   await expect(page.getByRole('alert').filter({ hasText: /Non c’è spazio per finire l’eliminazione.*Estendi/ })).toBeVisible({ timeout: 10_000 });
-  // the tray keeps the failed job, the part already deleted is gone from the folder
   await expect(tray(page)).toContainText(/non riuscit/i);
   await item(page, 'Tanti').dblclick();
   const left = Number((await page.getByText(/^\d+ elementi$/).first().textContent())!.split(' ')[0]);

@@ -1,5 +1,3 @@
-// PmStore against the mock: in-memory search, filters and counts, multi-selection, folder
-// moves / rename / delete, the import repair, site icons; plus the mock's import mapping.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from '../api';
 import { MOCK_PASSWORD, MockBackend, STICK } from '../mock';
@@ -25,7 +23,6 @@ describe('PmStore (mock backend)', () => {
     expect(s.query).toBe('example.it mario');
     await vi.waitFor(() => expect(s.applied).toBe('example.it mario'));
     expect(titles(s)).toEqual(['Posta personale', 'SPID']);
-    // the same answer as the backend's pm_search
     expect((await api.pmSearch(s.vault, 'example.it mario')).map((e) => e.title)).toEqual(titles(s));
     s.setQuery('');
     expect(s.applied).toBe('');

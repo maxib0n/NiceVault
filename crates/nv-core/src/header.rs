@@ -1,5 +1,3 @@
-//! Volume header (two 64 KiB copies), keyslots and the key-wrapping crypto.
-
 use crate::appearance::Appearance;
 use crate::keys::{Key32, random};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
@@ -9,9 +7,7 @@ use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 pub const MAGIC: [u8; 8] = *b"NICEVLT1";
-/// Format v1: no layout section; the store uses [`Layout::LEGACY`].
 pub const VERSION: u16 = 1;
-/// Format v2: same as v1 plus a [`Layout`] section (authenticated by the header MAC).
 pub const VERSION_LAYOUT: u16 = 2;
 pub const COPY_LEN: usize = 64 * 1024;
 pub const MAX_SLOTS: usize = 8;
@@ -23,7 +19,6 @@ pub struct Argon {
     pub p: u32,
 }
 
-/// Wire format of a keyslot. Variant order is part of the format (postcard tags).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Slot {
     Password { argon2: Argon, salt: [u8; 32], nonce: [u8; 24], wrapped: Vec<u8> },
@@ -34,20 +29,15 @@ pub enum Slot {
         nonce: [u8; 24],
         wrapped: Vec<u8>,
     },
-    /// Reserved for phase 2; never unlocks in this version.
     Fido2(Vec<u8>),
 }
 
-/// A label sealed under `HKDF(master, "nv slot label")`, AAD = `volume_id || slot_index`.
-/// Labels are user text, so they are encrypted like everything else that is not needed
-/// before unlock (the volume must stay opaque).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SealedLabel {
     pub nonce: [u8; 24],
     pub ct: Vec<u8>,
 }
 
-/// One occupied keyslot position: the key material plus an optional sealed label.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SlotEntry {
     pub slot: Slot,
@@ -66,8 +56,6 @@ pub struct HeaderBody {
     pub version: u16,
     pub volume_id: [u8; 16],
     pub seq: u64,
-    /// Fixed positions: the index is bound into each slot's AAD, so removing a slot
-    /// leaves a `None` hole instead of shifting the others.
     pub slots: Vec<Option<SlotEntry>>,
 }
 
@@ -75,30 +63,12 @@ pub struct HeaderBody {
 pub struct Header {
     pub body: HeaderBody,
     pub header_mac: [u8; 32],
-    /// Plaintext appearance section. Trailing on purpose: in a copy written before it
-    /// existed the zero padding decodes as `None`.
     pub appearance: Option<SignedAppearance>,
-    /// Store layout (format v2). Trailing like `appearance`: a v1 copy's zero padding decodes
-    /// as `None` = [`Layout::LEGACY`]. Covered by `header_mac` when present.
     pub layout: Option<Layout>,
-    /// Fixed-size volume (format v2 only, after `layout`): the file was preallocated to
-    /// `capacity` bytes at creation and never grows or shrinks. Trailing like the others, so a
-    /// copy without it decodes as `None`, and a build that does not know it refuses the copy
-    /// (non-zero bytes after its last field) instead of growing the file. Covered by `header_mac`.
     pub fixed: Option<Fixed>,
-    /// Single-file journal (format v2 only, after `fixed`): the rollback journal lives inside
-    /// the `.nvault` file (single.rs), so a volume is always exactly one file. Trailing like the
-    /// others: a copy without it decodes as `None` (side-file journal), and every build before it
-    /// refuses the copy (unknown version, or non-zero bytes after its last field). Covered by `header_mac`.
     pub journal: Option<JournalRegion>,
 }
 
-/// Where the database and its in-file journal sit in a single-file volume. `region` bytes at the start of the store area (right after the header copies)
-/// hold the journal records and the journal itself; the database's first `region` bytes were
-/// moved to `moved_to` to make room. Database byte `l` is at:
-/// `l < region` -> `moved_to + l`; `region <= l < split` -> [`STORE_AT`]` + l` (where it always was);
-/// `l >= split` -> `moved_to + region + (l - split)`. A volume made single-file at creation has
-/// `split = region`, `moved_to = STORE_AT + region` (= one contiguous database after the region).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JournalRegion {
     pub region: u64,
@@ -106,34 +76,24 @@ pub struct JournalRegion {
     pub split: u64,
 }
 
-/// Start of the store area (after the two header copies).
 pub const STORE_AT: u64 = 2 * COPY_LEN as u64;
 
 impl JournalRegion {
-    /// Smallest / largest region this build accepts (64 KiB records + at least 64 KiB of journal).
     pub const MIN: u64 = 128 << 10;
     pub const MAX: u64 = 64 << 20;
 
-    /// The layout of a volume made single-file at creation.
     pub fn fresh(region: u64) -> Self {
         JournalRegion { region, moved_to: STORE_AT + region, split: region }
     }
 
-    /// The layout of a **fixed-size** volume made single-file at creation (its database starts
-    /// at [`FIXED_DB_AT`]: only `region - 64 KiB` of it are displaced, see [`Self::base`]).
     pub fn fresh_fixed(region: u64) -> Self {
         JournalRegion { region, moved_to: STORE_AT + region, split: region - (FIXED_DB_AT - STORE_AT) }
     }
 
-    /// Where the database started before the region took its place: [`STORE_AT`], or
-    /// [`FIXED_DB_AT`] in a fixed-size volume (whose 64 KiB footer region became the records area).
     pub fn base(fixed: bool) -> u64 {
         if fixed { FIXED_DB_AT } else { STORE_AT }
     }
 
-    /// Database bytes the region displaced (they live at `moved_to`): `region`, or `region - 64 KiB`
-    /// in a fixed-size volume. Database byte `l` is at `moved_to + l` below it,
-    /// `base + l` below `split`, `moved_to + displaced + (l - split)` from there on.
     pub fn displaced(&self, fixed: bool) -> u64 {
         self.region - (Self::base(fixed) - STORE_AT)
     }
@@ -142,8 +102,6 @@ impl JournalRegion {
         self.is_valid_in(page_size, None)
     }
 
-    /// [`Self::is_valid`] for a volume that may be fixed-size (whose moved bytes start inside
-    /// its capacity; the shim keeps every write inside it).
     pub fn is_valid_in(&self, page_size: u32, fixed: Option<Fixed>) -> bool {
         let p = page_size as u64;
         let d = self.displaced(fixed.is_some());
@@ -158,21 +116,15 @@ impl JournalRegion {
     }
 }
 
-/// Where a fixed-size volume's database starts when it has no journal region (after the header
-/// copies and its 64 KiB footer region; = `vfs::FIXED_DB_OFFSET`).
 pub const FIXED_DB_AT: u64 = STORE_AT + (64 << 10);
 
-/// A preallocated volume: the whole `.nvault` file is `capacity` bytes, the database lives in
-/// it and a footer at its end records how much of it is in use (vfs.rs, "fixed" mode).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fixed {
     pub capacity: u64,
 }
 
 impl Fixed {
-    /// Smallest fixed volume: the header copies, a few store pages and the footer.
     pub const MIN: u64 = 4 << 20;
-    /// Largest one this build makes (16 TiB, well under every file system limit it targets).
     pub const MAX: u64 = 16 << 40;
 
     pub fn is_valid(&self) -> bool {
@@ -180,18 +132,13 @@ impl Fixed {
     }
 }
 
-/// How the encrypted store is laid out. Fixed at creation: a volume is never re-laid-out
-/// implicitly (an old volume keeps [`Layout::LEGACY`] forever).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Layout {
-    /// SQLCipher page size (`cipher_page_size`), bytes.
     pub page_size: u32,
-    /// File contents are stored in chunks of this many bytes (the last one may be shorter).
     pub chunk_size: u32,
 }
 
 impl Layout {
-    /// What every volume made before layouts were stored uses (format v1).
     pub const LEGACY: Layout = Layout { page_size: 16 * 1024, chunk_size: 256 * 1024 };
 
     pub fn is_valid(&self) -> bool {
@@ -201,19 +148,12 @@ impl Layout {
     }
 }
 
-/// The appearance plus its own keyed MAC (`HKDF(master, "nv appearance mac")`, over
-/// `volume_id || postcard(appearance)`). Separate from `header_mac` so a tampered appearance
-/// is detected and dropped on unlock without refusing an otherwise intact volume.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignedAppearance {
     pub appearance: Appearance,
     pub mac: [u8; 32],
 }
 
-/// Keyed BLAKE3 over `postcard(body)`, followed by `postcard(layout)` when there is one and
-/// `postcard(fixed)` when there is one, then `"journal" || postcard(journal)` when there is one (so
-/// a v1 header's MAC is unchanged, and a v2 layout, a fixed capacity or a journal region cannot be
-/// stripped or edited).
 pub fn mac(mac_key: &Key32, body: &HeaderBody, layout: Option<&Layout>, fixed: Option<&Fixed>, journal: Option<&JournalRegion>) -> [u8; 32] {
     let mut bytes = Zeroizing::new(postcard::to_allocvec(body).expect("serialize header"));
     if let Some(l) = layout {
@@ -231,7 +171,6 @@ pub fn mac(mac_key: &Key32, body: &HeaderBody, layout: Option<&Layout>, fixed: O
 }
 
 pub fn mac_ok(mac_key: &Key32, h: &Header) -> bool {
-    // blake3::Hash's PartialEq is constant-time.
     blake3::Hash::from_bytes(mac(mac_key, &h.body, h.layout.as_ref(), h.fixed.as_ref(), h.journal.as_ref())) == blake3::Hash::from_bytes(h.header_mac)
 }
 
@@ -250,7 +189,6 @@ pub fn appearance_ok(master: &Key32, volume_id: &[u8; 16], s: &SignedAppearance)
     blake3::Hash::from_bytes(appearance_mac(master, volume_id, &s.appearance)) == blake3::Hash::from_bytes(s.mac)
 }
 
-/// Encoded size of a header copy before padding (must stay <= `COPY_LEN - 32`).
 #[cfg(test)]
 pub fn encoded_len(h: &Header) -> usize {
     postcard::experimental::serialized_size(h).expect("serialize header")
@@ -258,8 +196,6 @@ pub fn encoded_len(h: &Header) -> usize {
 
 pub fn encode_copy(h: &Header) -> Vec<u8> {
     let mut buf = vec![0u8; COPY_LEN];
-    // Caps (MAX_SLOTS, MAX_LABEL, appearance limits) keep the worst case well inside a copy;
-    // see the `worst_case_header_fits` test.
     let used = postcard::to_slice(h, &mut buf[..COPY_LEN - 32]).expect("header fits in 64 KiB").len();
     debug_assert!(used <= COPY_LEN - 32);
     let sum = blake3::hash(&buf[..COPY_LEN - 32]);
@@ -268,13 +204,8 @@ pub fn encode_copy(h: &Header) -> Vec<u8> {
 }
 
 pub enum CopyError {
-    /// Doesn't even start with the magic: probably not a NiceVault file.
     NoMagic,
-    /// Has the magic but is torn / corrupt (checksum mismatch).
     Bad(String),
-    /// Intact (checksum ok) but not understood by this build: a newer version, an unknown slot /
-    /// emblem kind (postcard tag) or header bytes after the fields this build knows. Written on
-    /// purpose by a newer build, so the volume must be left alone (never "repaired").
     Unsupported(String),
 }
 
@@ -287,35 +218,25 @@ pub fn decode_copy(buf: &[u8]) -> Result<Header, CopyError> {
     if sum != blake3::Hash::from_bytes(buf[COPY_LEN - 32..COPY_LEN].try_into().unwrap()) {
         return Err(CopyError::Bad("header checksum mismatch".into()));
     }
-    // The checksum holds, so whatever follows was written deliberately: anything this build
-    // cannot read is a newer format, not damage.
     let unsupported = |m: String| CopyError::Unsupported(m);
-    // The version sits right after the 8-byte magic (postcard varint u16): check it before the
-    // rest, whose layout a newer version may have changed.
     let version: u16 = postcard::take_from_bytes::<u16>(&body[8..]).map(|(v, _)| v).map_err(|e| unsupported(format!("header version: {e}")))?;
     if version != VERSION && version != VERSION_LAYOUT {
         return Err(unsupported(format!("header version {version}")));
     }
     let (h, rest): (Header, &[u8]) = postcard::take_from_bytes(body).map_err(|e| unsupported(format!("header decode: {e}")))?;
-    // This build writes zero padding after its last field; non-zero bytes there are fields
-    // added by a newer build, which a rewrite here would silently drop.
     if rest.iter().any(|&b| b != 0) {
         return Err(unsupported("header fields unknown to this version".into()));
     }
-    // v1 = no layout section, v2 = a layout this build can use (a newer build may allow more).
     match (h.body.version, &h.layout) {
         (VERSION, None) => {}
         (VERSION_LAYOUT, Some(l)) if l.is_valid() => {}
         (_, l) => return Err(unsupported(format!("store layout {l:?} with header version {}", h.body.version))),
     }
-    // A fixed capacity only comes with a layout section (v2), and only in sizes this build makes.
     if let Some(f) = h.fixed
         && (h.layout.is_none() || !f.is_valid())
     {
         return Err(unsupported(format!("fixed volume {f:?} with header version {}", h.body.version)));
     }
-    // An in-file journal only comes with a layout section (v2); in a fixed-size volume it lies
-    // inside the capacity (the region takes the footer region's place, see JournalRegion::base).
     if let Some(j) = h.journal
         && !h.layout.is_some_and(|l| j.is_valid_in(l.page_size, h.fixed))
     {
@@ -340,7 +261,6 @@ pub fn wrap(kek: &Key32, master: &Key32, volume_id: &[u8; 16], index: usize, kin
     (nonce, wrap_with_nonce(kek, &nonce, master, volume_id, index, kind))
 }
 
-/// [`wrap`] with a caller-chosen nonce (duress slots derive theirs, see duress.rs).
 pub fn wrap_with_nonce(kek: &Key32, nonce: &[u8; 24], key: &Key32, volume_id: &[u8; 16], index: usize, kind: u8) -> Vec<u8> {
     XChaCha20Poly1305::new(kek.bytes().into())
         .encrypt(XNonce::from_slice(nonce), Payload { msg: key.bytes(), aad: &aad(volume_id, index, kind) })
@@ -359,7 +279,6 @@ pub fn unwrap(kek: &Key32, nonce: &[u8; 24], wrapped: &[u8], volume_id: &[u8; 16
     Some(Key32::from_slice(&pt))
 }
 
-/// Longest slot label, in UTF-8 bytes (keeps 8 slots well inside a 64 KiB header copy).
 pub const MAX_LABEL: usize = 128;
 
 fn label_aad(volume_id: &[u8; 16], index: usize) -> [u8; 17] {
@@ -378,7 +297,6 @@ pub fn seal_label(master: &Key32, volume_id: &[u8; 16], index: usize, label: &st
     SealedLabel { nonce, ct }
 }
 
-/// `None` if the label does not authenticate (never expected: the header MAC covers it).
 pub fn open_label(master: &Key32, volume_id: &[u8; 16], index: usize, l: &SealedLabel) -> Option<String> {
     let k = master.derive(b"nv slot label");
     let pt = XChaCha20Poly1305::new(k.bytes().into())
@@ -387,21 +305,13 @@ pub fn open_label(master: &Key32, volume_id: &[u8; 16], index: usize, l: &Sealed
     String::from_utf8(pt).ok()
 }
 
-// ---------------- password KDF ----------------
-
-/// Argon2id cost presets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KdfPreset {
-    /// For tests only: m = 8 MiB, t = 1, p = 1.
     Fast,
-    /// Calibrated to ~0.7 s on this machine; 512 MiB when RAM allows (else less memory, more passes).
     Strong,
 }
 
-/// Largest Argon2id cost accepted from a header or key file (no NiceVault build writes more:
-/// Strong is <= 512 MiB, t <= 64, p = 4). The parameters are read before anything is
-/// authenticated, so without a cap a crafted file hangs or aborts the app.
 pub const MAX_ARGON: Argon = Argon { m_kib: 1 << 20, t: 64, p: 16 };
 
 pub fn argon2_kek(pw: &[u8], a: Argon, salt: &[u8; 32]) -> Option<Key32> {
@@ -418,8 +328,6 @@ pub fn argon2_kek(pw: &[u8], a: Argon, salt: &[u8; 32]) -> Option<Key32> {
 
 const TARGET: Duration = Duration::from_millis(700);
 
-/// Strong preset memory: 512 MiB if the machine has room for it, else a third of the
-/// available memory (floor 64 MiB).
 fn strong_m_kib() -> u32 {
     let avail_kib = available_memory() / 1024;
     let want = 512 * 1024u64;
@@ -433,24 +341,20 @@ fn available_memory() -> u64 {
     sys.available_memory()
 }
 
-/// iOS: what this process may still allocate before jetsam (libSystem, iOS 13+).
 #[cfg(target_os = "ios")]
 fn available_memory() -> u64 {
     unsafe extern "C" {
         fn os_proc_available_memory() -> usize;
     }
-    // SAFETY: a libSystem query without arguments.
     unsafe { os_proc_available_memory() as u64 }
 }
 
-/// Fresh salt and the KEK for fixed parameters `a` (a duress slot copies an existing slot's).
 pub fn password_kek_with(pw: &[u8], a: Argon) -> ([u8; 32], Key32) {
     let salt: [u8; 32] = random();
     let kek = argon2_kek(pw, a, &salt).expect("argon2");
     (salt, kek)
 }
 
-/// Fresh salt, parameters for `kdf`, and the resulting KEK.
 pub fn new_password_kek(pw: &[u8], kdf: KdfPreset) -> (Argon, [u8; 32], Key32) {
     let salt: [u8; 32] = random();
     match kdf {
@@ -459,16 +363,13 @@ pub fn new_password_kek(pw: &[u8], kdf: KdfPreset) -> (Argon, [u8; 32], Key32) {
             (a, salt, argon2_kek(pw, a, &salt).expect("argon2"))
         }
         KdfPreset::Strong => {
-            // Calibrate with one t=1 pass. If that alone is already >= half the target, keep it
-            // (its output IS the KEK, so creation costs one pass); otherwise pick t to land on
-            // ~TARGET and run once more.
             let mut a = Argon { m_kib: strong_m_kib(), t: 1, p: 4 };
             loop {
                 let t0 = Instant::now();
                 let kek = argon2_kek(pw, a, &salt).expect("argon2");
                 let d = t0.elapsed();
                 if d > TARGET * 2 && a.m_kib > 64 * 1024 {
-                    a.m_kib /= 2; // very slow machine: trade memory for time
+                    a.m_kib /= 2;
                     continue;
                 }
                 if d * 2 >= TARGET {
@@ -501,8 +402,6 @@ mod tests {
         assert!(matches!(decode_copy(&[0u8; COPY_LEN]), Err(CopyError::NoMagic)));
     }
 
-    /// Header size budget: 8 recipient slots (the largest kind) with max-length labels plus
-    /// the largest appearance must fit one copy. Prints the numbers (`--nocapture`).
     #[test]
     fn worst_case_header_fits() {
         use crate::appearance::*;
@@ -532,7 +431,6 @@ mod tests {
 
     #[test]
     fn old_copy_without_appearance_still_decodes() {
-        // A copy written before the appearance section: body + mac, then zero padding.
         #[derive(Serialize)]
         struct Old<'a> {
             body: &'a HeaderBody,
@@ -555,7 +453,6 @@ mod tests {
         v2.body.version = VERSION_LAYOUT;
         v2.layout = Some(l);
         assert_eq!(decode_copy(&encode_copy(&v2)).ok().unwrap().layout, Some(l));
-        // v1 copies decode without a layout (zero padding), as every existing volume does.
         assert_eq!(decode_copy(&encode_copy(&sample())).ok().unwrap().layout, None);
         let bad = |h: &Header| matches!(decode_copy(&encode_copy(h)), Err(CopyError::Unsupported(_)));
         let mut v1_with = sample();
@@ -570,7 +467,6 @@ mod tests {
         let mut v3 = v2.clone();
         v3.body.version = 3;
         assert!(bad(&v3));
-        // The MAC of a v1 header is the pre-layout formula; a v2 layout is covered.
         let k = Key32::random();
         assert_eq!(mac(&k, &sample().body, None, None, None), *blake3::keyed_hash(k.bytes(), &postcard::to_allocvec(&sample().body).unwrap()).as_bytes());
         assert_ne!(mac(&k, &v2.body, Some(&l), None, None), mac(&k, &v2.body, Some(&Layout { chunk_size: 2 << 20, ..l }), None, None));
@@ -587,7 +483,6 @@ mod tests {
         v2.fixed = Some(f);
         let d = decode_copy(&encode_copy(&v2)).ok().unwrap();
         assert_eq!((d.layout, d.fixed), (Some(l), Some(f)));
-        // Copies without it (every volume so far) decode as None.
         let mut plain = v2.clone();
         plain.fixed = None;
         assert_eq!(decode_copy(&encode_copy(&plain)).ok().unwrap().fixed, None);
@@ -601,8 +496,6 @@ mod tests {
             h.fixed = Some(Fixed { capacity: cap });
             assert!(bad(&h), "{cap}");
         }
-        // A build that knows layouts but not this section sees non-zero bytes after its last
-        // field and refuses the copy (it would otherwise grow the file past its capacity).
         #[derive(Serialize, Deserialize)]
         struct LayoutOnly {
             body: HeaderBody,
@@ -613,7 +506,6 @@ mod tests {
         let enc = encode_copy(&v2);
         let (_, rest): (LayoutOnly, &[u8]) = postcard::take_from_bytes(&enc[..COPY_LEN - 32]).unwrap();
         assert!(rest.iter().any(|&b| b != 0));
-        // The capacity is authenticated, and the MAC of a header without it is unchanged.
         let k = Key32::random();
         assert_eq!(mac(&k, &v2.body, Some(&l), None, None), mac(&k, &plain.body, Some(&l), None, None));
         assert_ne!(mac(&k, &v2.body, Some(&l), Some(&f), None), mac(&k, &v2.body, Some(&l), None, None));
@@ -631,7 +523,6 @@ mod tests {
         let d = decode_copy(&encode_copy(&v2)).ok().unwrap();
         assert_eq!((d.layout, d.fixed, d.journal), (Some(l), None, Some(j)));
         assert!(encoded_len(&v2) - encoded_len(&Header { journal: None, ..v2.clone() }) <= 16);
-        // A migrated volume: its first `region` bytes moved past the old end.
         let moved = JournalRegion { region: 4 << 20, moved_to: STORE_AT + (64 << 20), split: 64 << 20 };
         assert!(moved.is_valid(l.page_size));
         let bad = |h: &Header| matches!(decode_copy(&encode_copy(h)), Err(CopyError::Unsupported(_)));
@@ -639,8 +530,6 @@ mod tests {
         let mut v1 = sample();
         v1.journal = Some(j);
         assert!(bad(&v1), "a journal region always comes with a layout section (v2)");
-        // A fixed-size volume: the region takes the footer region's place (64 KiB less displaced),
-        // a growable volume's mapping is not one of it, and the moved bytes start inside the capacity.
         let f = Some(Fixed { capacity: 64 << 20 });
         let jf = JournalRegion::fresh_fixed(4 << 20);
         assert_eq!((jf.moved_to, jf.split, jf.displaced(true)), (STORE_AT + (4 << 20), (4 << 20) - 65536, (4 << 20) - 65536));
@@ -662,8 +551,6 @@ mod tests {
         ] {
             assert!(bad(&with(silly)), "{silly:?}");
         }
-        // Every older build refuses it: builds that know fixed sizes (or only layouts) see
-        // non-zero bytes after their last field; builds before layouts see version 2.
         #[derive(Serialize, Deserialize)]
         struct FixedOnly {
             body: HeaderBody,
@@ -675,7 +562,6 @@ mod tests {
         let enc = encode_copy(&v2);
         let (_, rest): (FixedOnly, &[u8]) = postcard::take_from_bytes(&enc[..COPY_LEN - 32]).unwrap();
         assert!(rest.iter().any(|&b| b != 0));
-        // Authenticated; MACs of headers without it are unchanged.
         let k = Key32::random();
         let plain = blake3::keyed_hash(k.bytes(), &[postcard::to_allocvec(&v2.body).unwrap(), postcard::to_allocvec(&l).unwrap()].concat());
         assert_eq!(mac(&k, &v2.body, Some(&l), None, None), *plain.as_bytes());

@@ -1,6 +1,3 @@
-// Impostazioni > Avvio (its own card): "Avvia all'accesso", "Avvia ridotto" and "Resta nel vassoio
-// quando chiudi la finestra", installed mode only (?installed=1 in the mock); from a stick a
-// one-line reason instead.
 import { boot, expect, expectScreen, test } from './helpers';
 
 test('installed: the three switches toggle and keep their state', async ({ page }) => {
@@ -12,7 +9,6 @@ test('installed: the three switches toggle and keep their state', async ({ page 
   const tray = section.getByRole('switch', { name: 'Resta nel vassoio quando chiudi la finestra' });
   await expect(login).toHaveAttribute('aria-checked', 'false');
   await expect(minimized).toHaveAttribute('aria-checked', 'false');
-  // "sempre aperto": on by default when installed
   await expect(tray).toHaveAttribute('aria-checked', 'true');
   await expect(section.getByTestId('startup-portable')).toHaveCount(0);
   await expect(minimized).toHaveAccessibleDescription(/area di notifica/);
@@ -25,7 +21,6 @@ test('installed: the three switches toggle and keep their state', async ({ page 
   await tray.click();
   await expect(tray).toHaveAttribute('aria-checked', 'false');
 
-  // back to Benvenuto and in again: read back from the backend
   await page.getByTestId('settings-back').click();
   await expectScreen(page, 'welcome');
   await page.getByTestId('open-settings').click();
@@ -69,7 +64,6 @@ test('interface size: every key the same height, letter and value on one baselin
   await expect(keys).toHaveCount(5);
   const m = await keys.evaluateAll((ks) =>
     ks.map((k) => {
-      // the value's baseline: a zero-size inline marker after the text sits on it
       const probe = document.createElement('span');
       probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
       k.appendChild(probe);
@@ -81,7 +75,6 @@ test('interface size: every key the same height, letter and value on one baselin
   for (const k of m) {
     expect(k.h).toBeCloseTo(m[0].h, 1);
     expect(k.top).toBeCloseTo(m[0].top, 1);
-    // (Chromium snaps the bold checked key's baseline to a whole pixel; WebKit lays them exactly)
     expect(Math.abs(k.base - m[0].base)).toBeLessThanOrEqual(1);
   }
 });

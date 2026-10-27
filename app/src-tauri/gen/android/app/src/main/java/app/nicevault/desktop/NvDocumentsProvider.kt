@@ -20,14 +20,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.FileNotFoundException
 
-/**
- * The Rust half (app/src-tauri/src/docs.rs, `jni_glue`): the unlocked volumes of this process.
- * Strings in and out; rows as JSON `{"ok": ...}` / `{"error": code, "message": ...}`.
- */
 object NvDocs {
   @Volatile private var loaded = false
 
-  /** The app library (already loaded when the activity runs; a provider-only process loads it here). */
   fun ready(): Boolean {
     if (!loaded) {
       try {
@@ -55,12 +50,6 @@ object NvDocs {
   @JvmStatic external fun move(doc: String, target: String): String
 }
 
-/**
- * Every unlocked volume as a root of the system's Files app / document picker. Read and write go through the volume one block at a time (a proxy file
- * descriptor: seekable, no plaintext file anywhere); on Android 7 (no proxy descriptors) files
- * are read-only and streamed through a pipe. Locking a volume removes its root
- * (NvPlugin.docsChanged) and fails every descriptor still open on it.
- */
 class NvDocumentsProvider : DocumentsProvider() {
   companion object {
     fun authority(c: Context) = c.packageName + ".documents"
@@ -80,7 +69,6 @@ class NvDocumentsProvider : DocumentsProvider() {
 
   private fun auth() = authority(context!!)
 
-  /** `{"ok": v}` → v; an error → FileNotFoundException (what DocumentsUI expects for a gone document). */
   private fun ok(json: String): Any? {
     val o = JSONObject(json)
     if (o.has("error")) throw FileNotFoundException(o.optString("message", o.optString("error")))
@@ -147,7 +135,6 @@ class NvDocumentsProvider : DocumentsProvider() {
     NvDocs.ready() && NvDocs.isChild(parentDocumentId, documentId)
 
   private fun parentChanged(doc: String) {
-    // the folder of `doc` (or the volume's root) is re-read by whoever shows it
     val root = doc.substringBefore('/') + "/1"
     context?.contentResolver?.notifyChange(DocumentsContract.buildChildDocumentsUri(auth(), root), null)
   }
@@ -175,7 +162,6 @@ class NvDocumentsProvider : DocumentsProvider() {
         throw FileNotFoundException(e.message)
       }
     }
-    // Android 7: a pipe fed from the volume (sequential read only)
     val pipe = ParcelFileDescriptor.createReliablePipe()
     Thread {
       val buf = ByteArray(1 shl 16)
@@ -203,7 +189,6 @@ class NvDocumentsProvider : DocumentsProvider() {
     return pipe[0]
   }
 
-  /** One open file: every read / write is a call into the volume. */
   private inner class Proxy(val doc: String, val write: Boolean, val thread: HandlerThread) : ProxyFileDescriptorCallback() {
     private var dirty = false
 

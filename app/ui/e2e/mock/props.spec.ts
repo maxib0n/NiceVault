@@ -1,5 +1,3 @@
-// Proprietà: context menu "Proprietà" and Alt+Enter, for a file, a folder, a selection and the
-// volume (background menu at the root). Quick facts at once, recursive totals and SHA-256 as jobs.
 import type { Page } from '@playwright/test';
 import { boot, expect, expectFolder, fileList, item, listed, modKey, test } from './helpers';
 
@@ -31,7 +29,6 @@ test('a file: type, size, pixels, dates, origin; SHA-256 on request; Esc closes'
   await expect(card(page)).toHaveCount(0);
   await expect(fileList(page)).toBeFocused();
 
-  // the hash is remembered (props.rs caches it in the volume)
   await altEnter(page);
   await expect(page.getByTestId('props-sha').locator('code')).toHaveText(/^[0-9a-f]{64}$/);
 });
@@ -79,7 +76,7 @@ test('made in the volume: no import, no origin', async ({ page }) => {
   await listed(page);
   await fileList(page).focus();
   await page.keyboard.press(`${await modKey(page)}+Shift+N`);
-  await page.keyboard.press('Enter'); // keep the proposed name
+  await page.keyboard.press('Enter');
   await expectFolder(page, 'Documenti');
   await expect(fileList(page).getByRole('option', { selected: true })).toHaveCount(1);
   await fileList(page).focus();

@@ -1,8 +1,3 @@
-//! File search, filters and tags (search.rs): results, highlights, paths, order and pages; the
-//! index following every kind of change (create, rename, move, delete, writes, mtimes, tags,
-//! a key rotation); the persisted names and their background fill; tags and their rules.
-//! The 100k-node benchmark is `bench_100k` (ignored; run with --release --ignored --nocapture).
-
 use nv_core::{Filters, KdfPreset, KindGroup, SearchPage, SearchQuery, Sort, TagError, Vault};
 use nv_fs::{Fs, Kind, Node, NodeId, ROOT};
 use secrecy::SecretString;
@@ -37,8 +32,6 @@ fn file(v: &Vault, parent: NodeId, name: &str, len: usize) -> Node {
     f
 }
 
-/// /Foto/Mare/{Spiaggia.jpg, Città al mare.JPG, amarena.png}, /Foto/Estate 2024/mare.jpg,
-/// /Documenti/{Bolletta luce.pdf, note.md}, /Mare (folder), /clip.mkv
 fn sample(dir: &Path) -> (Vault, Vec<Node>) {
     let v = Vault::create(&dir.join("s.nvault"), &pw(), KdfPreset::Fast).unwrap();
     let foto = mk(&v, ROOT, "Foto", Kind::Dir);
@@ -68,7 +61,6 @@ fn finds_names_ranked_with_paths_and_highlights() {
     let t = tempfile::tempdir().unwrap();
     let (v, _) = sample(t.path());
     let p = v.search(&q("MARE")).unwrap();
-    // whole name first (folder before file at equal rank), then name start, word start, anywhere
     assert_eq!(names(&p), vec!["Mare", "Mare", "mare.jpg", "Città al mare.JPG", "amarena.png"]);
     assert_eq!(p.total, 5);
     assert_eq!(p.next_offset, None);
@@ -78,17 +70,14 @@ fn finds_names_ranked_with_paths_and_highlights() {
     assert_eq!(p.hits.iter().find(|h| h.node.name == "amarena.png").unwrap().highlights, vec![[1, 5]]);
     assert_eq!(p.hits.iter().filter(|h| h.node.name == "Mare").map(|h| h.path.as_str()).collect::<Vec<_>>(), vec!["/Foto", "/"]);
 
-    // accents and case both ways, several terms (all must match), phrases
     assert_eq!(find(&v, "citta"), vec!["Città al mare.JPG"]);
     assert_eq!(find(&v, "CITTÀ"), vec!["Città al mare.JPG"]);
     assert_eq!(find(&v, "mare jpg"), vec!["mare.jpg", "Città al mare.JPG"]);
     assert_eq!(find(&v, "\"al mare\""), vec!["Città al mare.JPG"]);
     assert_eq!(find(&v, "\"mare al\""), Vec::<String>::new());
     assert_eq!(find(&v, "zzz"), Vec::<String>::new());
-    // substring inside a word and a one-letter query
     assert_eq!(find(&v, "olle"), vec!["Bolletta luce.pdf"]);
     assert_eq!(v.search(&q("a")).unwrap().total, 8);
-    // the root is never a result; an empty query lists everything (by name, folders first)
     let all = find(&v, "");
     assert_eq!(all.len(), 12);
     assert_eq!(&all[..5], &["Documenti", "Estate 2024", "Foto", "Mare", "Mare"]);
@@ -107,7 +96,6 @@ fn filters_order_and_pages() {
     let mare_dir = nodes.iter().find(|n| n.name == "Mare" && n.parent == foto).unwrap().id;
     assert_eq!(with("mare", Filters { within: Some(foto), ..Default::default() }), vec!["Mare", "mare.jpg", "Città al mare.JPG", "amarena.png"]);
     assert_eq!(with("", Filters { within: Some(mare_dir), ..Default::default() }), vec!["amarena.png", "Città al mare.JPG", "Spiaggia.jpg"]);
-    // dates: everything was made just now
     let now = v.getattr(nodes[0].id).unwrap().mtime;
     assert_eq!(with("", Filters { modified_before: Some(now - 1_000_000_000), ..Default::default() }).len(), 0);
     let old = nodes.iter().find(|n| n.name == "note.md").unwrap().id;
@@ -115,7 +103,6 @@ fn filters_order_and_pages() {
     assert_eq!(with("", Filters { modified_before: Some(2_000), ..Default::default() }), vec!["note.md"]);
     assert_eq!(with("", Filters { modified_after: Some(2_000), kinds: vec![KindGroup::Documents], ..Default::default() }), vec!["Bolletta luce.pdf"]);
 
-    // orders (folders first except by relevance) and pages
     let sorted = |sort: Sort, desc: bool| {
         names(&v.search(&SearchQuery { sort, desc, filters: Filters { kinds: vec![KindGroup::Photos], ..Default::default() }, limit: 100, ..Default::default() }).unwrap())
     };
@@ -142,7 +129,7 @@ fn filters_order_and_pages() {
 fn index_follows_every_change() {
     let t = tempfile::tempdir().unwrap();
     let (v, nodes) = sample(t.path());
-    assert_eq!(find(&v, "spiaggia"), vec!["Spiaggia.jpg"]); // the in-memory copy exists now
+    assert_eq!(find(&v, "spiaggia"), vec!["Spiaggia.jpg"]);
     let spiaggia = nodes[0].id;
     let docs = nodes.iter().find(|n| n.name == "Documenti").unwrap().id;
     let foto = nodes.iter().find(|n| n.name == "Foto").unwrap().id;
@@ -151,11 +138,9 @@ fn index_follows_every_change() {
     assert_eq!(find(&v, "spiaggia"), Vec::<String>::new());
     let p = v.search(&q("lungomare")).unwrap();
     assert_eq!((names(&p), p.hits[0].path.as_str()), (vec!["Lungomare.jpg".to_owned()], "/Documenti"));
-    // moving a folder moves the paths of everything below it
     v.rename(foto, docs, "Foto vecchie").unwrap();
     let p = v.search(&q("amarena")).unwrap();
     assert_eq!(p.hits[0].path, "/Documenti/Foto vecchie/Mare");
-    // create, unflushed writes (sizes from the write buffers), set_size, delete
     let n = file(&v, ROOT, "nuovo.txt", 0);
     v.write(n.id, 0, &[1u8; 12345]).unwrap();
     let with_size = |min: u64| {
@@ -175,7 +160,6 @@ fn index_follows_every_change() {
     assert!(find(&v, "amarena").is_empty());
     assert!(find(&v, "lungomare").is_empty());
     assert_eq!(find(&v, "mare"), vec!["Mare"]);
-    // replace by rename onto an existing file
     let a = file(&v, ROOT, "a.txt", 1);
     let b = file(&v, ROOT, "b.txt", 2);
     assert_eq!(find(&v, ".txt"), vec!["a.txt", "b.txt"]);
@@ -192,7 +176,6 @@ fn names_are_persisted_in_the_volume_and_survive_reopen_and_key_rotation() {
     let path = t.path().join("s.nvault");
     let (v, nodes) = sample(t.path());
     assert_eq!(v.meta_get(nv_core::SEARCH_SCHEMA_KEY).unwrap().as_deref(), Some(&b"1"[..]));
-    // new nodes are queued by the triggers until the background step folds them
     let p = v.search(&q("mare")).unwrap();
     assert_eq!(p.pending, 12);
     assert_eq!(v.search_index_step(5).unwrap(), 7);
@@ -210,7 +193,6 @@ fn names_are_persisted_in_the_volume_and_survive_reopen_and_key_rotation() {
     v.rename(nodes[1].id, nodes[1].parent, "Paese.jpg").unwrap();
     assert_eq!(v.search(&q("paese")).unwrap().pending, 1, "a rename queues the name");
     v.rotate_master(0, &pw()).unwrap();
-    // the export carried the tables, the triggers and the queue
     let p = v.search(&q("paese")).unwrap();
     assert_eq!((names(&p), p.pending, p.hits[0].tags.clone()), (vec!["Paese.jpg".to_owned()], 1, vec![tag.id]));
     let f = file(&v, ROOT, "dopo.txt", 1);
@@ -261,7 +243,6 @@ fn tags_rules_counts_and_filters() {
     assert_eq!(v.tag_delete(viaggi.id).unwrap(), vec![spiaggia, citta]);
     assert!(tagged(vec![viaggi.id], true).is_empty());
     assert_eq!(v.search(&q("spiaggia")).unwrap().hits[0].tags, Vec::<u64>::new());
-    // deleting a node drops its assignments (foreign key); a reused id starts clean
     v.remove(bolletta).unwrap();
     v.flush().unwrap();
     assert_eq!(v.tags().unwrap().iter().find(|t| t.id == lavoro.id).unwrap().count, 1);
@@ -274,8 +255,6 @@ fn tags_rules_counts_and_filters() {
     assert_eq!(tags, vec![("UFFICIO".into(), "ardesia".into(), 1), ("Urgente".into(), "velluto".into(), 0)]);
 }
 
-/// 100k nodes (1000 folders x 100 files, realistic names); prints the timings.
-/// `cargo test -p nv-core --release --test search -- --ignored --nocapture bench_100k`
 #[test]
 #[ignore]
 fn bench_100k() {
@@ -344,7 +323,6 @@ fn bench_100k() {
     worst = worst.max(time("'' all nodes sorted by size desc", SearchQuery { sort: Sort::Size, desc: true, limit: 100, ..Default::default() }));
     worst = worst.max(time("'mare' within a folder", SearchQuery { text: "mare".into(), filters: Filters { within: Some(ids[3]), ..Default::default() }, limit: 100, ..Default::default() }));
     worst = worst.max(time("'vacanze' page 5 (offset 400)", SearchQuery { text: "vacanze".into(), offset: 400, limit: 100, ..Default::default() }));
-    // after a change: the copy is refreshed for the changed nodes only
     let n = v.create(ids[0], "Appena creato.txt", Kind::File).unwrap();
     let t4 = Instant::now();
     assert_eq!(find(&v, "appena creato"), vec!["Appena creato.txt"]);
@@ -367,13 +345,10 @@ fn bench_100k() {
     println!("worst query: {worst:.2} ms");
     v.close().unwrap();
 
-    // first search when every name is stored
     let v = Vault::open(&path, &pw()).unwrap();
     let t8 = Instant::now();
     v.search(&q("x")).unwrap();
     println!("first search, every name stored: {:?}", t8.elapsed());
-    // as an old volume: no stored names (a fold-version change drops them, like a volume from
-    // before search has none): everything is folded in memory, then the background fill
     v.meta_set("nv.search_norm", Some(b"0")).unwrap();
     v.close().unwrap();
     let v = Vault::open(&path, &pw()).unwrap();

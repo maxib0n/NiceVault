@@ -1,17 +1,3 @@
-// Real-app check of the glyph decode (lib/reveal.ts) in the Tauri WebKitGTK webview:
-// the three moments that must not look dead, each proved twice — by the page's own
-// decision log (window.__nvReveal: "play" then "done", with timings) and by X frames
-// captured every ~40 ms while it runs (OUT/frames-*/, glyphs visible in the frames).
-//   1. boot: Benvenuto's first showing decodes;
-//   2. unlock with the password + Enter: Sblocca decodes on arrival; the ceremony (no 3D:
-//      lathes into register, the document breaks into glyphs over the volume composing from
-//      glyphs) never shows a blank frame or plain text first, and the keyboard works at once;
-//   3. inside: a folder opened with Enter decodes — every visible item, handed over from a
-//      tile-shaped skeleton (the drive is made slow: fs_list 400 ms) — and its thumbnails;
-//   4. mouse back button: back to the parent, selection kept, no decode (a repeated place);
-//   5. quick look of a photo opened with the pointer: shown once, never blank after its first frame;
-//   6. lock: the reverse, quicker, no blank frame.
-// Run: NV_E2E_SCRIPT=reveal.mjs pnpm e2e:real
 import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -29,7 +15,6 @@ const HERE = new URL('.', import.meta.url).pathname;
 let wd;
 let failed = 0;
 
-/** Captures the X screen as fast as it can (~every 20 ms, capture.py) into OUT/frames-<name>/ until stopped. */
 function frames(name) {
   const dir = join(OUT, `frames-${name}`);
   rmSync(dir, { recursive: true, force: true });
@@ -43,7 +28,6 @@ function frames(name) {
   };
 }
 
-/** The element `css` in X screen coordinates (the webview sits at the bottom of the app window). */
 async function screenRect(css) {
   const r = await wd.exec(`const r = document.querySelector(${JSON.stringify(css)}).getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, iw: innerWidth, ih: innerHeight }`);
   const geo = (id) => execFileSync(XDO, ['getwindowgeometry', id]).toString().match(/Position: (\d+),(\d+).*\n.*Geometry: (\d+)x(\d+)/s);
@@ -54,7 +38,6 @@ async function screenRect(css) {
   return { x: Math.round(ox + r.x), y: Math.round(oy + r.y), w: Math.round(r.w), h: Math.round(r.h) };
 }
 
-/** No frame shows the settled content of `css` plainly and then animates it (frames.py). */
 async function noFlash(desc, cap, css, arrive = false) {
   const r = await screenRect(css);
   const out = JSON.parse(execFileSync('python3', [join(HERE, 'frames.py'), cap.dir, r.x, r.y, r.w, r.h, arrive ? 'arrive' : '']).toString());
@@ -63,7 +46,6 @@ async function noFlash(desc, cap, css, arrive = false) {
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${desc}: no plain frame before the glyphs — ${out.frames} frames, first glyph #${out.first_glyph}, first settled #${out.first_final}\n       ${out.labels}\n       region ${r.x},${r.y} ${r.w}x${r.h} -> ${cap.dir}/strip.png`);
 }
 
-/** No blank frame over the whole webview (frames.py "-": flat, nothing drawn) once the window shows. */
 async function noBlank(desc, cap) {
   const r = await screenRect('body');
   const out = JSON.parse(execFileSync('python3', [join(HERE, 'frames.py'), cap.dir, r.x, r.y, r.w, r.h]).toString());
@@ -95,7 +77,6 @@ const invoke = (cmd, args) =>
     args: [cmd, args],
   });
 
-/** A "play" then a "done" logged for a key matching `re`; returns the decode's duration. */
 async function played(desc, src) {
   const re = new RegExp(src);
   const entry = await waitFor(`${desc}: decode done`, `return (window.__nvReveal || []).find((e) => e.kind === 'decode' && e.what === 'done' && new RegExp(${JSON.stringify(src)}).test(e.key))`, 8000).catch(() => null);
@@ -110,13 +91,11 @@ async function mediaPlayed(desc, prefix) {
   await sleep(1200);
   const all = await log();
   const plays = all.filter((e) => e.kind === 'media' && e.key.startsWith(prefix));
-  // decoded on their own, or inside their piece's decode (the folder's: 'merged'), never twice
   const ok = plays.some((e) => e.what === 'play' || e.what === 'merged') && !(plays.some((e) => e.what === 'play') && plays.some((e) => e.what === 'merged' || e.what === 'shown'));
   if (!ok) failed++;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${desc}: ${plays.map((e) => e.what).join(', ') || 'nothing logged'}`);
 }
 
-/** Per frame: visible items, how many the decode holds (text or piece), skeleton on screen. */
 const SAMPLER = `
   const out = []; let on = true;
   const box = document.querySelector('[role=listbox]').getBoundingClientRect();
@@ -132,7 +111,6 @@ const SAMPLER = `
   window.__nvSample = { stop: () => { on = false; return out; } };
 `;
 
-/** Per frame of quick look: the picture is visible (not veiled, not held) or glyphs cover it. */
 const QL_SAMPLER = `
   const out = []; let on = true; let srcs = 0; let last = null;
   const tick = () => {
@@ -151,7 +129,6 @@ const QL_SAMPLER = `
   window.__nvQl = { stop: () => { on = false; return out; }, get srcs() { return srcs; } };
 `;
 
-/** A real double click (pointer actions) on the item called `name`. */
 async function dbl(name) {
   const el = await waitFor(`item ${name}`, `return [...document.querySelectorAll('[role=option]')].find((o) => o.querySelector('[data-testid=item-name]')?.textContent.trim() === ${JSON.stringify(name)})`);
   const origin = { 'element-6066-11e4-a52e-4f735466cecf': el['element-6066-11e4-a52e-4f735466cecf'] };
@@ -165,7 +142,6 @@ async function dbl(name) {
   await wd.cmd('DELETE', '/actions');
 }
 
-/** Screen rects of every element matching `css` that is on screen in the file view. */
 async function screenRects(css) {
   const rs = await wd.exec(`const box = document.querySelector('[role=listbox]').getBoundingClientRect(); return { iw: innerWidth, ih: innerHeight, list: [...document.querySelectorAll(${JSON.stringify(css)})].map((e) => e.getBoundingClientRect()).filter((r) => r.top >= box.top && r.bottom <= box.bottom && r.width > 4).map((r) => [r.left, r.top, r.width, r.height]) }`);
   const geo = (id) => execFileSync(XDO, ['getwindowgeometry', id]).toString().match(/Position: (\d+),(\d+).*\n.*Geometry: (\d+)x(\d+)/s);
@@ -175,15 +151,9 @@ async function screenRects(css) {
   return rs.list.map(([x, y, w, h]) => [Math.round(ox + x), Math.round(oy + y), Math.round(w), Math.round(h)]);
 }
 
-/** Opens `name` (pointer), captures the decode, and checks how it ended: every item on screen was
- *  in the run, the run played to its natural end, each piece's last decode frame was resolved
- *  (decode-end.py: >= 0.7 of the settled picture, the rest is the last cross-fade step), each photo
- *  decoded once. */
 async function folderEnds(name, tag) {
   const before = (await log()).length;
   const runsBefore = await wd.exec('return (window.__nvRevealRuns || []).length');
-  // NV_REVEAL_SLOW=n plays these decodes n times slower (window.__nvRevealSlow): frames of a
-  // loaded machine still sample every step of them
   if (SLOW > 1) await wd.exec(`window.__nvRevealSlow = ${SLOW}`);
   const stop = frames(`5-${tag}`);
   await sleep(150);
@@ -210,15 +180,12 @@ async function folderEnds(name, tag) {
   const ends = JSON.parse(execFileSync('python3', [join(HERE, 'decode-end.py'), cap.dir, bf]).toString());
   const seen = ends.filter((e) => e.glyphs);
   const worst = seen.reduce((a, e) => (e.last < a.last ? e : a), { last: 1 });
-  // a frame is captured every ~35 ms: the one before the hand-over is part of the cross-fade (0.7+);
-  // a decode cut short jumps from glyphs (below 0.3) to the content
   const okEnd = seen.length >= Math.min(boxes.length, visible) * 0.9 && worst.last >= 0.7;
   if (!okEnd) failed++;
   console.log(`${okEnd ? 'ok  ' : 'FAIL'} ${name}: each piece's last decode frame is resolved — ${seen.length}/${boxes.length} decoded in the frames, worst last frame ${worst.last} (box ${worst.box}: ${JSON.stringify(worst.tail)}) -> ${cap.dir}/end-${worst.box}.png, ${cap.n} frames every ~${cap.every} ms`);
 }
 
 async function main() {
-  // 1. boot
   let stop = frames('1-boot');
   wd = new WebDriver(DRIVER);
   await wd.start({ 'tauri:options': { application: APP } });
@@ -230,7 +197,6 @@ async function main() {
   console.log('     frames', JSON.stringify(cap));
   await noFlash('boot: Benvenuto', cap, '.welcome .intro', true);
 
-  // a volume with a folder of photos, made through the real backend
   const vol = join(WORK, 'stick', 'Prova.nvault');
   const info = await invoke('vault_create', { path: vol, password: PASSWORD, kdf: 'fast' });
   if (!info.ok) throw new Error(JSON.stringify(info));
@@ -247,8 +213,6 @@ async function main() {
   }
   for (const n of ['Lettere', 'Ricevute', 'Scansioni', 'Varie']) await invoke('fs_mkdir', { vault: id, parent: many.ok.id, name: n });
   await invoke('fs_import', { vault: id, parent: many.ok.id, host_paths: hostMany });
-  // Pezzi: one of each kind of piece (sheets of every type, prints, envelopes) — how each decode ends;
-  // Tanti: 150 items (10 % photos), opened at the smallest tiles — every one on screen decodes
   const icons = await invoke('fs_mkdir', { vault: id, parent: 1, name: 'Pezzi' });
   for (const n of ['Buste', 'Carte']) await invoke('fs_mkdir', { vault: id, parent: icons.ok.id, name: n });
   await invoke('fs_import', { vault: id, parent: icons.ok.id, host_paths: ['photo.jpg', 'photo 2.jpg', 'document.pdf', 'clip.webm', 'readme.txt', 'export.csv', ...hostMany.slice(0, 6).map((f) => f.split('/').pop())].map((f) => join(WORK, 'host', f)) });
@@ -267,12 +231,10 @@ async function main() {
   await invoke('fs_import', { vault: id, parent: lots.ok.id, host_paths: hostLots });
   await sleep(1500);
   await invoke('vault_lock', { vault: id });
-  // a fresh session (the boot decode again, now with a volume on the board)
   await wd.exec('location.reload()');
   await sleep(300);
   await waitFor('app ready', 'return document.querySelector("[data-ready=true]") && document.querySelector(".passport .book")');
 
-  // 2. unlock: Sblocca, then password + Enter
   stop = frames('2-unlock');
   const book = await wd.find('.passport .book');
   await wd.click(book);
@@ -291,7 +253,6 @@ async function main() {
   console.log('     frames', JSON.stringify(cap));
   await noFlash('after the unlock: the file view', cap, '[role=listbox] .items');
   await noBlank('unlock ceremony', cap);
-  // the keyboard works at once: focus in the file view, an arrow moves the selection
   const focus = await wd.exec('const a = document.activeElement; return { inVault: !!a?.closest(".vault-screen"), role: a?.getAttribute("role") }');
   const selBefore = await wd.exec('return document.querySelector("[role=listbox]").getAttribute("aria-activedescendant")');
   await wd.keys(KEY.ArrowRight);
@@ -300,17 +261,15 @@ async function main() {
   if (!okFocus) failed++;
   console.log(`${okFocus ? 'ok  ' : 'FAIL'} after the unlock the keyboard works at once: focus ${JSON.stringify(focus)}, arrow moved ${selBefore} -> ${selAfter}`);
 
-  // 3. inside: Enter on a folder of many non-image items and subfolders
   stop = frames('3-folder');
   await waitFor('Molti listed', 'return [...document.querySelectorAll("[data-testid=item-name]")].some((e) => e.textContent.trim() === "Molti")');
   await wd.exec(SAMPLER);
   await wd.exec('document.querySelector("[role=listbox]").focus()');
-  await wd.keys(KEY.Home); // Foto, Molti (by name): Molti is second
+  await wd.keys(KEY.Home);
   await wd.keys(KEY.ArrowRight);
   await wd.keys(KEY.Enter);
   await played('folder opened with Enter decodes', '^[0-9a-f]{8,}:\\d+$');
   const s3 = await wd.exec('return window.__nvSample.stop()');
-  // the new listing: the first frame with items after the loading state (the root's two are before it)
   const loadingAt = s3.findIndex((f) => f.items === 0);
   const after = loadingAt >= 0 ? s3.slice(loadingAt) : [];
   const firstItems = after.find((f) => f.items > 0);
@@ -323,7 +282,6 @@ async function main() {
   console.log(`${skel && handover && every ? 'ok  ' : 'FAIL'} every visible item decodes: skeleton shown ${skel}, ${vis} visible, ${firstItems?.held} held on the first frame with items, max held ${maxHeld}`);
   console.log('     frames', JSON.stringify(await stop()));
 
-  // 4. mouse back button: the parent again, Molti selected, no new decode
   const before = (await log()).length;
   await wd.exec('window.dispatchEvent(new MouseEvent("mouseup", { button: 3, bubbles: true }))');
   await waitFor('back at the root', 'return document.querySelector(".breadcrumb [aria-current=page]")?.textContent.trim() === "Prova"');
@@ -339,7 +297,6 @@ async function main() {
   await wd.exec('window.dispatchEvent(new MouseEvent("mouseup", { button: 3, bubbles: true }))');
   await waitFor('back at the root', 'return document.querySelector(".breadcrumb [aria-current=page]")?.textContent.trim() === "Prova"');
 
-  // 5. Foto (double-click), then a photo in quick look (double-click): no blank frame after it shows
   stop = frames('5-quicklook');
   await dbl('Foto');
   await waitFor('in Foto', 'return document.querySelector(".breadcrumb [aria-current=page]")?.textContent.trim() === "Foto"');
@@ -358,20 +315,15 @@ async function main() {
   console.log('     frames', JSON.stringify(await stop()));
 
   await wd.keys(KEY.Escape);
-  // a key in the last second makes the next folder skip its decode (fromKeyboard)
   await sleep(1200);
 
-  // 5b. how a folder's decode ends: every visible piece converges on what it shows, then hands
-  // over (no jump from half-resolved glyphs to the content); photos decode once
   await wd.exec('window.dispatchEvent(new MouseEvent("mouseup", { button: 3, bubbles: true }))');
   await waitFor('back at the root', 'return document.querySelector(".breadcrumb [aria-current=page]")?.textContent.trim() === "Prova"');
   await sleep(1200);
   await folderEnds('Pezzi', 'pieces');
-  // 5c. 150 items at the smallest tiles: every one on screen decodes (no cap)
   await wd.exec('window.dispatchEvent(new MouseEvent("mouseup", { button: 3, bubbles: true }))');
   await waitFor('back at the root', 'return document.querySelector(".breadcrumb [aria-current=page]")?.textContent.trim() === "Prova"');
   await wd.exec(`document.querySelector('[data-testid=view-size] [data-size=s]').closest('button').click()`);
-  // a big window (NV_E2E_SCREEN=2560x1600): more than a hundred tiles on screen at once
   const scr = await wd.exec('return { w: screen.width, h: screen.height }');
   const big = scr.w >= 2400 && scr.h >= 1500;
   if (big) await wd.cmd('POST', '/window/rect', { x: 0, y: 0, width: scr.w - 40, height: scr.h - 60 }).catch((e) => console.log('     (window not resized:', e.message, ')'));
@@ -384,7 +336,6 @@ async function main() {
   await wd.exec(`document.querySelector('[data-testid=view-size] [data-size=m]').closest('button').click()`);
   await sleep(400);
 
-  // 6. lock: the volume breaks into glyphs under Sblocca coming back
   stop = frames('6-lock');
   await sleep(150);
   await wd.exec('document.querySelector("button.btn.lock").click()');
@@ -393,7 +344,6 @@ async function main() {
   cap = await stop();
   console.log('     frames', JSON.stringify(cap));
   await noBlank('lock', cap);
-  // the engine's watchdog (frames too slow: decodes become fades for 3 s) — a loaded machine
   console.log('     watchdog fired', await wd.exec('return window.__nvRevealDegraded || 0'), 'time(s) since the reload');
   console.log('     keys', JSON.stringify(await wd.exec('return window.__k')));
   const all = await log();
@@ -407,7 +357,6 @@ main().catch(async (e) => {
   try {
     await wd?.quit();
   } catch {
-    /* gone */
   }
   process.exit(1);
 });

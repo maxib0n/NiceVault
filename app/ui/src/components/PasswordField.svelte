@@ -1,4 +1,3 @@
-<!-- Password input with show/hide toggle and a Caps Lock warning. variant "document": the large slot on Sblocca. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Eye, EyeOff } from '@lucide/svelte';
@@ -30,7 +29,6 @@
     placeholder?: string;
     input?: HTMLInputElement;
     onkeydown?: (e: KeyboardEvent) => void;
-    /** 'document' for the large slot printed on the volume's document (Sblocca) */
     variant?: 'paper' | 'document';
   } = $props();
 
@@ -42,9 +40,6 @@
     onkeydown?.(e);
   }
 
-  // Not on a phone: the keyboard would rise in the middle of the screen's arrival and cover half
-  // of it (iOS slid the page up and back, Sblocca's field ending under the keys); a tap on the
-  // field brings it when the person is ready (lib/touch.ts keeps the field above the keys).
   $effect(() => {
     if (autofocus && input && !disabled && !isMobile) input.focus();
   });
@@ -111,7 +106,6 @@
   .control.invalid .input {
     border-color: var(--danger);
   }
-  /* show / hide: a small key seated at the end of the well */
   .control .toggle {
     position: absolute;
     top: 0;
@@ -131,7 +125,6 @@
     color: var(--accent);
   }
 
-  /* the slot printed on the document: wide, deep, the dots set large */
   .password-field[data-variant='document'] .pf-label {
     font-family: var(--font-mono);
     font-size: var(--text-2xs);

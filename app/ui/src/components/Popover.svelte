@@ -1,9 +1,3 @@
-<!--
-  A small slip lifted off the page at a point (a filter chip's menu, the tag picker, the tag
-  manager): kept inside the window as it grows, non-modal. Esc closes it (focus goes back to
-  whoever opened it: onclose(true)); a press outside it, or focus leaving it, closes it too.
-  `ignore`: the key that opened it (a press there toggles instead of closing twice).
--->
 <script lang="ts">
   import { pointerLast } from '../lib/modality';
   import { isMobile } from '../lib/platform';
@@ -38,7 +32,6 @@
     if (!el) return;
     const r = el.getBoundingClientRect();
     const left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8));
-    // below the point when it fits, else above it, else as low as the window allows
     const below = y;
     const top = below + r.height + 8 <= window.innerHeight ? below : Math.max(8, window.innerHeight - r.height - 8);
     if (!pos || pos.left !== left || pos.top !== top) pos = { left, top };
@@ -52,8 +45,6 @@
       ro = new ResizeObserver(clamp);
       ro.observe(el);
       const first = el.querySelector<HTMLElement>('[data-autofocus], input, [role="checkbox"], [role="radio"], button:not(:disabled)');
-      // a text field takes focus either way; opened by a click, a list of options does not light
-      // its first one: the popover itself holds focus (lib/modality.ts)
       const field = first?.matches('input:not([type="checkbox"], [type="radio"])');
       (pointerLast() && !field ? el : first)?.focus({ preventScroll: true });
     });
@@ -80,8 +71,6 @@
   }
 </script>
 
-<!-- on a phone it is a sheet from the bottom (styles/mobile.css): the keyboard coming up resizes the
-     window, which must not close it -->
 <svelte:window onpointerdown={outside} onresize={() => isMobile || onclose(false)} />
 
 <div
@@ -106,7 +95,6 @@
 </div>
 
 <style>
-  /* the same slip as the menus: paper lifted off the page, one soft elevation */
   .popover {
     position: fixed;
     z-index: var(--z-menu);
@@ -121,7 +109,6 @@
       inset 0 1px 0 var(--key-lip),
       var(--shadow-pop);
   }
-  /* placed: it fades in (styles/motion.css: never an opacity animation of its own) */
   .popover.nv-enter {
     animation: nv-enter 90ms var(--ease-out) backwards;
   }
@@ -129,7 +116,6 @@
     outline: none;
   }
 
-  /* shared by what goes inside (FilterChips, TagPicker, TagManager) */
   .popover :global(.pop-head) {
     display: flex;
     align-items: center;
@@ -148,7 +134,6 @@
     color: var(--ink-3);
     text-wrap: pretty;
   }
-  /* a choice: a box (or a ring for one-of) that fills with the volume's ink */
   .popover :global(.opt) {
     display: flex;
     align-items: center;
@@ -217,7 +202,6 @@
       inset 0 0 0 1px color-mix(in oklab, var(--accent-deep) 70%, black),
       inset 0 1px 0 rgb(255 255 255 / 0.18);
   }
-  /* the tick: two inked strokes; mixed: one bar */
   .popover :global([role='checkbox'][aria-checked='true'] .box::after) {
     content: '';
     position: absolute;

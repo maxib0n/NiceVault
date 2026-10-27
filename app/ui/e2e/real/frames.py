@@ -28,7 +28,6 @@ for n in names:
         continue  # a frame cut short when the capture was stopped
     crops.append((n, np.asarray(im.crop((x, y, x + w, y + h)), dtype=np.float32)))
 final = crops[-1][1]
-# the pixels that carry the content in the settled frame: text and edges (far from the median)
 ink = np.abs(final - np.median(final)) > 28
 labels = []
 for n, c in crops:
@@ -44,7 +43,6 @@ f = s.find('F')
 import re  # noqa: E402
 
 flash = (f >= 0 and 'G' in s[f:]) or (arrive and re.search(r'[GF]-+[GF]', s) is not None)
-# a strip for the eye: every frame's region, scaled down
 sc = min(1.0, 220 / max(w, 1))
 tw, th = max(1, int(w * sc)), max(1, int(h * sc))
 cols = 10

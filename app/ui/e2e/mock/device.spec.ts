@@ -1,5 +1,3 @@
-// Crea dispositivo NiceVault: the wizard against the mock's device_* commands (deviceMock.ts),
-// the same contract as app/src-tauri/src/device/cmd.rs. Nothing is erased anywhere.
 import { boot, expect, expectScreen, test } from './helpers';
 
 test.describe('Crea dispositivo', () => {
@@ -12,13 +10,12 @@ test.describe('Crea dispositivo', () => {
     await expect(disks.first()).toContainText('SanDisk Ultra');
     await expect(disks.first()).toContainText('USB');
     await expect(disks.first()).toContainText('…1103235');
-    await expect(disks.first()).toContainText('CHIAVETTA'); // what will be erased
+    await expect(disks.first()).toContainText('CHIAVETTA');
     await expect(page.getByText('Sono elencate solo unità esterne o rimovibili.')).toBeVisible();
     await expect(page.getByTestId('device-next')).toBeDisabled();
     await disks.first().click();
     await page.getByTestId('device-next').click();
 
-    // options: exFAT by default, the readability chips, btrfs not creatable here (tool missing)
     const fsGroup = page.getByTestId('device-fs');
     await expect(fsGroup.getByRole('radio', { name: /exFAT/ })).toHaveAttribute('aria-checked', 'true');
     await expect(fsGroup.getByRole('radio', { name: /ext4/ })).toContainText('Non leggibile su Windows e macOS');
@@ -32,7 +29,6 @@ test.describe('Crea dispositivo', () => {
     await page.getByLabel('Nome del volume').fill('Dati');
     await page.getByTestId('device-next').click();
 
-    // summary: what is erased, the new layout, the auditable commands
     const sum = page.getByTestId('device-summary');
     await expect(sum).toContainText('Tutto il contenuto di SanDisk Ultra');
     await expect(sum).toContainText('Non si può annullare.');
@@ -41,7 +37,6 @@ test.describe('Crea dispositivo', () => {
     await expect(page.getByTestId('device-commands')).toContainText('org.freedesktop.UDisks2.Block.Format');
     await page.getByTestId('device-continue').click();
 
-    // typed confirmation
     await expect(page.getByText('Per confermare scrivi: SanDisk Ultra')).toBeVisible();
     await expect(page.getByTestId('device-erase')).toBeDisabled();
     await page.getByTestId('device-typed').fill('SanDisk');
@@ -51,7 +46,6 @@ test.describe('Crea dispositivo', () => {
     await expect(page.getByText('Il sistema chiederà i permessi solo per formattare.')).toBeVisible();
     await page.getByTestId('device-erase').click();
 
-    // progress, then done with the first volume (whole partition, preallocated)
     await expect(page.getByTestId('device-steps')).toBeVisible();
     await expect(page.getByTestId('device-done')).toContainText('Il dispositivo è pronto.', { timeout: 20_000 });
     const vol = page.getByTestId('device-volume');
@@ -101,11 +95,9 @@ test.describe('Crea dispositivo', () => {
     await expect(page.getByTestId('device-done')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('device-missing')).toContainText('Scarica ora');
     const fetchNow = page.getByTestId('device-fetch-missing');
-    // still offline: an error, the programs still missing
     await fetchNow.click();
     await expect(page.getByTestId('device-fetch-error')).toContainText('controlla la connessione');
     await expect(page.getByTestId('device-missing')).toBeVisible();
-    // back online
     await fetchNow.click();
     await expect(page.getByTestId('device-fetch-done')).toContainText('il dispositivo è completo');
     await expect(page.getByTestId('device-missing')).toHaveCount(0);
@@ -143,11 +135,9 @@ test.describe('Crea dispositivo', () => {
     await expect(page.getByTestId('device-waiting-hint')).toContainText('sta lavorando', { timeout: 5000 });
     await expect(page.getByTestId('device-waiting-secs')).toBeVisible();
     await expect(page.getByTestId('device-waiting-slow')).toContainText("l'unità non è stata toccata", { timeout: 5000 });
-    // Riprova: the same step again (still pending: the mock never answers)
     await page.getByTestId('device-waiting-retry').click();
     await expect(next).toHaveAttribute('aria-busy', 'true');
     await expect(page.getByTestId('device-waiting-slow')).toHaveCount(0);
-    // Annulla: the step is dropped, the drive list is usable again
     await expect(page.getByTestId('device-waiting-cancel')).toBeVisible({ timeout: 5000 });
     await page.getByTestId('device-waiting-cancel').click();
     await expect(page.getByTestId('device-waiting')).toHaveCount(0);
@@ -165,7 +155,6 @@ test.describe('Crea dispositivo', () => {
     await back.click();
     await expect(page.getByTestId('device-wizard')).toHaveAttribute('data-stage', 'disk');
     await expect(page.getByTestId('device-wizard')).not.toHaveAttribute('data-pending', /.+/);
-    // and with Esc, on the drive step: the wizard is left
     await page.getByTestId('device-disk').first().click();
     await page.getByTestId('device-next').click();
     await expect(page.getByTestId('device-fs')).toBeVisible();
@@ -203,7 +192,6 @@ test.describe('Crea dispositivo', () => {
     await expect(erase).toBeEnabled();
     await page.getByTestId('device-volumes-ack').uncheck();
     await expect(erase).toBeDisabled();
-    // a drive without volumes: no warning, no extra consent
     await boot(page, 'screen=device&device_step=type');
     await expect(page.getByTestId('device-volumes')).toHaveCount(0);
     await page.getByTestId('device-typed').fill('SanDisk Ultra');

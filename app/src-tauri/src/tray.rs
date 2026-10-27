@@ -1,14 +1,3 @@
-//! The tray icon (installed mode: "Resta nel vassoio" or "Avvia ridotto"; or a start with
-//! `--minimized`): a menu with Apri NiceVault, one Blocca per open volume, Blocca tutto, Esci.
-//! "Resta nel vassoio quando chiudi la finestra" (installed, default on): closing the window hides
-//! it instead of quitting; the open volumes stay open until the auto-lock rules (idle, sleep,
-//! screen lock, removal) or the menu lock them; Esci locks everything and quits. A second launch
-//! (single.rs) shows the window again.
-//! Never an invisible process: the window is hidden only while the desktop really shows tray
-//! icons (Linux: a StatusNotifierWatcher on the session bus — KDE, GNOME with the AppIndicator
-//! extension, ...), checked at each close; otherwise closing quits, and a start with
-//! `--minimized` shows the window (minimised) when no tray host turns up within a few seconds.
-
 use crate::state::{AppState, lock_or_recover};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,8 +7,6 @@ use tauri::{AppHandle, Manager};
 
 const ID: &str = "main";
 
-/// Managed state: whether the run started with `--minimized` (keeps the tray even when
-/// "Avvia ridotto" is off, until that setting is changed), whether the tray is up.
 #[derive(Default)]
 pub struct Tray {
     forced: AtomicBool,
@@ -31,24 +18,19 @@ impl Tray {
         Tray { forced: AtomicBool::new(launched_minimized), active: AtomicBool::new(false) }
     }
 
-    /// The tray is up: closing the window hides it.
     pub fn active(&self) -> bool {
         self.active.load(Ordering::SeqCst)
     }
 
-    /// "Avvia ridotto" was changed by hand: from now on the setting alone decides.
     pub fn unforce(&self) {
         self.forced.store(false, Ordering::SeqCst);
     }
 }
 
-/// Linux: the tray library (libayatana-appindicator / libappindicator) is loaded at run time and
-/// its absence would abort the process, so look for it first.
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn supported() -> bool {
     ["libayatana-appindicator3.so.1", "libappindicator3.so.1"].iter().any(|name| {
         let c = std::ffi::CString::new(*name).expect("no NUL");
-        // SAFETY: dlopen of a NUL-terminated name; the handle is kept (the tray loads it again).
         !unsafe { libc::dlopen(c.as_ptr(), libc::RTLD_LAZY) }.is_null()
     })
 }
@@ -58,11 +40,8 @@ pub fn supported() -> bool {
     true
 }
 
-/// The desktop shows tray icons now. Linux: a StatusNotifierWatcher owns its name on the session
-/// bus (the icon library registers there; without one the icon is nowhere to be seen).
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn host_available() -> bool {
-    // no session bus: nothing to ask (and gdbus must not autolaunch one)
     let bus = std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_some_and(|v| !v.is_empty())
         || std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| std::path::Path::new(&d).join("bus").exists());
     if !bus {
@@ -82,13 +61,10 @@ pub fn host_available() -> bool {
     true
 }
 
-/// gdbus's reply to NameHasOwner: `(true,)`.
 pub fn name_owned(reply: &str) -> bool {
     reply.trim() == "(true,)"
 }
 
-/// Closing the main window hides it (instead of quitting): the tray is up and shown, and
-/// "Resta nel vassoio" is on (portable: only for a run started with `--minimized`).
 pub fn hides_on_close(app: &AppHandle) -> bool {
     let (Some(tray), Some(state)) = (app.try_state::<Tray>(), app.try_state::<Arc<AppState>>()) else { return false };
     if !tray.active() {
@@ -101,9 +77,6 @@ pub fn hides_on_close(app: &AppHandle) -> bool {
     want && host_available()
 }
 
-/// Started with `--minimized`: stays hidden only if a tray host shows the icon; at login the
-/// panel may come up a moment after NiceVault, so it is given a few seconds before the window is
-/// shown (minimised) instead.
 pub fn show_unless_hosted(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -123,7 +96,6 @@ pub fn show_unless_hosted(app: &AppHandle) {
     });
 }
 
-/// Shows, un-minimises and focuses the main window.
 pub fn show_window(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -132,7 +104,6 @@ pub fn show_window(app: &AppHandle) {
     }
 }
 
-/// Puts the tray up or takes it down to match the settings. Call after a settings change.
 pub fn sync(app: &AppHandle) {
     let (Some(tray), Some(state)) = (app.try_state::<Tray>(), app.try_state::<Arc<AppState>>()) else { return };
     let want = supported() && {
@@ -169,8 +140,6 @@ pub fn sync(app: &AppHandle) {
     }
 }
 
-/// Rebuilds the menu (a volume was opened or locked, the language changed). Off the caller's
-/// thread: it may hold the app's locks.
 pub fn refresh(app: &AppHandle) {
     let active = app.try_state::<Tray>().is_some_and(|t| t.active());
     if !active {
@@ -188,7 +157,7 @@ pub fn refresh(app: &AppHandle) {
 fn on_menu(app: &AppHandle, id: &str) {
     let lock: Option<Option<String>> = match id {
         "open" => return show_window(app),
-        "quit" => return app.exit(0), // RunEvent::Exit locks everything (lib.rs)
+        "quit" => return app.exit(0),
         "lock-all" => Some(None),
         _ => id.strip_prefix("lock:").map(|v| Some(v.to_owned())),
     };
@@ -222,7 +191,6 @@ fn build_menu(app: &AppHandle, state: &AppState) -> tauri::Result<Menu<tauri::Wr
     Ok(menu)
 }
 
-/// The menu's words, it / en (the UI's messages live in the webview, which may not be loaded).
 #[derive(Debug, PartialEq, Eq)]
 pub struct Labels {
     pub open: &'static str,
@@ -233,7 +201,6 @@ pub struct Labels {
 }
 
 impl Labels {
-    /// `lang`: the UI language setting ("system" = the OS language).
     pub fn for_lang(lang: &str) -> Labels {
         let it = match lang {
             "it" => true,
@@ -248,7 +215,6 @@ impl Labels {
     }
 }
 
-/// The OS's UI language, e.g. "it-IT" / "en_US.UTF-8".
 fn system_lang() -> Option<String> {
     #[cfg(windows)]
     {
@@ -256,7 +222,6 @@ fn system_lang() -> Option<String> {
         unsafe extern "system" {
             fn GetUserDefaultUILanguage() -> u16;
         }
-        // SAFETY: no arguments. Primary language id 0x10 = Italian.
         let id = unsafe { GetUserDefaultUILanguage() };
         Some(if id & 0x3ff == 0x10 { "it".into() } else { "en".into() })
     }
@@ -270,7 +235,6 @@ fn system_lang() -> Option<String> {
     }
 }
 
-/// The first of the user's preferred languages (CoreFoundation, already linked by the webview).
 #[cfg(target_os = "macos")]
 fn mac_lang() -> Option<String> {
     use std::ffi::c_void;
@@ -284,7 +248,6 @@ fn mac_lang() -> Option<String> {
         fn CFRelease(o: CFTypeRef);
     }
     const UTF8: u32 = 0x0800_0100;
-    // SAFETY: CF "Copy" rule: the array is ours to release; its items are borrowed.
     unsafe {
         let a = CFLocaleCopyPreferredLanguages();
         if a.is_null() {

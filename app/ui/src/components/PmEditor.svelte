@@ -1,10 +1,3 @@
-<!--
-  Password manager entry editor (new or existing): title, username, password (+ generator),
-  websites, folder, tags, favourite, notes, 2FA (otpauth:// URI or base32 secret, checked live
-  with pm_totp_check), custom fields (hidden ones keep their saved value unless retyped).
-  Secrets of an existing entry are never loaded into the form: an empty password / 2FA field
-  means "unchanged". Hooks: [data-testid=pm-editor], [data-testid=totp-check].
--->
 <script lang="ts">
   import { Eye, EyeOff, Plus, Wand2, X } from '@lucide/svelte';
   import * as api from '../lib/api';
@@ -23,7 +16,6 @@
     name: string;
     value: string;
     hidden: boolean;
-    /** an existing hidden field whose value was not retyped: sent without a value (kept) */
     keep: boolean;
     reveal: boolean;
   }
@@ -47,7 +39,6 @@
   let checkError = $state<string | null>(null);
   let wasOpen = false;
 
-  // reset the draft each time the editor opens
   $effect(() => {
     if (open && !wasOpen) {
       const e = entry;
@@ -71,7 +62,6 @@
     wasOpen = open;
   });
 
-  // the 2FA input is validated as it is typed (nothing is stored until Salva)
   let checkSeq = 0;
   $effect(() => {
     const t = totp.trim();
@@ -99,7 +89,6 @@
   });
 
   const titleMissing = $derived(title.trim() === '');
-  // an empty title is reported when Salva is pressed (not on blur: the layout must not move under the pointer)
   const canSave = $derived(!busy && !checkError);
 
   async function save(e?: Event) {

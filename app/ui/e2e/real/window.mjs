@@ -1,11 +1,3 @@
-// The main window's size and place in the real app (window_geom.rs), on the private Xvfb screen
-// (1600x1000, no window manager: the work area is the whole screen):
-//   1. first start: 80 % of the screen (1280x800), centred;
-//   2. moved and resized, then closed (WM_DELETE_WINDOW, the window manager's ×): the next start
-//      opens at that size and place (installed: window.json next to settings.json);
-//   3. a saved place off every screen (a monitor unplugged since): centred on the screen there is;
-//   4. portable (NICEVAULT_PORTABLE=1): nothing written, the first size again.
-// Run: NV_E2E_SCRIPT=window.mjs pnpm e2e:real     (X11: xdotool + python-xlib)
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -75,13 +67,11 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
 
 async function main() {
   rmSync(FILE, { force: true });
-  // 1. first start
   let id = await start();
   let g = geometry(id);
   check(near(g.w, 1280) && near(g.h, 800) && near(g.x, 160) && near(g.y, 100), `first start: 80 % of 1600x1000, centred (${JSON.stringify(g)})`);
   execFileSync('import', ['-window', 'root', join(OUT, 'window-first.png')]);
 
-  // 2. moved and resized, closed: kept
   execFileSync(XDO, ['windowsize', id, 1000, 700]);
   await sleep(300);
   execFileSync(XDO, ['windowmove', id, 50, 60]);
@@ -96,16 +86,13 @@ async function main() {
   check(near(g.w, 1000) && near(g.h, 700) && near(g.x, 50) && near(g.y, 60), `next start: the size and place it was closed at (${JSON.stringify(g)})`);
   await stop(id);
 
-  // 3. off every screen: centred on this one
   writeFileSync(FILE, JSON.stringify({ x: 4000, y: 300, w: 1100, h: 720, maximized: false }));
   id = await start();
   g = geometry(id);
   check(near(g.w, 1100) && near(g.h, 720) && near(g.x, 250) && near(g.y, 140), `a place off screen: centred on the screen there is (${JSON.stringify(g)})`);
   await stop(id);
 
-  // 4. portable: nothing kept
   rmSync(FILE, { force: true });
-  // (started directly: tauri-driver does not pass an environment to the app)
   const portable = spawn(APP, [], { env: { ...process.env, NICEVAULT_PORTABLE: '1' }, stdio: 'ignore' });
   await until(() => (id = mainWindow()), 20000);
   await sleep(1500);

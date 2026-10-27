@@ -1,4 +1,3 @@
-<!-- Folder path. Crumbs accept dropped items (move into that folder). -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { ChevronRight } from '@lucide/svelte';
@@ -8,8 +7,6 @@
   let { browser }: { browser: FileBrowser } = $props();
   let over = $state<number | null>(null);
 
-  // presentation only: when the path is wider than its slot, the oldest crumbs
-  // slide out at the left under a fade (data-overflow drives the mask)
   let nav: HTMLElement | undefined = $state();
   let list: HTMLOListElement | undefined = $state();
   let overflow = $state(false);
@@ -65,8 +62,6 @@
 </nav>
 
 <style>
-  /* the current folder is never cut; when space runs out the oldest crumbs
-     slide out at the left, under a fade */
   .breadcrumb {
     min-width: 0;
     overflow: hidden;
@@ -115,7 +110,6 @@
   button.crumb:active {
     background: color-mix(in oklab, var(--ink) 9%, transparent);
   }
-  /* the path clips its overflow, so the keyboard ring is drawn inside the crumb */
   .crumb:focus-visible {
     outline-offset: -2px;
   }

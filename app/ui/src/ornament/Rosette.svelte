@@ -1,16 +1,5 @@
-<!--
-  A guilloché rosette, cut by two lathes. The fixed rings print on one plate;
-  lathe A (the petals) and lathe B (the inner lace) print on their own plates
-  so the unlock can turn them in opposite directions and bring them back into
-  register (CSS: --lathe, in degrees, on any ancestor). The centre is a clear
-  cartouche for the emblem (children).
-  `frame` (a volume's emblem only, ornament/frames.ts): the guilloché rosette (default), or another
-  frame from ornament/frameArt.ts: its own figure on the fixed plate (a laurel wreath, a twisted
-  cord, a Greek key, a notarial seal's edge, plain rules), fine rings on the two lathes.
--->
 <script lang="ts" module>
   export type RosetteKind = 'seal' | 'cover' | 'stamp' | 'mark' | 'swatch';
-  /** Degrees between register positions of both lathes (their lobes repeat every 360/18). */
   export const REGISTER_STEP = 20;
 </script>
 
@@ -31,7 +20,6 @@
     children,
   }: { size: number; kind?: RosetteKind; finish?: Finish; frame?: string | null; children?: Snippet } = $props();
 
-  // proportions of the cartouche (clear centre) per kind, as a fraction of the radius
   const HOLE: Record<RosetteKind, number> = { seal: 0.355, cover: 0.4, stamp: 0.42, mark: 0.3, swatch: 0.34 };
   const hole = $derived(HOLE[kind]);
 
@@ -39,11 +27,9 @@
     return { cx: w / 2, cy: h / 2, R: Math.min(w, h) / 2 - 1 };
   }
 
-  // the volume's emblems wear their frame; brand marks, stamps and ink swatches stay guilloché
   const fid = $derived(kind === 'mark' || kind === 'stamp' ? 'guilloche' : frameOf(frame));
   let artKey = '';
   let art: FrameArt | null = null;
-  /** the frame's plates for this size (built once, shared by the three plates' draws) */
   function artFor(w: number, h: number): FrameArt | null {
     const id = fid;
     if (id === 'guilloche') return null;
@@ -184,15 +170,10 @@
     height: calc(var(--size) * var(--hole) - 2px);
     transform: translate(-50%, -50%);
   }
-  /* the mark is centred on the rosette even when it is larger than the clear centre. Two
-     classes deep: the mark's own `position: relative` (Emblem.svelte, same specificity, later
-     in the cascade) otherwise won, and its left: 50% then pushed it off centre by
-     (cartouche - mark) / 2 */
   .rosette > .cartouche > :global(*) {
     position: absolute;
     left: 50%;
     top: 50%;
-    /* the individual property: a mark's own transform (Sblocca's rise) still composes */
     translate: -50% -50%;
   }
 </style>

@@ -1,9 +1,3 @@
-<!--
-  The camera-roll import on a phone (stores/photos.svelte.ts): a slip over the flap while the
-  photos come in — "Scarico da iCloud… N di M" (iOS waits for each iCloud download), a bar,
-  Annulla — then what could not be imported, each with its reason, and "Riprova questi".
-  Nothing is dropped silently. Closes itself when everything was imported.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { isIos } from '../lib/platform';
@@ -21,7 +15,6 @@
     expired: m.pick_reason_expired,
     other: m.pick_reason_other,
   };
-  /** the item being fetched now ("3 di 800": three are in) */
   const shown = $derived(run ? Math.min(run.total, run.done + (run.fetching > 0 ? 1 : 0)) : 0);
   const pct = $derived(run ? Math.round((run.finished ? 1 : run.fraction) * 1000) / 10 : 0);
 </script>
@@ -64,7 +57,6 @@
 {/if}
 
 <style>
-  /* a slip of paper over the flap, as the selection bar (MobileSelectBar) */
   .pk {
     position: fixed;
     inset: auto 0 0;
@@ -84,7 +76,6 @@
     --enter-to: translate3d(0, 0, 0);
     animation: nv-enter var(--dur-ui) var(--ease-out) backwards;
   }
-  /* wider screens: a card at the bottom right, beside the job tray */
   @media (min-width: 641px) {
     .pk {
       inset: auto 16px 16px auto;

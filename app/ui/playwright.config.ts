@@ -1,7 +1,3 @@
-// Mock-UI interaction suite (`pnpm e2e`): the Svelte UI against the in-browser
-// mock backend, in Chromium and WebKit. Tests target ARIA roles/names, text and
-// data-* / data-testid hooks only, never CSS classes or pixels, so they survive
-// a visual redesign. The real-app suite (Tauri + nv-core) is e2e/real/.
 import { defineConfig, devices } from '@playwright/test';
 
 const PORT = Number(process.env.NV_E2E_PORT ?? 5188);
@@ -18,7 +14,6 @@ export default defineConfig({
   outputDir: 'e2e/.results',
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
-    // the suite reads Italian (the source language); English runs pass ?lang=en
     locale: 'it-IT',
     viewport: { width: 1280, height: 800 },
     trace: 'retain-on-failure',

@@ -1,6 +1,3 @@
-// Phone grid: each view size its own column count (S 4, M 3, L 2, XL 1 in
-// portrait, more on its side), no gutter kept for the Importa key (it floats over the page and the
-// list's end clears it), and the full-screen dock asks for the thumbnails of the videos it shows.
 import type { Page } from '@playwright/test';
 import { boot, expect, fileList, item, listed, nodeId, test } from './helpers';
 
@@ -29,7 +26,6 @@ test.describe('phone portrait', () => {
       await expect(page.locator('.file-view-wrap')).toHaveAttribute('data-grid-size', size);
       await expect.poll(() => columns(page)).toBe(n);
     }
-    // no gutter: the scroller's content runs to 12 px from the right edge
     const pad = await fileList(page).evaluate((el) => {
       const v = el.closest('.file-view')!;
       return parseFloat(getComputedStyle(v).paddingRight);
@@ -47,7 +43,6 @@ test.describe('phone portrait', () => {
       await expect(fab).toBeVisible();
       const k = (await fab.boundingBox())!;
       const view_ = (await page.locator('.file-view').boundingBox())!;
-      // over the scroller, not beside it
       expect(k.x).toBeLessThan(view_.x + view_.width);
       expect(k.y + k.height).toBeLessThanOrEqual(view_.y + view_.height);
       await fileList(page).evaluate((el) => (el.closest('.file-view')!.scrollTop = 1e6));
@@ -62,18 +57,15 @@ test.describe('phone portrait', () => {
     await boot(page, 'screen=vault&platform=mobile&dir=Video&view=list&preview=Drone vacanze.mov');
     const dock = page.getByTestId('ql-dock');
     await expect(dock).toHaveAttribute('data-shown', 'true');
-    // the other videos in the dock get their frame while it is open (the list behind never asked)
     for (const name of ['Compleanno Giulia.webm', 'Tramonto timelapse.mp4']) {
       const frame = dock.getByRole('button', { name });
       await expect(frame.getByTestId('video-thumb')).toHaveCount(1, { timeout: 20_000 });
-      // and the picture is painted (not held by a glyph decode that runs on the page behind)
       const img = frame.getByTestId('thumbnail-image');
       await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0 && getComputedStyle(i).opacity), { timeout: 8000 }).toBe('1');
     }
   });
 
   test('an original too big to be a thumbnail (a HEIC the backend cannot scale) is shown plainly in the grid', async ({ page, consoleErrors }) => {
-    // the picture comes back at 4000 x 3000 (as a 12 MP HEIC does where thumbs.rs cannot read it)
     await page.route('**/mock/photo-14.jpg', (r) =>
       r.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="4000" height="3000"><rect width="4000" height="3000" fill="#c84"/></svg>' }),
     );
@@ -82,12 +74,10 @@ test.describe('phone portrait', () => {
     const img = item(page, 'Copertina.jpg').getByTestId('thumbnail-image');
     await expect.poll(() => img.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(4000);
     const id = await nodeId(page, 'Copertina.jpg');
-    // not handed to the glyph decode (its canvas would decode the whole original): it just shows
     await expect
       .poll(() => page.evaluate((k) => ((window as unknown as { __nvReveal?: { key: string; what: string }[] }).__nvReveal ?? []).filter((e) => e.key.endsWith(`:${k}`) && e.key.startsWith('thumb:')).map((e) => e.what), id))
       .toContain('large');
     await expect.poll(() => img.evaluate((i) => getComputedStyle(i).opacity)).toBe('1');
-    // WebKit may cancel a load of the routed picture (another tile asks for the same file): not a page error
     const rest = consoleErrors.filter((e) => e !== 'console: Failed to load resource');
     consoleErrors.splice(0, consoleErrors.length, ...rest);
   });

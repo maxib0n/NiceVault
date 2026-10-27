@@ -1,4 +1,3 @@
-<!-- Honest strength meter: score bar + estimated time to guess with NiceVault's Argon2id cost. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { estimate, MIN_SCORE, scoreLabel, type Strength } from '../lib/strength';
@@ -20,7 +19,7 @@
   $effect(() => {
     const pw = password;
     const inputs = userInputs;
-    void i18n.current; // zxcvbn's advice comes in the UI language
+    void i18n.current;
     const mine = ++seq;
     if (!pw) {
       strength = null;
@@ -73,7 +72,6 @@
     flex-direction: column;
     gap: 6px;
   }
-  /* the truth in two inks: not acceptable yet (vermilion), acceptable (the volume's ink) */
   .strength[data-score='0'],
   .strength[data-score='1'],
   .strength[data-score='2'] {
@@ -83,7 +81,6 @@
   .strength[data-score='4'] {
     --meter: var(--accent);
   }
-  /* four cells pressed into the paper, inked as the password earns them */
   .bar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

@@ -1,9 +1,3 @@
-<!--
-  Proprietà (menu "Proprietà", Alt+Invio): a record card of what the volume knows about a file,
-  a folder, a selection or the volume itself. Quick facts at once (fs_props); the recursive
-  totals of a folder / selection and a file's SHA-256 run as jobs with progress, cancelled when
-  the card closes. What was never recorded (files added before NiceVault kept it) reads "—".
--->
 <script lang="ts">
   import { Copy, Hash } from '@lucide/svelte';
   import { onMount } from 'svelte';
@@ -31,16 +25,13 @@
   let info = $state<NodeProps | null>(null);
   let stats = $state<VaultStats | null>(null);
   let failed = $state<string | null>(null);
-  /** recursive totals (folder, selection, volume) */
   let tree = $state<{ job: JobId | null; files: number; dirs: number; bytes: number; done: boolean; error: string | null } | null>(null);
-  /** SHA-256 job */
   let hash = $state<{ job: JobId | null; done: number; total: number; error: string | null } | null>(null);
   let seq = 0;
 
   const nodes = $derived((ids ?? []).map((id) => browser.byId.get(id)).filter((n): n is FsNode => !!n));
   const asNode = $derived<FsNode | null>(info ? { id: info.id, parent: 0, name: info.name, kind: info.kind, size: info.size, mtime: info.mtime } : null);
 
-  // (re)load whenever the card opens on other nodes
   $effect(() => {
     const list = ids;
     const my = ++seq;
@@ -105,7 +96,6 @@
     for (const j of [tree?.job, hash?.job]) if (j) void api.jobCancel(j);
   }
 
-  // events can arrive before the command returns the job id: kept until it is known
   const pending = new Map<JobId, { progress?: PropsProgress; done?: PropsDone }>();
   function flushPending(job: JobId) {
     const p = pending.get(job);
@@ -315,7 +305,6 @@
     padding-bottom: var(--space-3);
     border-bottom: 1px solid var(--paper-rule);
   }
-  /* the item itself, as it lies in the view, on a pressed bed */
   .picture {
     flex: none;
     position: relative;
@@ -371,7 +360,6 @@
     font-size: var(--text-xs);
     color: var(--ink-3);
   }
-  /* label / value, like the fields of a record card */
   .facts {
     display: grid;
     grid-template-columns: minmax(110px, max-content) 1fr;
@@ -395,7 +383,6 @@
     color: var(--ink);
     overflow-wrap: anywhere;
   }
-  /* the record's groups (where / how much / when / from where / its fingerprint), ruled apart */
   .facts .g {
     margin-top: 5px;
     padding-top: 12px;

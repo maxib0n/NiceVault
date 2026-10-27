@@ -38,7 +38,6 @@ while not stop and len(frames) < 600:
         continue
     a = np.frombuffer(pb.get_pixels(), dtype=np.uint8).reshape(h, pb.get_rowstride())[:, : w * pb.get_n_channels()]
     a = a.reshape(h, w, pb.get_n_channels())[:, :, :3]
-    # luma, kept in memory until the end (encoding PNGs here would slow the capture down)
     frames.append((a[:, :, 0] * 0.299 + a[:, :, 1] * 0.587 + a[:, :, 2] * 0.114).astype(np.uint8))
     times.append(round((time.monotonic() - t0) * 1000))
     time.sleep(0.004)

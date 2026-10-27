@@ -1,13 +1,3 @@
-// Real-app check of the loopback media stream: does
-// WebKitGTK's media player (GStreamer) put a decrypted video on the host's disk while it
-// plays? GStreamer's download buffering (queue2 temp-template) writes an unlinked
-// /var/tmp/WebKit-Media-XXXXXX; it shows in /proc/<WebKitWebProcess>/fd. Run by
-//   NV_E2E_SCRIPT=media-disk.mjs bash e2e/real/e2e-real.sh      (pnpm e2e:real:media)
-// Plays a ~37 MB video (over viewers.rs MEDIA_RAM_MAX, so the app streams it) in the real
-// webview from each source the app might use, and logs the request headers WebKit's media
-// loader sends (Origin / Referer). Fails if a source the app uses (the stream
-// with `loop`, as MediaViewer plays it; the in-memory Blob) leaves a WebKit-Media file.
-// NV_E2E_MEDIA=<file.webm> uses that video (default: generated with ffmpeg).
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs';
@@ -25,7 +15,6 @@ function bigVideo() {
   return out;
 }
 
-/** WebKitWebProcess pids of our app (their HOME is the suite's private one). */
 function webProcesses() {
   const pids = [];
   for (const p of readdirSync('/proc')) {
@@ -35,13 +24,11 @@ function webProcesses() {
       const env = readFileSync(`/proc/${p}/environ`, 'utf8').split('\0');
       if (env.includes(`HOME=${WORK}/home`)) pids.push(p);
     } catch {
-      /* gone or not ours */
     }
   }
   return pids;
 }
 
-/** Open fds of the web process(es) that point at a WebKit-Media temp file. */
 function mediaFds() {
   const hits = [];
   for (const p of webProcesses()) {
@@ -60,12 +47,10 @@ function mediaFds() {
           try {
             size = statSync(`/proc/${p}/fd/${fd}`).size;
           } catch {
-            /* closed meanwhile */
           }
           hits.push(`${p}/fd/${fd} -> ${l} (${size} bytes)`);
         }
       } catch {
-        /* closed meanwhile */
       }
     }
   }
@@ -101,7 +86,6 @@ for (let i = 0; i < 100 && !(await wd.exec('return !!document.querySelector("[da
 const invoke = (cmd, args) =>
   wd.execAsync('const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke(arguments[0], arguments[1]).then((v) => done({ ok: v }), (e) => done({ err: e }));', cmd, args);
 
-/** Plays `src` (an expression evaluated in the page) for a while, seeks, reports. */
 async function scenario(name, srcExpr, { loop = false } = {}) {
   await wd.execAsync(
     `const done = arguments[arguments.length - 1];
@@ -141,7 +125,6 @@ console.log(`     media request headers: ${JSON.stringify(firstMedia?.headers)}`
 console.log(`     all requests: ${requests.map((r) => `${r.method} ${r.headers.range ?? '-'} origin=${r.headers.origin ?? '-'} referer=${r.headers.referer ?? '-'}`).join(' | ')}`);
 out.push(await scenario('http + loop', `'http://127.0.0.1:${port}/v.webm'`, { loop: true }));
 
-// the app's own sources: a real volume with the video in it
 const vol = join(WORK, 'stick', 'M.nvault');
 const created = await invoke('vault_create', { path: vol, password: 'media disk check pw', kdf: 'fast' });
 if (created.err) throw new Error(JSON.stringify(created.err));

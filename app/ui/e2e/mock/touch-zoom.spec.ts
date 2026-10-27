@@ -1,7 +1,3 @@
-// Fingers on the phone's preview, as the Photos app: double tap zooms in where it lands and back
-// to fit, two fingers pinch about their midpoint, one pans in every direction while zoomed, and
-// neither steps to the next file nor closes while zoomed; a PDF's pages pinch and double tap too.
-// Real multi-touch through the DevTools protocol (Input.dispatchTouchEvent): Chromium only.
 import type { CDPSession, Locator, Page } from '@playwright/test';
 import { boot, expect, test } from './helpers';
 
@@ -21,7 +17,6 @@ async function doubleTap(page: Page, cdp: CDPSession, p: Pt) {
   await page.waitForTimeout(90);
   await tap(cdp, p);
 }
-/** two fingers from `gap0` apart to `gap1` apart, about `c` */
 async function pinch(cdp: CDPSession, c: Pt, gap0: number, gap1: number, steps = 8) {
   const at = (g: number) => [{ x: c.x - g / 2, y: c.y }, { x: c.x + g / 2, y: c.y }];
   await touch(cdp, 'touchStart', at(gap0));
@@ -46,8 +41,6 @@ test('a picture: double tap in and out, pinch, pan while zoomed, no swipe while 
   const viewer = page.getByTestId('viewer-image');
   const pic = viewer.getByRole('img');
   await expect(pic).toBeVisible();
-  // loaded and fitted (the zoom reads in real pixels: below 100 % for this picture on a phone);
-  // the double tap that opened it is long gone
   await expect.poll(() => zoomOf(viewer)).toBeLessThan(100);
   await page.waitForTimeout(700);
   const fit = await zoomOf(viewer);
@@ -60,25 +53,21 @@ test('a picture: double tap in and out, pinch, pan while zoomed, no swipe while 
   await doubleTap(page, cdp(page), c);
   await expect.poll(() => zoomOf(viewer)).toBe(fit);
 
-  // two fingers apart: bigger, about their midpoint; back together past fit: springs back to fit
   await pinch(cdp(page), c, 80, 260);
   await expect.poll(() => zoomOf(viewer)).toBeGreaterThan(fit * 2);
   const zoomed = await zoomOf(viewer);
 
-  // one finger pans in every direction (the picture moves with it)
   const before = (await pic.boundingBox())!;
   await drag(cdp(page), c, { x: c.x + 70, y: c.y + 50 });
   await expect.poll(async () => (await pic.boundingBox())!.x).toBeGreaterThan(before.x + 8);
   expect((await pic.boundingBox())!.y).toBeGreaterThan(before.y + 10);
   expect(await zoomOf(viewer)).toBe(zoomed);
 
-  // zoomed: a long sideways stroke pans, it does not step; a stroke down does not close
   await drag(cdp(page), { x: c.x + 120, y: c.y }, { x: c.x - 160, y: c.y }, 6);
   await drag(cdp(page), { x: c.x, y: c.y - 100 }, { x: c.x, y: c.y + 220 }, 6);
   await page.waitForTimeout(500);
   await expect(ql).toHaveAttribute('aria-label', name!);
 
-  // back to fit (a pinch in, past it): the swipe steps again
   await pinch(cdp(page), c, 300, 40);
   await expect.poll(() => zoomOf(viewer)).toBe(fit);
   await expect(ql).not.toHaveAttribute('data-zoomed', 'true');
@@ -97,14 +86,12 @@ test('a PDF: double tap zooms in where it lands, pinch, back to fit width', asyn
   await doubleTap(page, cdp(page), c);
   await expect(pdf).toHaveAttribute('data-zoom', '200');
   const scroller = page.getByTestId('viewer-scroll');
-  // wider than the glass: it scrolls sideways too, and the point tapped stays in view
   await expect.poll(() => scroller.evaluate((el) => el.scrollWidth > el.clientWidth + 40)).toBe(true);
   expect(await scroller.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
   await doubleTap(page, cdp(page), c);
   await expect(pdf).toHaveAttribute('data-zoom', '100');
   await pinch(cdp(page), c, 60, 200);
   await expect.poll(() => pdf.getAttribute('data-zoom').then(Number)).toBeGreaterThan(150);
-  // the preview is still this file (two fingers never step or close)
   await expect(page.getByRole('dialog', { name: 'Anteprima di Contratto affitto.pdf' })).toBeVisible();
 });
 
@@ -117,7 +104,6 @@ async function stroke(page: Page, cdp: CDPSession, a: Pt, b: Pt, steps = 12) {
   await touch(cdp, 'touchEnd', []);
 }
 
-// real strokes (the browser's own scrolling, not synthetic pointer events), a phone and a tablet
 for (const size of [
   { width: 412, height: 915 },
   { width: 820, height: 1180 },
@@ -137,11 +123,8 @@ for (const size of [
         const top = () => sc.evaluate((el) => el.scrollTop);
         const x = size.width / 2;
         const h = size.height;
-        // up through the middle: it reads on
         await stroke(page, cdp(page), { x, y: h * 0.75 }, { x: x + 5, y: h * 0.3 });
         await expect.poll(top).toBeGreaterThan(150);
-        // a slanted thumb down, and a pull from the very top edge while scrolled: back up, not a
-        // swipe, not a close
         const mid = await top();
         await stroke(page, cdp(page), { x, y: h * 0.4 }, { x: x + 60, y: h * 0.55 });
         await expect.poll(top).toBeLessThan(mid);
@@ -149,13 +132,11 @@ for (const size of [
         await page.waitForTimeout(600);
         await expect(ql).toBeVisible();
         await expect(page.locator('dialog[data-chrome="hidden"]')).toHaveCount(1);
-        // a tap on the page: the chrome; another: away
         await tap(cdp(page), { x, y: h * 0.5 });
         await expect(page.locator('dialog[data-chrome="shown"]')).toHaveCount(1);
-        await page.waitForTimeout(400); // not a double tap (that zooms a PDF)
+        await page.waitForTimeout(400);
         await tap(cdp(page), { x, y: h * 0.5 });
         await expect(page.locator('dialog[data-chrome="hidden"]')).toHaveCount(1);
-        // at its top, a pull down from the middle closes the preview
         await sc.evaluate((el) => (el.scrollTop = 0));
         await page.waitForTimeout(250);
         await stroke(page, cdp(page), { x, y: h * 0.4 }, { x, y: h * 0.8 });
@@ -181,7 +162,6 @@ test('a PDF zoomed: one finger pans both ways, no step, no close; back at fit th
   await stroke(page, cdp(page), { x: 300, y: 600 }, { x: 120, y: 380 });
   await expect.poll(async () => (await pos())[0]).toBeGreaterThan(l0 + 40);
   expect((await pos())[1]).toBeGreaterThan(t0 + 40);
-  // sideways the other way and down from the top: still this file, still open
   await stroke(page, cdp(page), { x: 80, y: 500 }, { x: 380, y: 500 }, 6);
   await sc.evaluate((el) => (el.scrollTop = 0));
   await stroke(page, cdp(page), { x: 200, y: 300 }, { x: 200, y: 700 }, 6);

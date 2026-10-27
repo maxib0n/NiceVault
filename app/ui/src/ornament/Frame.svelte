@@ -1,34 +1,21 @@
-<!--
-  The document's frame: a guilloché run on each side, inset from the cut edge by a
-  clean margin, joined at the corners by small rosette medallions; inside it, a
-  microtext rule (the "line" is text, legible only under a loupe). On paper it is
-  printed in the ink; on anthracite the run is pressed in blind (tone on tone) and the
-  medallions are inked in their recess. Fills its positioned parent.
-  The card's edge is saddle-stitched by the page (docStitch, sewn over the foil stripe): its
-  needle line turns each corner round the medallion, concentric with it, an even gap all round.
--->
 <script lang="ts" module>
   import { roundRect, type Track } from './stitch';
 
-  /** The frame's measures for a document `w` px wide (one source for the print and the stitching). */
   export function frameGeom(w: number) {
     const m = Math.round(Math.max(12, w * 0.0135));
     const b = Math.max(5, w * 0.0068);
     const rc = b;
     const ring = rc + 1.2;
-    const c = m + b / 2; // centre line of the band, and of the corner medallions
-    // the stitching: inset from the cut edge, its corners round each medallion with a clear gap
+    const c = m + b / 2;
     const s = Math.max(3.5, Math.min(Math.max(4.5, m * 0.42), c - ring - 2.6));
     return { m, b, rc, ring, c, s, corner: c - s };
   }
 
-  /** The needle line round the document's edge (Stitch track=...). */
   export function docStitch(w: number, h: number): Track {
     const g = frameGeom(w);
     return roundRect(g.s, g.s, w - 2 * g.s, h - 2 * g.s, g.corner);
   }
 
-  /** Stitch pitch on a document `w` px wide. */
   export function docPitch(w: number): { len: number; gap: number } {
     return { len: Math.max(4.6, w * 0.0039), gap: Math.max(2.4, w * 0.002) };
   }
@@ -69,7 +56,6 @@
     }
     strokeInk(ctx, med, env, hw * 0.85, { color: pressed ? env.ink('var(--engrave)') : band });
 
-    // microtext rule just inside the band
     const inset = m + b + Math.max(4, b * 0.5);
     const fs = env.dpr >= 2 ? 3.4 : 3.8;
     ctx.save();

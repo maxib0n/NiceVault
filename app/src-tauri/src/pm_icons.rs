@@ -1,20 +1,3 @@
-//! Site icons for password-manager entries, fetched DIRECTLY from each entry's website (no
-//! third-party favicon service) and stored inside the volume (`pm_icons`, nv_core::passwords).
-//!
-//! Per host (the first website's DNS name, see `passwords::icon_host`): GET `https://<host>/`
-//! (at most [`MAX_PAGE`] of HTML), pick the best `<link rel="icon" | "apple-touch-icon">`
-//! (PNG first, the size closest to 64 px), else `/favicon.ico`; decode PNG / ICO / JPEG / GIF /
-//! WebP, or rasterise SVG (no scripts, no text, no external images: only shapes reach the
-//! pixels), downscale to at most [`ICON_PX`] px and store it as PNG. HTTPS only (redirects too),
-//! no cookies, short timeouts, size limits on everything. Every connection goes to an address
-//! the name resolved to ONCE, and only when that address is public ([`public_ip`]: no loopback,
-//! private, link-local, CGNAT, ULA, multicast or documentation range, IPv4-mapped / NAT64 / 6to4
-//! forms included), so DNS rebinding cannot point a fetch or a redirect hop at the local network
-//! ([`PublicOnly`]); no proxy is used, so the vetted address is the one connected to. A host is tried at most once every
-//! [`REFRESH_MS`] (a failure is remembered too). Off when the global setting `site_icons` is off.
-//! Served to the UI as `nvault://<vault>/pm-icon/<host>/<version>` (see [`serve`]).
-//! Nothing here logs a URL or a host.
-
 use crate::error::ApiResult;
 use crate::state::{AppState, lock_or_recover};
 use image::{DynamicImage, ImageFormat, ImageReader, Limits};
@@ -27,27 +10,18 @@ use tauri::http::{Request, Response, StatusCode, header};
 use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
 use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 
-/// Largest side of a stored icon.
 pub const ICON_PX: u32 = 64;
-/// A host is fetched again after a week.
 pub const REFRESH_MS: i64 = 7 * 86_400_000;
-/// HTML read to find the `<link>` tags.
 pub const MAX_PAGE: u64 = 256 * 1024;
-/// Largest icon file downloaded.
 pub const MAX_ICON_FILE: u64 = 512 * 1024;
-/// Parallel fetches per refresh.
 const WORKERS: usize = 4;
-/// Redirects followed per request.
 const MAX_REDIRECTS: usize = 4;
-/// Candidates from the page tried before `/favicon.ico`.
 const TRY_LINKS: usize = 3;
 
-/// Volumes with a refresh running (one at a time per volume).
 static RUNNING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 pub struct Fetcher {
     agent: ureq::Agent,
-    /// tests: every host is served by this `http://127.0.0.1:port` instead of `https://<host>`
     origin: Option<String>,
 }
 
@@ -62,14 +36,10 @@ impl Fetcher {
         Fetcher { agent: agent(true, PublicOnly { inner: DefaultResolver::default(), loopback: false }), origin: None }
     }
 
-    /// Plain HTTP to one local test server (tests only): loopback is the one non-public range let through.
     pub fn for_test(origin: &str) -> Fetcher {
         Fetcher { agent: agent(false, PublicOnly { inner: DefaultResolver::default(), loopback: true }), origin: Some(origin.trim_end_matches('/').to_owned()) }
     }
 
-    /// May the fetcher talk to `url`? Real fetches: https to a public DNS name only (no IP
-    /// literal, no localhost / .local / .internal), checked for every redirect hop too, so a
-    /// page cannot point the app at a device on the local network.
     fn allowed(&self, url: &str) -> bool {
         if self.origin.as_deref().is_some_and(|o| url.starts_with(o)) {
             return true;
@@ -78,7 +48,6 @@ impl Fetcher {
     }
 
     fn get(&self, url: &str, max: u64) -> Option<(String, Option<String>, Vec<u8>)> {
-        // redirects by hand: each hop is checked by `allowed`
         let mut url = url.to_owned();
         let mut hops = 0;
         let mut resp = loop {
@@ -108,7 +77,7 @@ impl Fetcher {
         resp.body_mut().as_reader().take(max + 1).read_to_end(&mut out).ok()?;
         if out.len() as u64 > max {
             if ct.as_deref().is_some_and(|c| c.contains("html")) {
-                out.truncate(max as usize); // the head is what matters
+                out.truncate(max as usize);
             } else {
                 return None;
             }
@@ -116,7 +85,6 @@ impl Fetcher {
         Some((final_url, ct, out))
     }
 
-    /// The icon of `host` as a PNG of at most [`ICON_PX`] px, or `None`.
     pub fn icon(&self, host: &str) -> Option<Vec<u8>> {
         let base = match &self.origin {
             Some(o) => format!("{o}/"),
@@ -154,10 +122,8 @@ fn agent(https_only: bool, resolver: impl Resolver) -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .tls_config(tls)
         .https_only(https_only)
-        // no proxy: the address PublicOnly vetted must be the one the socket connects to
         .proxy(None)
-        .max_redirects(0) // followed by Fetcher::get, which checks every hop
-        // a common browser string: the site learns nothing about which app asked
+        .max_redirects(0)
         .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15")
         .timeout_global(Some(Duration::from_secs(12)))
         .timeout_connect(Some(Duration::from_secs(5)))
@@ -168,15 +134,9 @@ fn agent(https_only: bool, resolver: impl Resolver) -> ureq::Agent {
     ureq::Agent::with_parts(config, DefaultConnector::default(), resolver)
 }
 
-/// Resolves a name once (the system resolver, under ureq's timeout) and keeps only public
-/// addresses; none left = "host not found". ureq connects to exactly the addresses returned
-/// here, so a name that answers with a public address to a first lookup and a private one to a
-/// second (DNS rebinding) never reaches the private one: there is no second lookup. Every
-/// redirect hop is a new request and goes through here again.
 #[derive(Debug)]
 pub struct PublicOnly<R: Resolver> {
     pub inner: R,
-    /// tests: also accept 127.0.0.0/8 and ::1 (the local test server)
     pub loopback: bool,
 }
 
@@ -191,12 +151,6 @@ impl<R: Resolver> Resolver for PublicOnly<R> {
     }
 }
 
-/// A globally routable unicast address? Refuses: unspecified, loopback, RFC 1918, CGNAT
-/// (100.64/10), link-local (169.254/16, fe80::/10), IETF protocol / benchmarking /
-/// documentation ranges, multicast, broadcast and 240/4, ULA (fc00::/7), site-local (fec0::/10),
-/// discard (100::/64), Teredo (2001::/32) and ORCHID; IPv4-mapped (::ffff:a.b.c.d),
-/// IPv4-compatible (::a.b.c.d), NAT64 (64:ff9b::/96) and 6to4 (2002::/16) addresses are judged
-/// by the IPv4 address inside them.
 pub fn public_ip(ip: std::net::IpAddr) -> bool {
     use std::net::{IpAddr, Ipv4Addr};
     fn v4(a: Ipv4Addr) -> bool {
@@ -221,32 +175,27 @@ pub fn public_ip(ip: std::net::IpAddr) -> bool {
             let s = a.segments();
             let embedded = |hi: usize| Ipv4Addr::new((s[hi] >> 8) as u8, s[hi] as u8, (s[hi + 1] >> 8) as u8, s[hi + 1] as u8);
             if s[..5] == [0; 5] && (s[5] == 0xffff || s[5] == 0) {
-                // ::ffff:a.b.c.d (mapped) and ::a.b.c.d (compatible; also :: and ::1)
                 return v4(embedded(6));
             }
             if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
-                return v4(embedded(6)); // NAT64
+                return v4(embedded(6));
             }
             if s[0] == 0x2002 {
-                return v4(embedded(1)); // 6to4
+                return v4(embedded(1));
             }
-            !((s[0] & 0xfe00) == 0xfc00 // ULA
-                || (s[0] & 0xffc0) == 0xfe80 // link-local
-                || (s[0] & 0xffc0) == 0xfec0 // site-local
-                || (s[0] & 0xff00) == 0xff00 // multicast
-                || s[..4] == [0x100, 0, 0, 0] // discard
-                || (s[0] == 0x2001 && s[1] < 0x200) // 2001::/23 IETF protocol (Teredo, ORCHID, ...)
-                || (s[0] == 0x2001 && s[1] == 0xdb8)) // documentation
+            !((s[0] & 0xfe00) == 0xfc00
+                || (s[0] & 0xffc0) == 0xfe80
+                || (s[0] & 0xffc0) == 0xfec0
+                || (s[0] & 0xff00) == 0xff00
+                || s[..4] == [0x100, 0, 0, 0]
+                || (s[0] == 0x2001 && s[1] < 0x200)
+                || (s[0] == 0x2001 && s[1] == 0xdb8))
         }
     }
 }
 
-// ---------------- HTML ----------------
-
-/// `<link>` icon candidates of a page, best first, as absolute URLs (`data:` kept as is).
 pub fn best_links(html: &str, page_url: &str) -> Vec<String> {
     let lower = html.to_ascii_lowercase();
-    // stop at </head> when there is one: icons live there
     let end = lower.find("</head").unwrap_or(lower.len());
     let mut cands: Vec<(u32, u32, String)> = Vec::new();
     let mut base = page_url.to_owned();
@@ -285,7 +234,7 @@ pub fn best_links(html: &str, page_url: &str) -> Vec<String> {
                     let miss = match size {
                         Some(s) if s >= ICON_PX => s - ICON_PX,
                         Some(s) => (ICON_PX - s) * 4,
-                        None if kind == 2 => 0, // vector: any size
+                        None if kind == 2 => 0,
                         None => 40,
                     };
                     if !cands.iter().any(|c| c.2 == url) {
@@ -300,8 +249,6 @@ pub fn best_links(html: &str, page_url: &str) -> Vec<String> {
     cands.into_iter().map(|c| c.2).collect()
 }
 
-/// `name="value"` / `name='value'` / `name=value` / `name` pairs of a tag (names lowercased,
-/// a few entities decoded in values).
 fn attributes(s: &str) -> Vec<(String, String)> {
     let b = s.as_bytes();
     let mut out = Vec::new();
@@ -351,7 +298,6 @@ fn attributes(s: &str) -> Vec<(String, String)> {
     out
 }
 
-/// Resolves `href` against `base` (an absolute http(s) URL). `None` for other schemes.
 pub fn join(base: &str, href: &str) -> Option<String> {
     let href = href.trim();
     let (scheme, rest) = base.split_once("://")?;
@@ -362,7 +308,7 @@ pub fn join(base: &str, href: &str) -> Option<String> {
         return Some(href.to_owned());
     }
     if href.contains("://") || (href.contains(':') && !href.starts_with('/') && href.split(['/', '?', '#']).next().is_some_and(|f| f.contains(':'))) {
-        return None; // javascript:, data: (handled by the caller), mailto:...
+        return None;
     }
     if let Some(r) = href.strip_prefix("//") {
         return Some(format!("{scheme}://{r}"));
@@ -376,7 +322,6 @@ pub fn join(base: &str, href: &str) -> Option<String> {
     Some(format!("{origin}{dir}/{href}"))
 }
 
-/// `data:` URL body (after the scheme) -> bytes (base64 or percent-encoded).
 fn data_url(s: &str) -> Option<Vec<u8>> {
     let (meta, data) = s.split_once(',')?;
     if data.len() as u64 > MAX_ICON_FILE * 2 {
@@ -405,15 +350,12 @@ fn data_url(s: &str) -> Option<Vec<u8>> {
     }
 }
 
-// ---------------- images ----------------
-
 fn looks_svg(b: &[u8]) -> bool {
     let head = String::from_utf8_lossy(&b[..b.len().min(1024)]).to_ascii_lowercase();
     let t = head.trim_start_matches('\u{feff}').trim_start();
     (t.starts_with("<?xml") || t.starts_with("<svg") || t.starts_with("<!--") || t.starts_with("<!doctype svg")) && head.contains("<svg")
 }
 
-/// Any supported icon file -> PNG of at most [`ICON_PX`] px (`None`: not an image we read).
 pub fn to_png(bytes: &[u8]) -> Option<Vec<u8>> {
     let img = if looks_svg(bytes) { svg_image(bytes)? } else { raster_image(bytes)? };
     if img.width() < 8 || img.height() < 8 {
@@ -439,8 +381,6 @@ fn raster_image(bytes: &[u8]) -> Option<DynamicImage> {
     r.decode().ok()
 }
 
-/// SVG -> pixels. Only geometry is rendered: no scripts exist for the renderer, text is not
-/// compiled in, and every `<image href>` (files, URLs, data) resolves to nothing.
 fn svg_image(bytes: &[u8]) -> Option<DynamicImage> {
     use resvg::{tiny_skia, usvg};
     if bytes.len() > 256 * 1024 {
@@ -469,17 +409,11 @@ fn svg_image(bytes: &[u8]) -> Option<DynamicImage> {
     image::RgbaImage::from_raw(pw, ph, rgba).map(DynamicImage::ImageRgba8)
 }
 
-// ---------------- background refresh ----------------
-
-/// Hosts due for a fetch: never tried, or tried more than [`REFRESH_MS`] before `now`.
 pub fn due(hosts: Vec<(String, Option<i64>)>, now: i64) -> Vec<String> {
     hosts.into_iter().filter(|(_, f)| f.is_none_or(|f| now - f >= REFRESH_MS)).map(|(h, _)| h).collect()
 }
 
 impl AppState {
-    /// Starts fetching the icons that are due for `vault` in the background (no-op when the
-    /// setting is off or a refresh of that volume is running). Returns how many hosts it will
-    /// try. Events: `pm-icons {vault, done, total}` (at most every 0.5 s, and at the end).
     pub fn pm_icons_refresh(&self, vault: &str) -> ApiResult<usize> {
         self.pm_icons_refresh_with(vault, Arc::new(Fetcher::new()))
     }
@@ -512,7 +446,6 @@ impl AppState {
                         s.spawn(|| {
                             loop {
                                 let Some(host) = lock_or_recover(&queue).next() else { break };
-                                // turned off meanwhile, or the volume was locked: stop quietly
                                 if !lock_or_recover(&st.store).site_icons() {
                                     break;
                                 }
@@ -541,10 +474,6 @@ impl AppState {
     }
 }
 
-// ---------------- nvault:// ----------------
-
-/// `nvault://<vault>/pm-icon/<host>/<version>` (Windows: `http://nvault.localhost/<vault>/pm-icon/…`):
-/// the stored PNG. `None` = not an icon URL (the caller serves files).
 pub fn serve(state: &AppState, req: &Request<Vec<u8>>) -> Option<Response<Vec<u8>>> {
     let uri = req.uri();
     let host = uri.host().unwrap_or("");
@@ -562,7 +491,6 @@ pub fn serve(state: &AppState, req: &Request<Vec<u8>>) -> Option<Response<Vec<u8
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "image/png")
             .header(header::CONTENT_LENGTH, png.len().to_string())
-            // the URL carries the version: it never changes meaning
             .header(header::CACHE_CONTROL, "private, max-age=31536000, immutable")
             .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
             .header("X-Content-Type-Options", "nosniff")
@@ -620,7 +548,6 @@ mod tests {
         assert_eq!(small.width(), 16, "small icons are not blown up here (the UI scales)");
         assert!(to_png(&png_of(4, 4)).is_none());
         assert!(to_png(b"<html>not an image</html>").is_none());
-        // ICO
         let mut ico = Cursor::new(Vec::new());
         image::DynamicImage::ImageRgba8(image::load_from_memory(&png_of(48, 48)).unwrap().to_rgba8()).write_to(&mut ico, ImageFormat::Ico).unwrap();
         assert_eq!(image::load_from_memory(&to_png(&ico.into_inner()).unwrap()).unwrap().width(), 48);
@@ -663,9 +590,6 @@ mod tests {
         }
     }
 
-    /// DNS rebinding PoC: a hostile name server answers a public-looking name with 127.0.0.1
-    /// (or any LAN address). `allowed` only sees the name, so before the PublicOnly resolver the
-    /// fetch reached whatever listened there (the control below); now no connection is made.
     #[test]
     fn a_name_resolving_to_the_local_network_is_never_contacted() {
         #[derive(Debug)]
@@ -696,7 +620,6 @@ mod tests {
         assert_eq!(*hits.lock().unwrap(), 1, "the local server was contacted");
     }
 
-    /// A local HTTP site: page with a <link>, the icon, a redirect, a site with only /favicon.ico.
     #[test]
     fn fetches_from_a_local_site() {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
@@ -737,7 +660,6 @@ mod tests {
         assert!(f.icon("site.example").is_none());
         let h = hits.lock().unwrap().clone();
         assert!(h.contains(&"/static/missing.png".to_owned()) && h.contains(&"/favicon.ico".to_owned()));
-        // the real fetcher refuses plain http, IP literals and local names, at every hop
         let real = Fetcher::new();
         assert!(real.get(&format!("{origin}/"), MAX_PAGE).is_none());
         for u in ["https://192.168.1.1/favicon.ico", "https://localhost/x.png", "https://nas.local/i.png", "http://example.com/"] {

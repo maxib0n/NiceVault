@@ -1,10 +1,3 @@
-//! Importers: Bitwarden unencrypted JSON export, KeePass KDBX 3.1 / 4 (opened here with its
-//! master password and/or key file) and generic CSV (Chrome / Edge / Brave / Opera, Firefox,
-//! Safari, 1Password, Bitwarden, LastPass, KeePassXC, Proton Pass, Dashlane, NordPass, RoboForm
-//! style headers). They only parse into [`ImportedEntry`]s; nothing touches the disk. Known
-//! bookkeeping fields (website lists, times, TOTP secrets, card numbers, noise) are mapped by
-//! [`super::tidy`] instead of being kept as custom fields.
-
 use super::tidy::{self, Act};
 use super::totp::{Algorithm, Totp, base32_encode};
 use super::{EntryPatch, FieldInput, ImportedEntry};
@@ -31,7 +24,6 @@ fn non_empty(s: Option<&str>) -> Option<&str> {
     s.map(str::trim).filter(|s| !s.is_empty())
 }
 
-/// A title for an entry that has none: the URL's host, else the user name.
 fn fallback_title(urls: &[String], username: &str) -> String {
     for u in urls {
         let rest = u.split_once("://").map_or(u.as_str(), |(_, r)| r);
@@ -44,7 +36,6 @@ fn fallback_title(urls: &[String], username: &str) -> String {
     if !username.trim().is_empty() { username.trim().to_owned() } else { "Senza titolo".to_owned() }
 }
 
-/// Valid TOTP -> stored as such; anything else is kept as a hidden custom field so nothing is lost.
 fn put_totp(p: &mut EntryPatch, raw: &str) {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -57,8 +48,6 @@ fn put_totp(p: &mut EntryPatch, raw: &str) {
     }
 }
 
-/// Maps the known bookkeeping fields of `e` (see [`tidy`]); the entry's own times win over
-/// time fields.
 fn tidy_imported(e: &mut ImportedEntry) {
     let fields = e.entry.fields.take().unwrap_or_default();
     let mut found = tidy::Found::default();
@@ -107,7 +96,6 @@ fn finish(mut p: EntryPatch) -> EntryPatch {
 }
 
 pub(super) fn ms_of_rfc3339(s: &str) -> Option<i64> {
-    // "2024-01-31T12:34:56.789Z" (Bitwarden). Minimal parser, UTC only.
     let b = s.as_bytes();
     if b.len() < 19 {
         return None;
@@ -118,7 +106,6 @@ pub(super) fn ms_of_rfc3339(s: &str) -> Option<i64> {
         let digits: String = r.chars().take_while(|c| c.is_ascii_digit()).take(3).collect();
         format!("{digits:0<3}").parse::<i64>().unwrap_or(0)
     });
-    // days from civil (Howard Hinnant)
     let y2 = if mo <= 2 { y - 1 } else { y };
     let era = y2.div_euclid(400);
     let yoe = y2 - era * 400;
@@ -127,8 +114,6 @@ pub(super) fn ms_of_rfc3339(s: &str) -> Option<i64> {
     let days = era * 146097 + doe - 719468;
     Some(((days * 86400 + h * 3600 + mi * 60 + se) * 1000) + frac.unwrap_or(0))
 }
-
-// ---------------- Bitwarden JSON ----------------
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -183,7 +168,6 @@ struct BwUri {
 struct BwField {
     name: Option<String>,
     value: Option<serde_json::Value>,
-    /// 0 text, 1 hidden, 2 boolean, 3 linked
     #[serde(rename = "type")]
     kind: u8,
 }
@@ -230,7 +214,6 @@ pub fn bitwarden_json(data: &[u8]) -> ImportResult {
             }
         }
         let mut fields = p.fields.take().unwrap_or_default();
-        // 3 = card, 4 = identity: their properties become custom fields (card number / code hidden).
         for (map, hidden) in [(it.card.as_ref(), ["number", "code"].as_slice()), (it.identity.as_ref(), ["ssn", "passportNumber", "licenseNumber"].as_slice())] {
             for (k, v) in map.into_iter().flatten() {
                 if let Some(v) = json_text(v) {
@@ -241,7 +224,7 @@ pub fn bitwarden_json(data: &[u8]) -> ImportResult {
         for f in it.fields {
             let Some(name) = non_empty(f.name.as_deref()).map(str::to_owned) else { continue };
             if f.kind == 3 {
-                continue; // linked: a pointer to the user name / password, not a value
+                continue;
             }
             let value = f.value.as_ref().and_then(json_text).unwrap_or_default();
             fields.push(FieldInput { name, value: z(value), hidden: f.kind == 1 });
@@ -267,11 +250,8 @@ pub fn bitwarden_json(data: &[u8]) -> ImportResult {
     Ok(out)
 }
 
-// ---------------- KeePass ----------------
-
 const KP_STANDARD: [&str; 5] = ["Title", "UserName", "Password", "URL", "Notes"];
 
-/// KeePass 2 TimeOtp-* fields / KeePassXC legacy "TOTP Seed" + "TOTP Settings" -> otpauth URI.
 fn keepass_totp(get: &dyn Fn(&str) -> Option<String>) -> Option<(String, Vec<&'static str>)> {
     if let Some(uri) = get("otp") {
         return Some((uri, vec!["otp"]));
@@ -302,7 +282,6 @@ fn keepass_totp(get: &dyn Fn(&str) -> Option<String>) -> Option<(String, Vec<&'s
         return Some((uri, vec![key, "TimeOtp-Algorithm", "TimeOtp-Length", "TimeOtp-Period"]));
     }
     if let Some(seed) = get("TOTP Seed") {
-        // "30;6" (period;digits); "S" (Steam) digits are not supported -> default 6.
         let settings = get("TOTP Settings").unwrap_or_default();
         let mut it = settings.split(';');
         let period: u64 = it.next().and_then(|p| p.trim().parse().ok()).unwrap_or(30);
@@ -335,7 +314,6 @@ fn keepass_entry(e: &keepass::db::Entry, folder: &str) -> ImportedEntry {
     extra.sort_by(|a, b| a.0.cmp(b.0));
     let mut fields = p.fields.take().unwrap_or_default();
     for (k, v) in extra {
-        // KeePassXC / KeePass2Android extra URLs.
         if (k == "KP2A_URL" || k.starts_with("KP2A_URL_") || k.starts_with("URL_")) && !v.get().trim().is_empty() {
             urls.push(v.get().trim().to_owned());
             continue;
@@ -369,7 +347,6 @@ fn keepass_entry(e: &keepass::db::Entry, folder: &str) -> ImportedEntry {
     out
 }
 
-/// Largest KeePass database / key file accepted.
 pub const MAX_KDBX: usize = 64 << 20;
 pub const MAX_KEYFILE: usize = 1 << 20;
 const MAX_AES_ROUNDS: u64 = 100_000_000;
@@ -377,8 +354,6 @@ const MAX_ARGON2_MEMORY: u64 = 1 << 30;
 const MAX_ARGON2_ITERATIONS: u64 = 100;
 const MAX_ARGON2_PARALLELISM: u64 = 16;
 
-/// Checks the outer header before `keepass` sees it: keepass 0.17 panics on short numeric
-/// fields (byteorder) and takes the KDF cost from the file with no bound.
 fn kdbx_guard(data: &[u8]) -> Result<(), ImportError> {
     let bad = |m: &str| ImportError::Format(format!("KeePass: {m}"));
     let u32_at = |p: usize| data.get(p..p + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
@@ -421,7 +396,6 @@ fn kdbx_guard(data: &[u8]) -> Result<(), ImportError> {
     Ok(())
 }
 
-/// Same walk as keepass's VariantDictionary::parse, with exact numeric lengths and KDF bounds.
 fn variant_dict_guard(b: &[u8], kdf: bool) -> Result<(), &'static str> {
     let mut pos = 2;
     let len32 = |p: usize| b.get(p..p + 4).map(|x| u32::from_le_bytes(x.try_into().unwrap()) as usize).ok_or("truncated KDF parameters");
@@ -453,8 +427,6 @@ fn variant_dict_guard(b: &[u8], kdf: bool) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Opens a KDBX 3.1 / 4 file with its master password and/or key file. Groups become folders
-/// ("A/B", the root group itself is not part of the path); the recycle bin is skipped.
 pub fn keepass(data: &[u8], password: Option<&str>, keyfile: Option<&[u8]>) -> ImportResult {
     use keepass::{Database, DatabaseKey, db::DatabaseOpenError};
     kdbx_guard(data)?;
@@ -468,13 +440,11 @@ pub fn keepass(data: &[u8], password: Option<&str>, keyfile: Option<&[u8]>) -> I
     if let Some(mut kf) = keyfile {
         key = key.with_keyfile(&mut kf).map_err(|e| ImportError::Format(format!("key file: {e}")))?;
     }
-    // A panic in the parser (inner header, payload) must not take the app down with it.
     let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Database::parse(data, key)))
         .map_err(|_| ImportError::Format("KeePass: malformed file".into()))?;
     let db = parsed.map_err(|e| match e {
         DatabaseOpenError::Key(keepass::error::DatabaseKeyError::IncorrectKey) => ImportError::WrongKey,
         DatabaseOpenError::Key(keepass::error::DatabaseKeyError::EmptyKey) => ImportError::WrongKey,
-        // KDBX 3.1 has no key check: a wrong key shows up as a failed decryption.
         DatabaseOpenError::Cryptography(_) => ImportError::WrongKey,
         e => ImportError::Format(format!("KeePass: {e}")),
     })?;
@@ -496,8 +466,6 @@ pub fn keepass(data: &[u8], password: Option<&str>, keyfile: Option<&[u8]>) -> I
     Ok(out)
 }
 
-// ---------------- CSV ----------------
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Col {
     Title,
@@ -509,14 +477,11 @@ enum Col {
     Folder,
     Tags,
     Favorite,
-    /// Bitwarden CSV "fields": "name: value" lines
     Fields,
-    /// e-mail: the user name when there is no user name column value, else a custom field
     Email,
     Created,
     Updated,
     Ignore,
-    /// a custom field, hidden (card number, CVC, PIN)
     Hidden,
     Custom,
 }
@@ -552,7 +517,6 @@ fn column(h: &str) -> Col {
 pub fn csv(data: &[u8]) -> ImportResult {
     let text = String::from_utf8_lossy(data);
     let text = text.trim_start_matches('\u{feff}');
-    // Semicolon-separated files (some European exports): pick the delimiter from the header line.
     let first = text.lines().next().unwrap_or("");
     let delim = if first.matches(';').count() > first.matches(',').count() { b';' } else { b',' };
     let mut rd = csv::ReaderBuilder::new().delimiter(delim).flexible(true).from_reader(text.as_bytes());
@@ -578,7 +542,6 @@ pub fn csv(data: &[u8]) -> ImportResult {
                 Col::Title => p.title = Some(v.into()),
                 Col::Username => p.username = Some(v.into()),
                 Col::Password => p.password = z(v),
-                // LastPass marks secure notes with the pseudo URL "http://sn"
                 Col::Url if v.eq_ignore_ascii_case("http://sn") => {}
                 Col::Email => email = Some((i, v.to_owned())),
                 Col::Url => {
@@ -594,7 +557,6 @@ pub fn csv(data: &[u8]) -> ImportResult {
                 }
                 Col::Folder => {
                     let f = v.replace('\\', "/");
-                    // KeePassXC writes the root group's name first ("Root/Internet")
                     let f = if headers.get(i).is_some_and(|h| h.trim().eq_ignore_ascii_case("group")) {
                         f.strip_prefix("Root/").map(str::to_owned).unwrap_or_else(|| if f == "Root" { String::new() } else { f.clone() })
                     } else {
@@ -628,7 +590,7 @@ pub fn csv(data: &[u8]) -> ImportResult {
             }
         }
         if p.title.is_none() && p.username.is_none() && p.password.is_none() && p.urls.as_ref().is_none_or(Vec::is_empty) {
-            continue; // blank line
+            continue;
         }
         if !fields.is_empty() {
             p.fields = Some(fields);
@@ -659,8 +621,6 @@ mod tests {
         assert_eq!(fallback_title(&[], ""), "Senza titolo");
     }
 
-    /// A KDBX 3.1 header whose compression field is 0 bytes made keepass 0.17 panic
-    /// (byteorder read_u32 on an empty slice), which is an abort in release.
     #[test]
     fn crafted_kdbx_headers_are_refused_not_panics() {
         let sig = |minor_major: [u8; 4]| [&[0x03, 0xd9, 0xa2, 0x9a, 0x67, 0xfb, 0x4b, 0xb5][..], &minor_major].concat();
@@ -687,13 +647,13 @@ mod tests {
             v3(&[(6, &[1, 2]), (0, &[])]),
             v3(&[(10, &[1]), (0, &[])]),
             v3(&[(6, &u64::MAX.to_le_bytes()), (0, &[])]),
-            v3(&[(2, &[0; 16])]), // no end
+            v3(&[(2, &[0; 16])]),
             v4_kdf(&vd(&[entry(0x05, b"I", &[1, 2, 3])])),
             v4_kdf(&vd(&[entry(0x04, b"P", &[1])])),
             v4_kdf(&vd(&[entry(0x05, b"M", &(4u64 << 30).to_le_bytes())])),
             v4_kdf(&vd(&[entry(0x05, b"I", &1_000_000u64.to_le_bytes())])),
             v4_kdf(&vd(&[entry(0x05, b"R", &u64::MAX.to_le_bytes())])),
-            [&[0x03, 0xd9, 0xa2, 0x9a, 0x65, 0xfb, 0x4b, 0xb5][..], &[0; 120]].concat(), // KeePass 1
+            [&[0x03, 0xd9, 0xa2, 0x9a, 0x65, 0xfb, 0x4b, 0xb5][..], &[0; 120]].concat(),
             vec![0x03, 0xd9, 0xa2],
         ];
         for (i, c) in cases.iter().enumerate() {

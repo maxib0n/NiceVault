@@ -1,11 +1,3 @@
-<!--
-  The live 2FA code of an entry: the code in the mono (grouped 3+3 / 4+4), set large enough to
-  be read across a desk, and beside it a small dial: its bezel ticked every five seconds, the
-  arc of the time left draining round it, the seconds in its middle (in the danger ink for the
-  last five). Asks the backend for the code at each new period (pm_totp); counts down locally in
-  between. A new code decodes from glyphs as it turns over (lib/reveal.ts; the first one just
-  shows). Hooks: [data-testid=totp-code], data-remaining.
--->
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import * as api from '../lib/api';
@@ -17,7 +9,6 @@
   let { vault, id, size = 32 }: { vault: VaultId; id: EntryId; size?: number } = $props();
 
   let code = $state<PmTotpCode | null>(null);
-  /** codes seen for this entry: the first one shows, the ones after it decode */
   let turned = $state(0);
   let fetchedAt = 0;
   let now = $state(Date.now());
@@ -54,7 +45,6 @@
   const low = $derived(code !== null && remaining <= 5);
   const R = 13;
   const C = 2 * Math.PI * R;
-  // the bezel: a tick every five seconds of the period
   const ticks = $derived(Math.max(6, Math.round((code?.period ?? 30) / 5)));
 </script>
 

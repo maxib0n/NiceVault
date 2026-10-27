@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { installShellGuards } from './shell';
 
-/** A minimal window/event double: records which events were default-prevented. */
 function fakeWin() {
   const ls: Record<string, ((e: unknown) => void)[]> = {};
   return {

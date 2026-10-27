@@ -1,20 +1,3 @@
-<!--
-  Impostazioni: this computer's settings, not a volume's. The app's own appearance (theme, ink,
-  interface size: Benvenuto, Impostazioni, the wizard, Sblocca of an encrypted look; inside a
-  volume its own look wins); Avvio (installed: start at login, start minimised, stay in the tray
-  when the window is closed; portable: why not); language; what NEW volumes start with ("Come l'app" or their own
-  theme and ink, auto-lock options); the open volumes mounted as drives (unmount); updates
-  (updates: check now, start-up check, install); about: version, portable or installed (where these
-  settings live: installed = settings.json in the OS config dir, portable = this session
-  only), licences (SOURCES.md, bundled).
-  A page of its own, the whole window (like Dettagli for a volume): the board, a header with
-  Indietro and the title, and the sections flowing down one sheet: a single centred column of a
-  comfortable width, two columns on very wide windows. No index: the page is short enough to read
-  through. The window scrolls it.
-  Reached from Benvenuto's gear, the sidebar's gear and Ctrl/Cmd+, ; Indietro, Esc, the mouse's
-  back button and Alt+← return where it came from.
-  Hooks: data-testid settings-* on each section. Switches: ?screen=settings[&dialog=licences]
--->
 <script lang="ts">
   import { ArrowLeft, FilePlus2, HardDrive, Info, KeyRound, Languages, Palette, Power, RefreshCw, ScrollText } from '@lucide/svelte';
   import { onMount } from 'svelte';
@@ -84,7 +67,6 @@
     }
   }
 
-  // the app's own look: dark first (the default), then light, then the OS
   const VIDEO_ARROWS = ['seek', 'step'] as const;
   const APP_THEMES: { id: ThemeId; label: () => string }[] = [
     { id: 'dark', label: m.theme_dark },
@@ -96,8 +78,6 @@
     if (s) settings = s;
   }
 
-  /** The interface size: the pressed option stays under the pointer while everything scales. */
-  // the page's own scroller (the scale switch keeps the pressed button under the pointer)
   let scroller = $state<HTMLElement>();
   async function setScale(z: number, e: MouseEvent | KeyboardEvent) {
     if (z === appLook.scale) return;
@@ -115,12 +95,10 @@
     const target = document.querySelector<HTMLElement>(`[data-scale="${z}"]`);
     if (!target || !scroller) return;
     const r1 = target.getBoundingClientRect();
-    // where the pointer now is, in the new CSS pixels (the window did not move)
     const y1 = (y0 * z0) / (z / 100);
     scroller.scrollTop += r1.top + r1.height / 2 - y1;
     target.focus({ preventScroll: true });
   }
-  /** "Avvia all'accesso" / "Avvia ridotto" / "Resta nel vassoio" (installed only): optimistic, rolled back on error. */
   async function setStartup(patch: { start_at_login?: boolean; start_minimized?: boolean; close_to_tray?: boolean }) {
     if (!settings) return;
     const prev = settings;
@@ -132,8 +110,6 @@
       toasts.error(e);
     }
   }
-  // phones: Esporta → the gallery for pictures / videos (null = not asked yet: reads as on, the
-  // first export asks; touching the switch answers)
   async function setGallery(on: boolean) {
     if (!settings) return;
     const prev = settings;
@@ -239,13 +215,10 @@
             </button>
           {/each}
         </div>
-        <!-- phones: no interface size (always 100%: the phone layout breaks at other sizes) -->
         {#if !isMobile}
         <h3 id="set-scale" class="sub caps">{m.set_scale()}</h3>
-        <!-- buttons, not a slider: nothing moves under the pointer while the interface scales -->
         <div class="segmented scales" role="radiogroup" aria-labelledby="set-scale" tabindex="-1" data-testid="app-scale" onkeydown={(e) => radioKeys(e, [...api.UI_SCALES], appLook.scale, (v) => setScale(v, e))}>
           {#each api.UI_SCALES as z (z)}
-            <!-- each size shows its letter at that size (a ::before, so the name stays the value) -->
             <button type="button" role="radio" class="mono" data-scale={z} aria-label="{z}%" aria-checked={appLook.scale === z} tabindex={appLook.scale === z ? 0 : -1} style:--aa="{Math.round((z / 100) * 13)}px" onclick={(e) => setScale(z, e)}>{z}%</button>
           {/each}
         </div>
@@ -253,7 +226,6 @@
         {/if}
       </section>
 
-      <!-- Avvio: its own card, right after the look (installed: three switches; portable: why not) -->
       <section class="block" aria-labelledby="set-startup" data-testid="settings-startup">
         <h2 id="set-startup" class="block-title display"><span class="mark" aria-hidden="true"><Power size={15} strokeWidth={1.6} /></span>{m.set_startup()}</h2>
         {#if info && !info.portable}
@@ -399,7 +371,6 @@
         </div>
       </section>
 
-      <!-- the updater (stores/update.svelte.ts): check now, start-up check, notes, install, restart -->
       <section class="block" aria-labelledby="set-updates" data-testid="settings-updates">
         <h2 id="set-updates" class="block-title display"><span class="mark" aria-hidden="true"><RefreshCw size={15} strokeWidth={1.6} /></span>{m.set_updates()}</h2>
         <p class="hint">{m.set_updates_hint()}</p>
@@ -484,7 +455,6 @@
 </Dialog>
 
 <style>
-  /* the whole window: the board, scrolled by the window's own scrollbar at its edge */
   .settings {
     position: relative;
     z-index: 2;
@@ -502,7 +472,6 @@
     margin: 0 auto;
     padding: var(--space-5) var(--space-6) var(--space-4);
   }
-  /* one comfortable column; very wide windows read better in two */
   .settings {
     --page-max: 820px;
   }
@@ -538,8 +507,6 @@
     border-radius: var(--radius-stitched);
     box-shadow: var(--shadow-sheet);
   }
-  /* two columns when the sheet is wide enough (this computer | what it holds and runs);
-     read down the first, then the second */
   .sections {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -581,7 +548,6 @@
   .col > .block:last-child {
     border-bottom: 0;
   }
-  /* each section's head: its mark pressed into the page, then its name */
   .block-title {
     display: flex;
     align-items: center;
@@ -603,7 +569,6 @@
       inset 0 1px 2px var(--field-shade),
       0 1px 0 var(--paper-hi);
   }
-  /* what follows the head lines up with its name, past the mark */
   .block > :not(.block-title) {
     margin-left: 42px;
   }
@@ -618,9 +583,6 @@
     align-items: center;
     gap: 7px;
   }
-  /* each key the same height, its letter and its value on one baseline: the line box is the
-     key's own (a fixed line-height); the letter takes no line height, so however large it is it
-     sits on that baseline and never pushes the value down */
   .scales [role='radio'] {
     display: inline-block;
     height: 34px;
@@ -629,7 +591,6 @@
     text-align: center;
     white-space: nowrap;
   }
-  /* each size shows its letter at that size: the scale reads at a glance */
   .scales [role='radio']::before {
     content: 'A';
     margin-right: 5px;
@@ -661,7 +622,6 @@
   .chip[data-chip='system'] {
     background: linear-gradient(135deg, #f6f1e7 50%, #262523 50%);
   }
-  /* the inks: a swatch of cover material in each, its own foil stamped on it */
   .swatches {
     display: flex;
     flex-wrap: wrap;
@@ -681,7 +641,6 @@
   .swatch:active :global(.ink-chip) {
     transform: translateY(1px);
   }
-  /* the chosen one: ringed in the page's ink, a hair of paper between */
   .swatch[aria-checked='true'] {
     box-shadow:
       0 0 0 2px var(--accent);

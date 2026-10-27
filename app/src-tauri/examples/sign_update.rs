@@ -1,8 +1,3 @@
-//! Release signing (scripts/release.mjs): like `tauri signer sign`, but the trusted comment also
-//! binds the version and the platforms, which the updater checks.
-//!   cargo run -p nicevault-app --example sign_update -- <secret.key> <file> <version> <platform,...>
-//! Writes `<file>.sig` (base64 of the minisign signature, the Tauri format).
-
 use base64::Engine;
 use std::time::{SystemTime, UNIX_EPOCH};
 

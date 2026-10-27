@@ -1,7 +1,3 @@
-// Size of the file view, per volume (Settings.grid_size / list_density, stored inside it):
-// grid tiles S M L XL, list rows compact / normal / comfortable. Changed from the toolbar,
-// Ctrl+wheel, Ctrl+= / Ctrl+- / Ctrl+0. Optimistic: the view resizes at once, the volume is
-// written in the background (look.svelte.ts keeps the per-volume settings fresh).
 import * as api from '../api';
 import type { GridSize, ListDensity, VaultId } from '../types';
 import { look } from './look.svelte';
@@ -12,19 +8,14 @@ export const DENSITIES: readonly ListDensity[] = ['compact', 'normal', 'comforta
 export const DEFAULT_GRID: GridSize = 'm';
 export const DEFAULT_DENSITY: ListDensity = 'normal';
 
-/** Smallest tile width per size (CSS px); tiles stretch up to fill the row. */
 export const TILE_MIN_POINTER: Record<GridSize, number> = { s: 116, m: 164, l: 220, xl: 300 };
-/** A phone in portrait (content 336-406 px, 12 px gaps): four tiles a row at S, three at M, two
- *  at L, one at XL; on its side (or a tablet) as many more as fit. Each size its own count. */
 export const TILE_MIN_TOUCH: Record<GridSize, number> = { s: 74, m: 100, l: 140, xl: 240 };
 export const TILE_MIN = isMobile ? TILE_MIN_TOUCH : TILE_MIN_POINTER;
-/** List row height and picture box per density (CSS px). */
 export const ROW_POINTER: Record<ListDensity, { h: number; w: number; vis: number }> = {
   compact: { h: 28, w: 24, vis: 20 },
   normal: { h: 38, w: 30, vis: 26 },
   comfortable: { h: 54, w: 44, vis: 38 },
 };
-/** A finger needs a taller row (44 px at the least): phone and tablet (styles/mobile.css). */
 export const ROW_TOUCH: Record<ListDensity, { h: number; w: number; vis: number }> = {
   compact: { h: 44, w: 28, vis: 24 },
   normal: { h: 60, w: 44, vis: 38 },
@@ -32,13 +23,11 @@ export const ROW_TOUCH: Record<ListDensity, { h: number; w: number; vis: number 
 };
 export const ROW = isMobile ? ROW_TOUCH : ROW_POINTER;
 
-/** The entry `delta` steps from `cur` in `list`, clamped. */
 export function step<T>(list: readonly T[], cur: T, delta: number): T {
   const i = Math.max(0, list.indexOf(cur));
   return list[Math.min(list.length - 1, Math.max(0, i + delta))];
 }
 
-/** Device pixels a grid picture needs: the widest a tile of this size gets (rows stretch). */
 export function thumbPx(size: GridSize, dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1): number {
   return Math.ceil(TILE_MIN[size] * 1.5 * dpr);
 }
@@ -68,7 +57,6 @@ class ViewSize {
     if (d !== this.density(vault)) this.save(vault, { list_density: d });
   }
 
-  /** One step bigger (+1) or smaller (-1) in the current layout; 0 = back to the default. */
   zoom(vault: VaultId, layout: 'grid' | 'list', delta: number) {
     if (layout === 'grid') this.setGrid(vault, delta === 0 ? DEFAULT_GRID : step(GRID_SIZES, this.grid(vault), delta));
     else this.setDensity(vault, delta === 0 ? DEFAULT_DENSITY : step(DENSITIES, this.density(vault), delta));

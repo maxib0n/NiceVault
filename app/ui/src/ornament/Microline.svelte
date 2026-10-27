@@ -1,7 +1,3 @@
-<!--
-  A rule that is really microtext: at reading distance a fine line, under a
-  loupe the words. Height 6 px; width follows its container.
--->
 <script lang="ts">
   import InkCanvas, { type InkEnv } from './InkCanvas.svelte';
 

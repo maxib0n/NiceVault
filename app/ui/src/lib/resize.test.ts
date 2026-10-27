@@ -1,5 +1,3 @@
-// Estendi / Riduci: the size rules (same cases as nv-core resize.rs `limits_rules`) and the mock's
-// vault_resize_info / vault_resize parity with app/src-tauri/tests/resize.rs.
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as api from './api';
 import { MOCK_PASSWORD, MockBackend, STICK } from './mock';
@@ -27,7 +25,7 @@ describe('resize rules (same cases as nv-core)', () => {
       max_capacity: 10 * GIB,
       drive_free: 1.5 * GIB,
     };
-    expect(plan(info, 4 * GIB + 100)).toBe('same'); // rounded down to 4 KiB
+    expect(plan(info, 4 * GIB + 100)).toBe('same');
     expect(plan(info, 5 * GIB)).toBe('grow');
     expect(plan(info, 11 * GIB)).toBe('too_large');
     expect(plan(info, 3 * GIB)).toBe('shrink');
@@ -82,7 +80,7 @@ describe('mock vault_resize*', () => {
     const packed = await api.vaultResize(id, inPlace.min_capacity);
     expect(packed.capacity).toBe(inPlace.min_capacity);
     expect(events.filter((e) => e.phase === 'compact').at(-1)).toMatchObject({ done: inPlace.used_bytes, total: inPlace.used_bytes, vault: id });
-    expect(packed.min_in_place).toBe(packed.min_capacity); // no free pages left
+    expect(packed.min_in_place).toBe(packed.min_capacity);
 
     await expect(api.vaultResize(id, packed.min_capacity - 4096 * 10)).rejects.toMatchObject({ code: 'too_small' });
     await expect(api.vaultResize(id, 1024)).rejects.toMatchObject({ code: 'out_of_range' });

@@ -1,13 +1,3 @@
-//! Per-volume auto-lock: each open volume has its own idle clock and its own settings
-//! (`Settings.auto_lock_minutes` / `lock_on_sleep` / `lock_on_screen_lock` / `lock_scope`).
-//!
-//! Activity of a volume = any command that touches it (`AppState::vault`: browsing, previews,
-//! imports, settings...), the UI's `vault_touch` (user input while it is on screen), a running
-//! job, and reads/writes through its mounted drive. The ticker (`spawn_ticker`, every second)
-//! locks a volume with reason "idle" once it has been idle for its minutes; the OS triggers in
-//! watch.rs call [`AppState::lock_event`] with "sleep" / "screen". A volume whose `lock_scope`
-//! is "all" takes every open volume with it when it auto-locks.
-
 use crate::state::{AppState, lock_or_recover};
 use nv_fs::{Fs, Kind, Node, NodeId, Result, Stats};
 use serde::Serialize;
@@ -21,7 +11,6 @@ fn epoch() -> Instant {
     *E.get_or_init(Instant::now)
 }
 
-/// Last activity of one open volume (ms since a process-wide epoch).
 #[derive(Debug)]
 pub struct Activity(AtomicU64);
 
@@ -37,30 +26,23 @@ impl Activity {
     pub fn touch(&self) {
         self.0.store(Instant::now().saturating_duration_since(epoch()).as_millis() as u64, Ordering::Relaxed);
     }
-    /// How long the volume has been idle at `now`.
     pub fn idle(&self, now: Instant) -> Duration {
         now.saturating_duration_since(epoch() + Duration::from_millis(self.0.load(Ordering::Relaxed)))
     }
 }
 
-/// `autolock_status` row: what the UI's countdown shows for one open volume.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct AutoLockStatus {
     pub vault: String,
-    /// Idle timeout of this volume, 0 = never.
     pub auto_lock_minutes: u32,
-    /// Time left before the idle lock (`None` = never: minutes 0, or a job is running).
     pub remaining_ms: Option<u64>,
 }
 
 impl AppState {
-    /// Ids of the volumes with a running import/export (they never go idle).
     fn busy_vaults(&self) -> HashSet<String> {
         lock_or_recover(&self.jobs).values().map(|j| j.vault.clone()).collect()
     }
 
-    /// Locks the volumes that are idle at `now` (reason "idle"); returns every id locked.
-    /// The ticker passes `Instant::now()`; tests pass a later instant.
     pub fn idle_tick(&self, now: Instant) -> Vec<String> {
         let busy = self.busy_vaults();
         let due: Vec<(String, bool)> = lock_or_recover(&self.vaults)
@@ -78,8 +60,6 @@ impl AppState {
         self.auto_lock(due, "idle")
     }
 
-    /// An OS trigger ("sleep" before suspend, "screen" when the session locks): locks every
-    /// volume whose settings react to it (all of them when one of those has scope "all").
     pub fn lock_event(&self, reason: &str) -> Vec<String> {
         let due: Vec<(String, bool)> = lock_or_recover(&self.vaults)
             .values()
@@ -108,12 +88,10 @@ impl AppState {
         ids
     }
 
-    /// User activity on `vault` (the UI calls it, throttled, on input while it is on screen).
     pub fn vault_touch(&self, vault: &str) -> crate::error::ApiResult<()> {
         self.vault(vault).map(|_| ())
     }
 
-    /// Idle countdown of every open volume (does not count as activity).
     pub fn autolock_status(&self) -> Vec<AutoLockStatus> {
         let busy = self.busy_vaults();
         let now = Instant::now();
@@ -132,7 +110,6 @@ impl AppState {
     }
 }
 
-/// Runs [`AppState::idle_tick`] every second while the app lives.
 pub fn spawn_ticker(state: Weak<AppState>) {
     let _ = std::thread::Builder::new().name("nv-autolock".into()).spawn(move || {
         loop {
@@ -143,8 +120,6 @@ pub fn spawn_ticker(state: Weak<AppState>) {
     });
 }
 
-/// The volume as the mounted drive sees it: content operations count as activity (metadata
-/// polling by file managers does not, so an idle mounted volume still locks).
 pub struct Touching {
     pub fs: Arc<nv_core::Vault>,
     pub activity: Arc<Activity>,

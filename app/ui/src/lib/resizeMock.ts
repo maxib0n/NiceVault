@@ -1,32 +1,22 @@
-// In-browser mock of vault_resize_info / vault_resize, plugged into MockBackend.invoke. Same
-// argument shapes, results, errors and vault-resize events as app/src-tauri/src/resize.rs over
-// nv-core resize.rs (rules in resize.ts). Fixed-size volumes: the ones vault_create made with
-// fixed_size, and every seeded volume with ?fixed (4 GB, some free room inside the store's extent).
-
 import type { ApiError, EventMap, EventName, ResizeInfo, ResizePhase, VaultId } from './types';
 import { FIXED_MAX, FIXED_MIN, GIB, MIB, down4k, limits } from './resize';
 
 export interface ResizeMockHost {
-  /** path + bytes in use of an open volume; throws "locked" like MockBackend.vault() */
   volume(vault: VaultId): { path: string; used: number };
   wait(ms: number): Promise<void>;
   emit<E extends EventName>(event: E, payload: EventMap[E]): void;
 }
 
 export interface ResizeMockOptions {
-  /** seeded volumes are fixed-size (?fixed) */
   fixed: boolean;
-  /** vault_resize fails with this code after its first step (?resize_fail=io) */
   fail: string | null;
 }
 
 interface Fixed {
   capacity: number;
-  /** store extent beyond the data (free pages a shrink below it has to compact away) */
   slack: number;
 }
 
-/** free space on the mock drive */
 const DRIVE_FREE = 40 * GIB;
 
 function err(code: string, message: string): ApiError {
@@ -42,24 +32,21 @@ export class ResizeMock {
     private opts: ResizeMockOptions,
   ) {}
 
-  /** a seeded volume (constructor of MockBackend) */
   seed(path: string): void {
     if (this.opts.fixed) this.fixed.set(path, { capacity: 4 * GIB, slack: 300 * MIB });
   }
 
-  /** vault_create { fixed_size } */
   created(path: string, fixedSize: unknown): void {
     if (typeof fixedSize === 'number' && fixedSize > 0) this.fixed.set(path, { capacity: down4k(fixedSize), slack: 0 });
   }
 
-  /** a fixed volume's capacity (vault_stats: file size and free space are the volume's own) */
   capacity(path: string): number | null {
     return this.fixed.get(path)?.capacity ?? null;
   }
 
   info(vault: VaultId): ResizeInfo {
     const { path, used } = this.host.volume(vault);
-    const store = Math.round(used * 1.02 + 0.4 * MIB); // like vault_stats' file size of a growable volume
+    const store = Math.round(used * 1.02 + 0.4 * MIB);
     const f = this.fixed.get(path);
     if (!f) {
       return { capacity: null, file_bytes: store, used_bytes: store, min_capacity: store, min_in_place: store, max_capacity: store, drive_free: this.free };

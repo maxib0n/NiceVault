@@ -9,7 +9,7 @@ import type { RecentEntry } from './types';
 
 const DOC = `${STICK}/Documenti.nvault`;
 const ARC = `${STICK}/Archivio fiscale.nvault`;
-const PNG_B64 = 'iVBORw0KGgpJTUFHRUJZVEVTX3o3'; // PNG signature + bytes
+const PNG_B64 = 'iVBORw0KGgpJTUFHRUJZVEVTX3o3';
 
 const byName = (r: RecentEntry[], n: string) => r.find((x) => x.name === n)!;
 
@@ -19,7 +19,7 @@ describe('emblem helpers', () => {
     expect(initialOf('2024 tasse')).toBe('2');
     expect(initialOf('...')).toBe('·');
     expect(lockedView({ emblem: { kind: 'icon', id: 'car' }, show_when_locked: true })).toEqual({ kind: 'icon', id: 'car' });
-    expect(lockedView({})).toEqual({ kind: 'initial' }); // new location: no cache yet
+    expect(lockedView({})).toEqual({ kind: 'initial' });
     expect(lockedView({ emblem: null, show_when_locked: false })).toEqual({ kind: 'hidden' });
     expect(viewOf({ kind: 'icon', id: 'not-an-icon' })).toEqual({ kind: 'initial' });
     expect(EMBLEM_ICONS.length).toBe(24);
@@ -36,7 +36,7 @@ describe('emblem (mock backend)', () => {
     expect(byName(r, 'Archivio fiscale').emblem).toEqual({ kind: 'icon', id: 'receipt' });
     expect(byName(r, 'Vecchio').emblem).toEqual({ kind: 'initial' });
     expect(r.filter((x) => x.name !== 'Diario').every((x) => x.show_when_locked)).toBe(true);
-    expect([byName(r, 'Diario').emblem, byName(r, 'Diario').show_when_locked]).toEqual([null, false]); // encrypted look
+    expect([byName(r, 'Diario').emblem, byName(r, 'Diario').show_when_locked]).toEqual([null, false]);
     const info = await api.vaultOpen(ARC, MOCK_PASSWORD);
     expect(info.emblem).toEqual({ kind: 'icon', id: 'receipt' });
     expect(await api.vaultEmblemGet(info.id)).toEqual({ emblem: { kind: 'icon', id: 'receipt' }, show_when_locked: true, emblem_frame: 'starburst' });
@@ -58,7 +58,7 @@ describe('emblem (mock backend)', () => {
     expect(r.emblem).toBeNull();
     expect(r.show_when_locked).toBe(false);
     expect(lockedView(r)).toEqual({ kind: 'hidden' });
-    expect((await api.vaultEmblemGet(info.id)).emblem).toEqual({ kind: 'icon', id: 'house' }); // still in the volume
+    expect((await api.vaultEmblemGet(info.id)).emblem).toEqual({ kind: 'icon', id: 'house' });
 
     await api.vaultLock(info.id);
     await expect(api.vaultEmblemGet(info.id)).rejects.toMatchObject({ code: 'locked' });
@@ -77,12 +77,10 @@ describe('emblem (mock backend)', () => {
     expect(st.emblem_frame).toBe('laurel');
     let r = byName(await api.recentList(), 'Documenti');
     expect([r.emblem_frame, lockedFrame(r)]).toEqual(['laurel', 'laurel']);
-    // an encrypted look shows the default rosette while locked; the frame stays inside
     await api.vaultAppearanceSet(info.id, { visibility: 'encrypted' });
     r = byName(await api.recentList(), 'Documenti');
     expect([r.emblem_frame ?? null, lockedFrame(r)]).toEqual([null, 'guilloche']);
     expect((await api.vaultAppearanceGet(info.id)).emblem_frame).toBe('laurel');
-    // a newer build's frame is kept as it is and drawn as the default; a bad id is refused
     await api.vaultAppearanceSet(info.id, { emblem_frame: 'future-frame' });
     expect((await api.vaultEmblemGet(info.id)).emblem_frame).toBe('future-frame');
     expect(frameOf('future-frame')).toBe('guilloche');

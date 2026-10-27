@@ -1,8 +1,3 @@
-//! Linux backend: FUSE through `fuser` in pure-Rust mode (no libfuse; the setuid
-//! `fusermount3` helper performs the mount for unprivileged users).
-//!
-//! Inode numbers are `nv_fs::NodeId`s 1:1 (both use 1 for the root).
-
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -20,11 +15,8 @@ use nv_fs::{Error, Fs, Kind, Node};
 use crate::util::{self, MountDir};
 use crate::{MountError, MountOpts, Result, Unmounter};
 
-/// Attributes and entries may be cached by the kernel this long. Short, because the app's
-/// built-in file manager can change the same `Fs` behind the kernel's back.
 const TTL: Duration = Duration::from_secs(1);
 const BLOCK: u32 = 4096;
-/// `st_blksize` of files: the preferred I/O size, so `cp` & co. use 1 MiB buffers (= max_write).
 const IO_SIZE: u32 = 1 << 20;
 
 fn errno(e: Error) -> Errno {
@@ -134,7 +126,6 @@ impl FuseFs {
             }
         }
         self.fs.rename(src.id, newparent.0, newname).map_err(|e| match e {
-            // The contract reports a non-empty directory target as Exists.
             Error::Exists => Errno::ENOTEMPTY,
             e => errno(e),
         })
@@ -158,7 +149,6 @@ impl FuseFs {
 
 impl Filesystem for FuseFs {
     fn init(&mut self, _req: &Request, config: &mut KernelConfig) -> std::io::Result<()> {
-        // Bigger writes = fewer round trips; the kernel clamps to what it supports.
         let _ = config.set_max_write(1 << 20);
         let _ = config.set_max_readahead(1 << 20);
         Ok(())
@@ -200,7 +190,6 @@ impl Filesystem for FuseFs {
         _flags: Option<fuser::BsdFileFlags>,
         reply: ReplyAttr,
     ) {
-        // mode/uid/gid/atime are not stored; accept them silently so `cp -p`, `touch` etc. work.
         match self.do_setattr(ino, size, mtime) {
             Ok(n) => reply.attr(&TTL, &self.attr(&n)),
             Err(e) => reply.error(e),
@@ -297,7 +286,6 @@ impl Filesystem for FuseFs {
     }
 
     fn flush(&self, _req: &Request, _ino: INodeNo, _fh: FileHandle, _lock_owner: LockOwner, reply: ReplyEmpty) {
-        // Called on every close(2) of every fd. Closing is not a durability point (see release).
         reply.ok();
     }
 
@@ -311,13 +299,9 @@ impl Filesystem for FuseFs {
         _flush: bool,
         reply: ReplyEmpty,
     ) {
-        // Not a durability point: like any disk filesystem, closing a file does not force it to
-        // the device (that made copying many files crawl on USB sticks: a sync per file).
-        // fsync(2) does; otherwise the Fs makes everything durable within a few seconds.
         reply.ok();
     }
 
-    /// fsync(2) / fdatasync(2): a real durability point.
     fn fsync(&self, _req: &Request, _ino: INodeNo, _fh: FileHandle, _datasync: bool, reply: ReplyEmpty) {
         match self.flush_fs() {
             Ok(()) => reply.ok(),
@@ -345,7 +329,6 @@ impl Filesystem for FuseFs {
             let t = if c.kind == Kind::Dir { FileType::Directory } else { FileType::RegularFile };
             (c.id, t, c.name.as_str())
         }));
-        // The offset handed back is "index of the next entry".
         for (i, (id, kind, name)) in all.enumerate().skip(offset as usize) {
             if reply.add(INodeNo(id), (i + 1) as u64, kind, name) {
                 break;
@@ -360,7 +343,6 @@ impl Filesystem for FuseFs {
                 let b = u64::from(BLOCK);
                 let blocks = s.total_bytes / b;
                 let free = (s.free_bytes / b).min(blocks);
-                // No inode limit: report plenty free.
                 let ffree = u64::from(u32::MAX);
                 reply.statfs(blocks, free, free, s.files + ffree, ffree, BLOCK, 255, BLOCK);
             }
@@ -401,7 +383,6 @@ pub(crate) fn available() -> bool {
     dev_ok && fusermount_bin().is_some()
 }
 
-/// Lazily detach a dead mount (e.g. left behind by a crashed process: "Transport endpoint is not connected").
 fn clear_stale(p: &Path) {
     if let Some(bin) = fusermount_bin() {
         let _ = util::run(Command::new(bin).arg("-u").arg("-z").arg("-q").arg("--").arg(p));
@@ -411,7 +392,6 @@ fn clear_stale(p: &Path) {
 fn default_base() -> PathBuf {
     match std::env::var_os("XDG_RUNTIME_DIR") {
         Some(d) if !d.is_empty() => PathBuf::from(d).join("nicevault"),
-        // SAFETY: getuid has no preconditions.
         _ => std::env::temp_dir().join(format!("nicevault-{}", unsafe { libc::getuid() })),
     }
 }
@@ -428,24 +408,18 @@ impl Unmounter for FuseMount {
         let bin = fusermount_bin().unwrap_or_else(|| PathBuf::from("fusermount3"));
         let res = match util::run(Command::new(&bin).arg("-u").arg("--").arg(&dir.path)) {
             Ok(()) => {
-                // The kernel tears the connection down; the worker threads see ENODEV and exit.
                 if let Err(e) = session.join() {
                     log::warn!("fuse session ended with error: {e}");
                 }
                 Ok(())
             }
             Err(busy) => {
-                // Files still open: detach from the namespace now; the session thread finishes on
-                // its own when the last open file is closed (the Fs then answers with Locked if
-                // the vault was locked meanwhile). Do not join: that would block until then.
                 match util::run(Command::new(&bin).arg("-u").arg("-z").arg("--").arg(&dir.path)) {
                     Ok(()) => {
                         drop(session);
                         Ok(())
                     }
                     Err(e) => {
-                        // Keep the session alive (leak it) rather than tearing down a mount
-                        // the kernel still routes to us.
                         std::mem::forget(session);
                         Err(MountError::Busy(format!("{busy}; lazy unmount: {e}")))
                     }
@@ -471,7 +445,7 @@ pub(crate) fn mount(fs: Arc<dyn Fs>, opts: &MountOpts) -> Result<(PathBuf, Box<d
         None => util::pick_dir_under(&default_base(), &opts.volume_name, &clear_stale)?,
     };
     let mut mount_options = vec![
-        MountOption::FSName("nicevault".into()), // the volume name is not for every user to see
+        MountOption::FSName("nicevault".into()),
         MountOption::Subtype("nicevault".into()),
         MountOption::DefaultPermissions,
         MountOption::NoDev,
@@ -487,7 +461,6 @@ pub(crate) fn mount(fs: Arc<dyn Fs>, opts: &MountOpts) -> Result<(PathBuf, Box<d
 
     let ffs = FuseFs {
         fs: fs.clone(),
-        // SAFETY: getuid/getgid have no preconditions.
         uid: unsafe { libc::getuid() },
         gid: unsafe { libc::getgid() },
         read_only: opts.read_only,

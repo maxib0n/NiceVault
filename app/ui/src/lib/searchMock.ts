@@ -1,7 +1,3 @@
-// In-browser mock of fs_search and the tags_* commands, plugged into MockBackend.invoke (and its
-// fs_list). Same names, argument shapes, results, errors and events as app/src-tauri/src/search.rs
-// over nv-core's search.rs (helpers in search.ts). Seeded volumes start with sample tags.
-
 import type { ApiError, EventMap, EventName, FsNode, NodeId, SearchFilters, SearchHit, SearchResult, SearchSort, Tag, TagId, VaultId } from './types';
 import { ROOT } from './types';
 import { switches } from './switches';
@@ -9,9 +5,7 @@ import { DEMO_TAGS } from './mockDemo';
 import { MAX_TAG_NAME, TAG_COLORS, fold, highlights, matchesFilters, naturalCmp, rank, terms } from './search';
 
 export interface SearchMockHost {
-  /** path + nodes of an open volume; throws "locked" like MockBackend.vault() */
   volume(vault: VaultId): { path: string; nodes: Map<NodeId, FsNode> };
-  /** volumes that start with the sample tags */
   seeded(path: string): boolean;
   wait(ms: number): Promise<void>;
   emit<E extends EventName>(event: E, payload: EventMap[E]): void;
@@ -27,7 +21,6 @@ interface StoredTag {
 interface VolumeTags {
   tags: Map<TagId, StoredTag>;
   nextId: number;
-  /** node -> its tags (rows of deleted nodes are dropped lazily, like the foreign key does) */
   assigned: Map<NodeId, Set<TagId>>;
 }
 
@@ -39,7 +32,6 @@ function err(code: string, message: string): ApiError {
 
 const tagNorm = (name: string) => fold(name).split(/\s+/).filter(Boolean).join(' ');
 
-/** Sample tags of a seeded volume: [name, colour, names of the nodes carrying it]. */
 const SEED: [string, string, string[]][] = [
   ['Importante', 'velluto', ['Contratto affitto.pdf', 'Passaporto (scansione).jpg', 'Buste']],
   ['Vacanze', 'ottanio', ['Vacanze 2024', 'Lago di Braies.jpg', 'Dolomiti 01.jpg', 'Tramonto sul lago.jpg']],
@@ -82,7 +74,6 @@ export class SearchMock {
     return { ...v, s: this.state(v.path, v.nodes) };
   }
 
-  /** Tags of every node of an open volume (ascending ids), for fs_list. */
   tagsOf(vault: VaultId, id: NodeId): TagId[] {
     const { s } = this.open(vault);
     return [...(s.assigned.get(id) ?? [])].sort((a, b) => a - b);
@@ -178,7 +169,7 @@ export class SearchMock {
       let r: number;
       if (sort === 'relevance') r = x.r - y.r || (dx === dy ? 0 : dx ? -1 : 1) || byName();
       else {
-        if (dx !== dy) return dx ? -1 : 1; // folders first, whatever the direction
+        if (dx !== dy) return dx ? -1 : 1;
         if (sort === 'size') r = x.n.size - y.n.size || byName();
         else if (sort === 'mtime') r = x.n.mtime - y.n.mtime || byName();
         else if (sort === 'type') r = naturalCmp(ext(x.norm), ext(y.norm)) || byName();

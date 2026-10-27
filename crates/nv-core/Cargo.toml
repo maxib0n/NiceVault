@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 nv-fs = { path = "../nv-fs" }
 rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
-# Pinned exactly: the bundled SQLCipher decides how every volume database is encrypted.
 libsqlite3-sys = { version = "=0.38.2" }
 argon2 = { version = "0.5", features = ["zeroize"] }
 chacha20poly1305 = "0.10"
@@ -26,7 +25,6 @@ unicode-normalization = "0.1"
 base64 = "0.22"
 memsec = "0.7"
 fs4 = "0.13"
-# password manager (src/passwords)
 serde_json = "1"
 hmac = "0.12"
 sha1 = "0.10"
@@ -34,16 +32,12 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 keepass = "0.17"
 csv = "1"
 
-# sysinfo 0.37 does not build for iOS with libc >= 0.2.191 (proc_pidinfo is macOS-only there);
-# iOS asks the kernel directly (header.rs, os_proc_available_memory).
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 
-# writeback outside the store lock (lib.rs Writeback: sync_file_range)
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
-# tests write a KDBX4 fixture on the fly
 keepass = { version = "0.17", features = ["save_kdbx4"] }

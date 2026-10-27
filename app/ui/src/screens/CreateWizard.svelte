@@ -1,4 +1,3 @@
-<!-- Nuovo volume: 1 Nome e posizione (drive picker) → 2 Chiave → 3 Fatto (+ emblema). Enter advances, Esc goes back. -->
 <script lang="ts">
   import { ArrowLeft, Check } from '@lucide/svelte';
   import { m } from '../paraglide/messages.js';
@@ -44,7 +43,6 @@
       : null,
   );
   let emblemOpen = $state(false);
-  // the open volume's info (emblem updates land there), else what vault_create returned
   const createdInfo = $derived(vaults.open.find((v) => v.id === created?.id) ?? created);
   let nameInput: HTMLInputElement | undefined = $state();
 
@@ -62,7 +60,6 @@
   const step1Ok = $derived(!nameError && !!dir && !exists);
   const mismatch = $derived(confirm.length > 0 && confirm !== password);
   const step2Ok = $derived(!!strength?.acceptable && password === confirm && !busy);
-  // "Fatto" tells the truth: the emblem can be chosen only while the new volume is open
   const createdOpen = $derived(!!created && vaults.open.some((v) => v.id === created!.id));
 
   onMount(async () => {
@@ -235,7 +232,6 @@
 {/if}
 
 <style>
-  /* issuing a new document: a form sheet on the board */
   .wizard {
     position: relative;
     z-index: 2;
@@ -272,7 +268,6 @@
     color: var(--title-ink);
   }
 
-  /* the three stations, joined by a printed rule */
   .steps {
     list-style: none;
     display: flex;
@@ -303,7 +298,6 @@
   .step[data-state='current'] {
     color: var(--ink);
   }
-  /* a station: an empty seat (todo), the volume's ink (current), a tick (done) */
   .step-n {
     position: relative;
     display: inline-grid;
@@ -344,7 +338,6 @@
     display: block;
   }
 
-  /* ---- the form ------------------------------------------------------------- */
   .body {
     display: flex;
     flex-direction: column;
@@ -358,7 +351,6 @@
     height: 38px;
     font-size: var(--text-base);
   }
-  /* the meter and the mismatch line belong to the field above them */
   .body > :global(.strength),
   .body > :global(#confirm-err) {
     margin-top: calc(var(--space-3) - var(--space-5));
@@ -371,7 +363,6 @@
     font-family: var(--font-mono);
     font-size: var(--text-xs);
   }
-  /* the one sentence that matters on this step */
   .warn {
     padding: 10px 14px;
     border-radius: var(--radius-sm);
@@ -381,7 +372,6 @@
     box-shadow: inset 2px 0 0 var(--accent);
   }
 
-  /* ---- Fatto: the document is issued --------------------------------------- */
   .done {
     display: flex;
     flex-direction: column;

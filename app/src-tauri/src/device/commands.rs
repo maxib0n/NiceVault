@@ -1,13 +1,3 @@
-//! The privileged commands, generated from a [`Plan`] (pure; tests assert them exactly).
-//!
-//! - Linux: udisks2 D-Bus calls, run with `gdbus call --system` (GVariant text arguments).
-//!   Calls a user started pass `auth.no_user_interaction = false` (polkit may ask); probes are
-//!   never made over D-Bus at all (enumeration reads sysfs, `CanFormat` is a tool lookup).
-//! - Windows: one PowerShell Storage-module script run by the elevated helper with an absolute
-//!   powershell.exe path and `-EncodedCommand`.
-//! - macOS: `diskutil partitionDisk` argv; if it needs admin rights, the same argv through
-//!   `osascript ... with administrator privileges`, every argument a `quoted form of` literal.
-
 use super::{DataFs, Disk, Plan, Table};
 
 pub const UDISKS: &str = "org.freedesktop.UDisks2";
@@ -16,7 +6,6 @@ pub const POWERSHELL: &str = r"%SystemRoot%\System32\WindowsPowerShell\v1.0\powe
 pub const DISKUTIL: &str = "/usr/sbin/diskutil";
 pub const OSASCRIPT: &str = "/usr/bin/osascript";
 
-/// MBR types and GPT type GUIDs (spec 1).
 pub fn mbr_type(fs: &str) -> &'static str {
     if matches!(fs, "ext4" | "btrfs") { "0x83" } else { "0x07" }
 }
@@ -24,18 +13,11 @@ pub fn gpt_type(fs: &str) -> &'static str {
     if matches!(fs, "ext4" | "btrfs") { "0fc63daf-8483-4772-8e79-3d69d8477de4" } else { "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7" }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Linux: udisks2
-
-/// One D-Bus method call. `object` may be a placeholder (`$client`, `$data`) for a partition
-/// created by an earlier call; the runner substitutes the object path that call returned.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DbusCall {
     pub step: &'static str,
     pub object: String,
-    /// `org.freedesktop.UDisks2.Block.Format`
     pub method: String,
-    /// GVariant text, one per method argument.
     pub args: Vec<String>,
 }
 
@@ -53,13 +35,10 @@ impl DbusCall {
     }
 }
 
-/// A GVariant string literal.
 pub fn gv_str(s: &str) -> String {
     format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
-/// udisks object path of a block device: `/dev/sdd` -> `.../block_devices/sdd` (bytes other
-/// than [A-Za-z0-9] escaped as `_xx`, as udisks does).
 pub fn block_object(dev: &str) -> String {
     let name = dev.strip_prefix("/dev/").unwrap_or(dev);
     let mut out = String::from("/org/freedesktop/UDisks2/block_devices/");
@@ -75,7 +54,6 @@ pub fn block_object(dev: &str) -> String {
 
 const INTERACTIVE: &str = "'auth.no_user_interaction': <false>";
 
-/// Unmount everything mounted on the disk, write the table, create and format both partitions.
 pub fn linux_calls(plan: &Plan) -> Vec<DbusCall> {
     let mut v = vec![];
     for p in plan.disk.partitions.iter().filter(|p| !p.mountpoints.is_empty()) {
@@ -94,7 +72,6 @@ pub fn linux_calls(plan: &Plan) -> Vec<DbusCall> {
     v.push(DbusCall { step: "partition", object: disk.clone(), method: format!("{UDISKS}.Block.Format"), args: vec![gv_str(table), format!("{{{INTERACTIVE}}}")] });
     for (step, spec) in [("format_client", &plan.client), ("format_data", &plan.data)] {
         let (ptype, name, popts) = match plan.table {
-            // MBR: no names; the first is a primary partition (so is the second: only two)
             Table::Mbr => (mbr_type(&spec.fs).to_owned(), String::new(), format!("{{'partition-type': <'primary'>, {INTERACTIVE}}}")),
             Table::Gpt => (gpt_type(&spec.fs).to_owned(), spec.label.clone(), format!("{{{INTERACTIVE}}}")),
         };
@@ -116,34 +93,26 @@ pub fn linux_calls(plan: &Plan) -> Vec<DbusCall> {
     v
 }
 
-/// Mounting a created partition (unprivileged on an active session: `filesystem-mount` = yes).
 pub fn linux_mount(object: &str) -> DbusCall {
     DbusCall { step: "mount", object: object.to_owned(), method: format!("{UDISKS}.Filesystem.Mount"), args: vec![format!("{{{INTERACTIVE}}}")] }
 }
 
-/// The object path in a `gdbus call` reply such as `(objectpath '/org/.../sdd1',)`.
 pub fn parse_object_path(reply: &str) -> Option<String> {
     let i = reply.find("objectpath '")? + "objectpath '".len();
     let rest = &reply[i..];
     Some(rest[..rest.find('\'')?].to_owned())
 }
 
-/// The mount path in a Mount reply: `('/run/media/u/VaultData',)`.
 pub fn parse_string_reply(reply: &str) -> Option<String> {
     let i = reply.find('\'')? + 1;
     let rest = &reply[i..];
     Some(rest[..rest.find('\'')?].to_owned())
 }
 
-// ---------------------------------------------------------------------------------------------
-// Windows: PowerShell Storage cmdlets in the elevated helper
-
-/// A PowerShell single-quoted literal.
 pub fn ps_str(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
-/// Exit codes of the script / helper.
 pub const EXIT_CHANGED: i32 = 20;
 pub const EXIT_REFUSED: i32 = 21;
 
@@ -191,7 +160,6 @@ pub fn windows_script(plan: &Plan) -> String {
     lines.join("\r\n")
 }
 
-/// `-EncodedCommand`: base64 of the UTF-16LE script.
 pub fn encode_ps(script: &str) -> String {
     use base64::Engine;
     let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
@@ -205,9 +173,6 @@ pub fn windows_argv(plan: &Plan) -> Vec<String> {
         .chain([encode_ps(&windows_script(plan))])
         .collect()
 }
-
-// ---------------------------------------------------------------------------------------------
-// macOS: diskutil
 
 pub fn mac_fs(fs: &str) -> &'static str {
     match fs {
@@ -246,12 +211,10 @@ pub fn mac_partition_args(plan: &Plan) -> Vec<String> {
     .collect()
 }
 
-/// An AppleScript string literal.
 pub fn as_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// `do shell script` with every argument as `quoted form of "<literal>"` (never raw).
 pub fn mac_osascript(args: &[String], prompt: &str) -> String {
     let mut cmd = format!("quoted form of {}", as_str(DISKUTIL));
     for a in args {
@@ -265,13 +228,10 @@ pub fn mac_prompt(d: &Disk, lang_it: bool) -> String {
     if lang_it { format!("NiceVault deve formattare {name}") } else { format!("NiceVault needs to format {name}") }
 }
 
-/// A stderr of diskutil meaning "run me as admin".
 pub fn mac_needs_admin(stderr: &str) -> bool {
     let s = stderr.to_lowercase();
     ["permission", "not permitted", "-69877", "must be run as root", "privilege"].iter().any(|k| s.contains(k))
 }
-
-// ---------------------------------------------------------------------------------------------
 
 pub fn sh_quote(s: &str) -> String {
     if !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_./:=,@%+".contains(&b)) {
@@ -281,7 +241,6 @@ pub fn sh_quote(s: &str) -> String {
     }
 }
 
-/// Human-readable list of every privileged command of the plan (what will run, verbatim).
 pub fn preview(plan: &Plan) -> Vec<String> {
     match plan.os {
         super::Os::Linux => {
@@ -311,7 +270,6 @@ pub fn preview(plan: &Plan) -> Vec<String> {
     }
 }
 
-/// `DataFs` of a Windows Format-Volume / macOS diskutil name (for re-reading the layout).
 pub fn fs_from_os_name(s: &str) -> Option<DataFs> {
     match s.to_ascii_lowercase().as_str() {
         "exfat" => Some(DataFs::Exfat),

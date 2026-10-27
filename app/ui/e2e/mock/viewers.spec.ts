@@ -1,4 +1,3 @@
-// In-app viewers (src/viewers) against the mock's sample files (folder Anteprime).
 import { test, expect, boot } from './helpers';
 import type { Page } from '@playwright/test';
 
@@ -43,7 +42,6 @@ test.describe('in-app viewers', () => {
     await ql.getByRole('button', { name: 'Ultima pagina' }).click();
     await expect(ql.getByTestId('viewer-text-page')).toHaveText('Parte 6 di 6');
     await expect(ql.getByTestId('viewer-code')).toContainText('riga 16000: ');
-    // a page starts at a line start: no half line at the top
     const first = await ql.getByTestId('viewer-code').locator('div').first().textContent();
     expect(first).toMatch(/^2024-\d\d-\d\dT/);
   });
@@ -74,7 +72,6 @@ test.describe('in-app viewers', () => {
     await expect(md).toContainText('<script>alert("questo non deve girare")</script>');
     await expect(md.locator('img')).toHaveCount(0);
     await expect(md).toContainText('Una foto remota');
-    // the javascript: link is dead text
     await expect(md.getByRole('link', { name: 'link pericoloso' })).toHaveCount(0);
     await md.getByRole('link', { name: 'la pagina di aiuto' }).click();
     const ask = ql.getByTestId('link-confirm');
@@ -85,11 +82,87 @@ test.describe('in-app viewers', () => {
     await ql.getByRole('button', { name: 'Apri nel browser' }).click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __nv: { mock: { viewers: { opened: { links: string[] } } } } }).__nv.mock.viewers.opened.links)).toEqual(['https://example.org/aiuto']);
     expect(remote).toEqual([]);
-    // the source, then back
     await ql.getByRole('button', { name: 'Sorgente' }).click();
     await expect(ql.getByTestId('viewer-code')).toContainText('# Guida al volume');
     await ql.getByRole('button', { name: 'Impaginato' }).click();
     await expect(md.getByRole('heading', { level: 1 })).toBeVisible();
+  });
+
+  test('Markdown, every feature: front matter, outline, tables, tasks, footnotes, math, diagram, a picture of the volume', async ({ page }) => {
+    const remote: string[] = [];
+    page.on('request', (r) => {
+      if (!r.url().startsWith('http://127.0.0.1') && !r.url().startsWith('blob:') && !r.url().startsWith('data:')) remote.push(r.url());
+    });
+    await page.addInitScript(() => Object.freeze(Object.prototype));
+    const ql = await open(page, 'Personale/Anteprime', 'Taccuino di casa.md');
+    const md = ql.getByTestId('viewer-markdown');
+    await expect(md.getByRole('heading', { level: 1 })).toHaveText('Taccuino di casa');
+    await expect(ql.getByTestId('md-front')).toContainText('Anna Rossi');
+    await expect(md.getByText('author: Anna Rossi')).toHaveCount(0);
+    const toc = ql.getByTestId('md-toc');
+    await expect(toc.getByRole('link')).toHaveCount(8);
+    await toc.getByRole('link', { name: 'Glossario' }).click();
+    await expect(md.getByRole('heading', { name: 'Glossario' })).toBeInViewport();
+    await expect(toc.getByRole('link', { name: 'Glossario' })).toHaveAttribute('aria-current', 'location');
+    await expect(md.getByRole('table')).toContainText('813,50 €');
+    await expect(md.getByRole('img', { name: 'Fatto' })).toHaveCount(2);
+    await expect(md.getByRole('img', { name: 'Da fare' })).toHaveCount(2);
+    await expect(md.getByRole('term').filter({ hasText: 'Chiave di riserva' })).toHaveCount(1);
+    await expect(md.locator('mark')).toHaveText('promemoria evidenziati');
+    await expect(md.locator('abbr[title="Central Processing Unit"]')).toHaveText('CPU');
+    await expect(md).toContainText('🎉');
+    await expect(md).toContainText('Suggerimento');
+    await md.getByRole('link', { name: '[2]' }).click();
+    await expect(md.getByText('Anche con formattazione')).toBeInViewport();
+    await md.getByRole('link', { name: 'spese', exact: true }).click();
+    await expect(md.getByRole('heading', { name: 'Spese del trimestre' })).toBeInViewport();
+    await expect(md).toHaveAttribute('data-math', 'ready');
+    await expect(md.locator('math').first()).toBeAttached();
+    await expect(md).toHaveAttribute('data-mermaid', 'ready');
+    const diagram = md.locator('svg[aria-roledescription]');
+    await expect(diagram).toHaveCount(1);
+    await expect(diagram).toContainText('Copia cifrata');
+    const fill = () => diagram.locator('.node rect, .node polygon').first().evaluate((e) => getComputedStyle(e).fill);
+    const before = await fill();
+    await page.evaluate(() => (document.documentElement.dataset.accent = document.documentElement.dataset.accent === 'prussia' ? 'bottiglia' : 'prussia'));
+    await expect.poll(fill).not.toBe(before);
+    await expect(md).toHaveAttribute('data-pictures', '1');
+    await expect(md.getByRole('img', { name: "Il lago d'estate" })).toBeVisible();
+    await expect(md).toContainText('Logo remoto');
+    expect(remote).toEqual([]);
+  });
+
+  test('Markdown, a hostile file: nothing runs, loads or navigates', async ({ page }) => {
+    const remote: string[] = [];
+    page.on('request', (r) => {
+      if (!r.url().startsWith('http://127.0.0.1') && !r.url().startsWith('blob:') && !r.url().startsWith('data:')) remote.push(r.url());
+    });
+    page.on('dialog', () => {
+      throw new Error('a script ran');
+    });
+    await page.addInitScript(() => Object.freeze(Object.prototype));
+    const ql = await open(page, 'Personale/Anteprime', 'Nota sospetta.md');
+    const url = page.url();
+    const md = ql.getByTestId('viewer-markdown');
+    await expect(md.getByRole('heading', { level: 1 })).toHaveText('Nota sospetta');
+    await expect(md).toHaveAttribute('data-mermaid', /ready|error/);
+    for (const tag of ['script', 'iframe', 'img', 'form', 'input', 'object', 'embed', 'style:not(svg style)', 'foreignObject'])
+      await expect(md.locator(tag), tag).toHaveCount(0);
+    await expect(md).toContainText('<script>alert("questo non deve girare")</script>');
+    await expect(md).toContainText('<img src=x onerror=alert(1)>');
+    for (const name of ['link pericoloso', 'vbscript', 'file', 'dati', 'credenziali', 'riferimento']) await expect(md.getByRole('link', { name, exact: true })).toHaveCount(0);
+    const hrefs = await md.locator('a[href]').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    for (const h of hrefs) expect(h).toMatch(/^(https?:\/\/|mailto:|#)/);
+    const handlers = await md.locator('*').evaluateAll((els) => els.flatMap((e) => e.getAttributeNames().filter((n) => n.startsWith('on'))));
+    expect(handlers).toEqual([]);
+    await md.getByRole('link', { name: 'mailto con allegato' }).click();
+    await expect(ql.getByTestId('link-confirm')).toContainText('mailto:a@b.it');
+    await ql.getByRole('button', { name: 'Annulla' }).click();
+    await md.getByRole('link', { name: 'https://evil.example/' }).first().click();
+    await expect(ql.getByTestId('link-confirm')).toContainText('https://evil.example/');
+    await page.keyboard.press('Escape');
+    expect(page.url()).toBe(url);
+    expect(remote).toEqual([]);
   });
 
   test('archives: zip and tar listed; tar.gz facts only', async ({ page }) => {
@@ -120,7 +193,6 @@ test.describe('in-app viewers', () => {
     await expect(o.getByTestId('viewer-sheet').getByRole('row').nth(4)).toContainText('Marzo');
     await expect(o).toContainText('Primo trimestre');
     ql = await open(page, 'Personale/Anteprime', 'Risultati Q3.pptx');
-    // slide 10 comes after slide 2 (numeric order)
     await expect(ql.getByTestId('viewer-slide')).toHaveCount(3);
     await expect(ql.getByTestId('viewer-slide').last()).toContainText('Domande?');
     ql = await open(page, 'Personale/Anteprime', 'Lettera condominio.odt');
@@ -132,8 +204,7 @@ test.describe('in-app viewers', () => {
     const info = ql.getByTestId('viewer-info');
     await expect(info).toHaveAttribute('data-reason', 'none');
     await expect(ql.getByTestId('viewer-hex')).toContainText('00000000');
-    await expect(ql.getByTestId('viewer-hex').getByRole('row')).toHaveCount(188); // 3000 bytes / 16
-    // not mounted: no "Apri con app esterna" anywhere
+    await expect(ql.getByTestId('viewer-hex').getByRole('row')).toHaveCount(188);
     await expect(ql.getByRole('button', { name: 'Apri con app esterna' })).toHaveCount(0);
     ql = await open(page, 'Personale/Anteprime', 'LEGGIMI');
     await expect(ql.getByTestId('viewer-text')).toBeVisible();
@@ -154,7 +225,6 @@ test.describe('in-app viewers', () => {
     const ql = await open(page, 'Personale/Anteprime', 'Foto ruotata.jpg');
     const img = ql.getByRole('img', { name: 'Foto ruotata.jpg' });
     await expect(img).toBeVisible();
-    // pixels are 480x330 landscape, EXIF says rotate 90°: shown portrait
     await expect.poll(async () => img.evaluate((i: HTMLImageElement) => i.clientHeight > i.clientWidth)).toBe(true);
     const v = ql.getByTestId('viewer-image');
     const zoom = ql.getByTestId('viewer-zoom');
@@ -254,7 +324,7 @@ test.describe('in-app viewers', () => {
   test('←/→ step through every file, Esc closes', async ({ page }) => {
     const ql = await open(page, 'Personale/Anteprime', 'main.rs');
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('dialog', { name: 'Anteprima di Panorama enorme.tif' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Anteprima di Nota sospetta.md' })).toBeVisible();
     await page.keyboard.press('ArrowLeft');
     await page.keyboard.press('ArrowLeft');
     await expect(page.getByRole('dialog', { name: 'Anteprima di Lettera condominio.odt' })).toBeVisible();

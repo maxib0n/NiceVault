@@ -1,8 +1,3 @@
-<!--
-  The maker's mark: the pixel white rabbit (drawn inline, in the text colour), fixed in the
-  bottom-right corner; a link to github.com/maxib0n opened by the system browser (open_link).
-  Used on Welcome and Settings.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import * as api from '../lib/api';

@@ -1,8 +1,3 @@
-// ZIP reading over ranged reads: the central directory is at the end of the file, so a
-// listing costs two small requests whatever the archive's size. Entries are inflated in
-// memory (DecompressionStream 'deflate-raw') with an output cap, for the Office/ODF text
-// view; nothing is ever written out.
-
 import type { ByteSource } from './source';
 
 export interface ZipEntry {
@@ -12,15 +7,12 @@ export interface ZipEntry {
   compressed: number;
   method: number;
   encrypted: boolean;
-  /** local header offset */
   offset: number;
-  /** ms since epoch (DOS time, local) or null */
   mtime: number | null;
 }
 
 export interface ZipListing {
   entries: ZipEntry[];
-  /** the archive has more entries than were read */
   truncated: boolean;
   total: number;
 }
@@ -50,7 +42,6 @@ function decodeName(b: Uint8Array, utf8: boolean): string {
 
 export class ZipError extends Error {}
 
-/** Signature check on the first bytes ("PK\x03\x04", or an empty archive's "PK\x05\x06"). */
 export function looksLikeZip(head: Uint8Array): boolean {
   return head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && (head[2] === 3 || head[2] === 5) && (head[3] === 4 || head[3] === 6);
 }
@@ -71,7 +62,6 @@ export async function listZip(src: ByteSource, maxEntries = 5000, signal?: Abort
   let total = u16(tail, eocd + 10);
   let cdSize = u32(tail, eocd + 12);
   let cdOff = u32(tail, eocd + 16);
-  // ZIP64: the locator sits just before the classic record
   const loc = eocd - 20;
   if ((total === 0xffff || cdOff === 0xffffffff || cdSize === 0xffffffff) && loc >= 0 && u32(tail, loc) === 0x07064b50) {
     const recOff = u64(tail, loc + 8);
@@ -82,7 +72,6 @@ export async function listZip(src: ByteSource, maxEntries = 5000, signal?: Abort
     cdOff = u64(rec, 48);
   }
   if (cdOff + cdSize > size) throw new ZipError('central directory out of range');
-  // read at most what the capped number of entries can need
   const cd = await src.read(cdOff, cdOff + Math.min(cdSize, 16 * 1024 * 1024), signal);
   const entries: ZipEntry[] = [];
   let p = 0;
@@ -100,7 +89,6 @@ export async function listZip(src: ByteSource, maxEntries = 5000, signal?: Abort
     let offset = u32(cd, p + 42);
     if (p + 46 + nlen > cd.length) break;
     const name = decodeName(cd.subarray(p + 46, p + 46 + nlen), (flags & 0x800) !== 0);
-    // ZIP64 extra field: the 0xffffffff fields, in order
     let x = p + 46 + nlen;
     const xend = x + xlen;
     while (x + 4 <= xend && x + 4 <= cd.length) {
@@ -145,7 +133,6 @@ async function inflateRaw(data: Uint8Array, cap: number): Promise<Uint8Array> {
   return out;
 }
 
-/** One entry's bytes (stored or deflated), at most `cap` bytes uncompressed. */
 export async function readEntry(src: ByteSource, e: ZipEntry, cap = 16 * 1024 * 1024, signal?: AbortSignal): Promise<Uint8Array> {
   if (e.encrypted) throw new ZipError('encrypted entry');
   if (e.size > cap || e.compressed > cap * 4) throw new ZipError('entry too large');

@@ -1,5 +1,3 @@
-//! In-memory `nv_fs::Fs` used by the nv-mount tests (shared by unit and integration tests).
-
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -160,7 +158,6 @@ impl Fs for MemFs {
         }
         dir(&s.0, new_parent)?;
         let kind = s.0.get(&id).ok_or(Error::NotFound)?.node.kind;
-        // No moving a dir into itself or a descendant.
         let mut p = new_parent;
         loop {
             if p == id {

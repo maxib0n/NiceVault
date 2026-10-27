@@ -1,27 +1,3 @@
-//! Generates a volume-format compatibility fixture set: real `.nvault` files written by THIS
-//! build through its public APIs (the app layer for settings / appearance, nv-core for the
-//! rest), plus `manifest.json` with everything a later build must still read back from them.
-//! The checks live in crates/nv-core/tests/compat.rs and app/src-tauri/tests/compat.rs.
-//!
-//! Run once per release (never overwrites an existing set):
-//!   NV_COMPAT_OUT=crates/nv-core/tests/fixtures/compat/<yyyy-mm-dd> NV_COMPAT_COMMIT=$(git rev-parse HEAD) \
-//!     cargo test -p nicevault-app --test compat_gen -- --ignored --nocapture
-//! (`NV_COMPAT_OUT` relative paths are resolved against the workspace root.)
-//!
-//! Single-file set (format v2, journal inside the file; first: 2026-10-25): also set
-//! `NV_COMPAT_SINGLE=1` and `NV_INTERRUPTED=<path>` to a volume made first with
-//!   NV_INTERRUPTED_OUT=<path> cargo test -p nv-core --lib single_tests::gen_interrupted_fixture -- --ignored
-//! Every volume above is then upgraded with "Aggiorna formato" (`Vault::upgrade_format`), plus
-//! `grande.nvault` (a database larger than the journal region: its first 4 MiB moved past the end)
-//! and `interrotto.nvault` (left by a crash with a hot in-file journal spilling to its tail).
-//!
-//! Fixed-size set (fixed-size volumes single-file; first: 2026-10-25-fixed): set `NV_COMPAT_FIXED=1`
-//! and `NV_INTERRUPTED_FIXED=<path>` to a volume made first with
-//!   NV_INTERRUPTED_FIXED_OUT=<path> cargo test -p nv-core --lib single_tests::gen_interrupted_fixed_fixture -- --ignored
-//! It holds only fixed-size volumes: new single-file ones (made through the app, one extended), one
-//! with the side-file journal as earlier builds made them, one of those upgraded in place, and
-//! `fisso-interrotto.nvault` (a crash with a hot journal whose tail lies past the capacity).
-
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use nicevault_app::appearance::{SettingsPatch, Visibility};
@@ -40,9 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 
-/// TOTP codes are recorded at this instant (unix s) so a later build can recompute them.
 const TOTP_T: u64 = 1_700_000_000;
-/// Meta keys whose raw bytes are recorded.
 const META_KEYS: [&str; 5] = ["volume_id", "nicevault.settings", "nicevault.emblem", "nicevault.emblem_locked", "nv.pm_schema"];
 
 fn pw(s: &str) -> SecretString {
@@ -55,7 +29,6 @@ fn sha(b: &[u8]) -> String {
     Sha256::digest(b).iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// Deterministic pseudo-random bytes (xorshift).
 fn pat(seed: u64, len: usize) -> Vec<u8> {
     let mut x = seed.wrapping_mul(0x9E3779B97F4A7C15) | 1;
     (0..len)
@@ -68,7 +41,6 @@ fn pat(seed: u64, len: usize) -> Vec<u8> {
         .collect()
 }
 
-/// A PNG signature + IHDR of the given side (only IHDR is ever parsed), padded with `fill`.
 fn png(side: u32, len: usize, fill: &[u8]) -> Vec<u8> {
     let mut v = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
     v.extend_from_slice(&side.to_be_bytes());
@@ -92,7 +64,6 @@ fn mkdir(v: &Vault, parent: NodeId, name: &str) -> NodeId {
     v.create(parent, name, Kind::Dir).unwrap().id
 }
 
-/// Creates a file and writes `data` in odd-sized pieces.
 fn put(v: &Vault, parent: NodeId, name: &str, data: &[u8]) -> NodeId {
     let id = v.create(parent, name, Kind::File).unwrap().id;
     for (i, c) in data.chunks(99_991).enumerate() {
@@ -113,7 +84,6 @@ fn read_all(v: &Vault, id: NodeId) -> Vec<u8> {
     out
 }
 
-/// Every node under ROOT: path -> (node, content).
 fn walk(v: &Vault, dir: NodeId, prefix: &str, out: &mut BTreeMap<String, (nv_fs::Node, Option<Vec<u8>>)>) {
     for n in v.readdir(dir).unwrap() {
         let path = if prefix.is_empty() { n.name.clone() } else { format!("{prefix}/{}", n.name) };
@@ -127,8 +97,6 @@ fn walk(v: &Vault, dir: NodeId, prefix: &str, out: &mut BTreeMap<String, (nv_fs:
     }
 }
 
-/// Sets a distinct, fixed mtime on every node (after all structural changes, which touch
-/// the parents' mtimes).
 fn fix_mtimes(v: &Vault, base: i64) {
     let mut all = BTreeMap::new();
     walk(v, ROOT, "", &mut all);
@@ -150,14 +118,11 @@ fn appearance_json(a: Option<&Appearance>) -> Value {
     json!({"accent": a.accent, "emblem": emblem})
 }
 
-/// What the generator itself wrote (cross-checked against the read-back).
 struct Spec {
     file: &'static str,
     description: &'static str,
-    /// (slot index, password) for every slot that opens the volume; the first one is used for reads.
     passwords: Vec<(usize, &'static str)>,
     duress: Option<(usize, &'static str)>,
-    /// (key file, its password, slot index).
     identity: Option<(&'static str, &'static str, usize)>,
     contents: BTreeMap<String, Vec<u8>>,
     absent: Vec<&'static str>,
@@ -174,7 +139,6 @@ fn gen_archivio(dir: &Path) -> Spec {
     let v = st.vault(&id).unwrap();
     let mut c: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-    // ---- files and folders
     let docs = mkdir(&v, ROOT, "Documenti");
     let foto = mkdir(&v, docs, "Foto vacanze");
     let sotto = mkdir(&v, docs, "Sotto");
@@ -193,7 +157,6 @@ fn gen_archivio(dir: &Path) -> Spec {
     file(foto, "Documenti/Foto vacanze", "Città ☕ 日本.md", "# Città ☕ 日本\nàèìòù — «virgolette» 🦊\n".as_bytes().to_vec());
     file(docs, "Documenti", "Cafe\u{301}.txt", b"name in NFD (e + combining acute)".to_vec());
     file(giu, "Documenti/Sotto/Più giù", "profondo.txt", b"in fondo\n".to_vec());
-    // overwritten in the middle, then truncated by one byte
     let mut m = pat(3, 300_000);
     let mid = pat(4, 10_000);
     let mid_id = file(ROOT, "", "modificato.bin", m.clone());
@@ -202,11 +165,9 @@ fn gen_archivio(dir: &Path) -> Spec {
     m[100_000..110_000].copy_from_slice(&mid);
     m.truncate(299_999);
     c.insert("modificato.bin".into(), m);
-    // renamed and moved into another folder
     let b = put(&v, ROOT, "bozza.txt", b"prima stesura\n");
     v.rename(b, docs, "Rinominato definitivo.txt").unwrap();
     c.insert("Documenti/Rinominato definitivo.txt".into(), b"prima stesura\n".to_vec());
-    // deleted: a file and a folder with content
     let e = put(&v, ROOT, "eliminato.txt", b"via");
     v.remove(e).unwrap();
     let cd = mkdir(&v, ROOT, "Cartella eliminata");
@@ -214,7 +175,6 @@ fn gen_archivio(dir: &Path) -> Spec {
     v.remove_recursive(cd).unwrap();
     v.flush().unwrap();
 
-    // ---- per-volume settings + look (app layer, as the UI does it)
     st.settings_set(
         patch(json!({"theme": "light", "auto_lock_minutes": 5, "lock_on_sleep": false, "lock_on_screen_lock": true, "lock_scope": "all"})),
         Some(&id),
@@ -232,7 +192,6 @@ fn gen_archivio(dir: &Path) -> Spec {
     )
     .unwrap();
 
-    // ---- key slots: P P (hole) R D
     v.set_slot_label(0, Some("Principale")).unwrap();
     assert_eq!(v.add_password(&pw(ARCH_PW2), KdfPreset::Fast, Some("Riserva — cassaforte 🔐")).unwrap(), 1);
     assert_eq!(v.add_password(&pw("temporanea"), KdfPreset::Fast, Some("da togliere")).unwrap(), 2);
@@ -242,7 +201,6 @@ fn gen_archivio(dir: &Path) -> Spec {
     assert_eq!(v.add_duress(&pw("archivio-distruggi"), KdfPreset::Fast, Some("Emergenza")).unwrap(), 4);
     v.remove_slot(2).unwrap();
 
-    // ---- password manager
     let e1 = v
         .pm_create(EntryPatch {
             title: Some("Posta Ufficio".into()),
@@ -360,9 +318,6 @@ fn gen_bordeaux(dir: &Path) -> Spec {
         fix_mtimes(&v, 1_650_000_000_000_000_000);
     }
     st.vault_lock(&info.id, "user").unwrap();
-    // This build cannot store "bordeaux" any more (it maps it to velluto), so simulate a volume
-    // from the build before: the old settings JSON (accent + auto-lock only) and a header section
-    // with the retired accent, written through nv-core's public API (not reopened by the app).
     let v = Vault::open(&path, &pw("bordeaux-pw")).unwrap();
     v.meta_set("nicevault.settings", Some(br#"{"auto_lock_minutes":30,"accent":"bordeaux"}"#)).unwrap();
     v.set_appearance(Some(&Appearance { accent: Some("bordeaux".into()), emblem: Some(LockedEmblem::Initial("B".into())) })).unwrap();
@@ -402,7 +357,6 @@ fn gen_nudo(dir: &Path) -> Spec {
     }
 }
 
-/// Reads a closed fixture back through this build (on a scratch copy) into its manifest entry.
 fn record(fixtures: &Path, s: &Spec) -> Value {
     let raw = std::fs::read(fixtures.join(s.file)).unwrap();
     for suffix in ["-wal", "-shm"] {
@@ -416,7 +370,6 @@ fn record(fixtures: &Path, s: &Spec) -> Value {
         p
     };
 
-    // every opener works
     for (slot, p) in &s.passwords {
         let v = Vault::open(&copy("pw"), &pw(p)).unwrap();
         assert_eq!(v.unlocked_slot(), Some(*slot));
@@ -427,7 +380,6 @@ fn record(fixtures: &Path, s: &Spec) -> Value {
         assert_eq!(v.unlocked_slot(), Some(slot));
     }
 
-    // core view
     let v = Vault::open(&copy("core"), &pw(s.passwords[0].1)).unwrap();
     v.check_integrity().unwrap();
     let mut all = BTreeMap::new();
@@ -491,7 +443,6 @@ fn record(fixtures: &Path, s: &Spec) -> Value {
     let appearance_core = appearance_json(v.appearance().as_ref());
     v.close().unwrap();
 
-    // app view (what the app shows): Benvenuto's entry before unlock, then open
     let stick = tempfile::tempdir().unwrap();
     let p = stick.path().join(s.file);
     std::fs::copy(fixtures.join(s.file), &p).unwrap();
@@ -542,8 +493,6 @@ fn record(fixtures: &Path, s: &Spec) -> Value {
 
 const GRANDE_PW: &str = "grande-pw";
 
-/// Single-file set: a volume whose database is larger than the journal region, so the upgrade
-/// moved its first region-sized bytes past the old end (header `split > region`).
 fn gen_grande(dir: &Path) -> Spec {
     let path = dir.join("grande.nvault");
     let v = Vault::create(&path, &pw(GRANDE_PW), KdfPreset::Fast).unwrap();
@@ -568,13 +517,11 @@ fn gen_grande(dir: &Path) -> Spec {
     }
 }
 
-/// Single-file set: `interrotto.nvault`, made by nv-core's `gen_interrupted_fixture` (a crash in
-/// the middle of a transaction: hot journal in the file, past the region in its tail).
 fn gen_interrotto(dir: &Path) -> Spec {
     let src = std::env::var("NV_INTERRUPTED").expect("NV_INTERRUPTED: see the module docs");
     std::fs::copy(src, dir.join("interrotto.nvault")).unwrap();
     let mut c = BTreeMap::new();
-    c.insert("tenuto.bin".to_owned(), pat(40, 700_000) /* = nv-core single_tests pat */);
+    c.insert("tenuto.bin".to_owned(), pat(40, 700_000) );
     c.insert("piccolo.txt".to_owned(), b"resta com'era\n".to_vec());
     Spec {
         file: "interrotto.nvault",
@@ -591,8 +538,6 @@ fn gen_interrotto(dir: &Path) -> Spec {
 
 const FIXED_PW: &str = "fisso-pw";
 
-/// Fixed-size set: a new fixed-size volume made through the app (single-file, region inside the
-/// 8 MiB file), with an appearance, settings, a labelled slot, a PM entry and a folder.
 fn gen_fisso(dir: &Path) -> Spec {
     let path = dir.join("fisso.nvault");
     let st = portable(dir);
@@ -627,8 +572,6 @@ fn gen_fisso(dir: &Path) -> Spec {
     }
 }
 
-/// Fixed-size set: a fixed-size volume with the side-file journal, as builds before this set made
-/// them (`create_fixed_as(.., false)`: the same code path), 6 MiB, never upgraded.
 fn gen_fisso_vecchio(dir: &Path) -> Spec {
     let path = dir.join("fisso-vecchio.nvault");
     let v = Vault::create_fixed_as(&path, &pw("fisso-vecchio-pw"), KdfPreset::Fast, 6 << 20, false).unwrap();
@@ -653,8 +596,6 @@ fn gen_fisso_vecchio(dir: &Path) -> Spec {
     }
 }
 
-/// Fixed-size set: a side-file fixed-size volume whose database is larger than the displaced part
-/// of the region, upgraded in place ("Aggiorna formato": split > region - 64 KiB, three-part mapping).
 fn gen_fisso_aggiornato(dir: &Path) -> Spec {
     let path = dir.join("fisso-aggiornato.nvault");
     let v = Vault::create_fixed_as(&path, &pw("fisso-aggiornato-pw"), KdfPreset::Fast, 8 << 20, false).unwrap();
@@ -680,8 +621,6 @@ fn gen_fisso_aggiornato(dir: &Path) -> Spec {
     }
 }
 
-/// Fixed-size set: a new fixed-size single-file volume of 6 MiB extended to 10 MiB (records of the
-/// new capacity) after its first files, then written again.
 fn gen_fisso_esteso(dir: &Path) -> Spec {
     let path = dir.join("fisso-esteso.nvault");
     let v = Vault::create_fixed(&path, &pw("fisso-esteso-pw"), KdfPreset::Fast, 6 << 20).unwrap();
@@ -708,12 +647,10 @@ fn gen_fisso_esteso(dir: &Path) -> Spec {
     }
 }
 
-/// Fixed-size set: `fisso-interrotto.nvault`, made by nv-core's `gen_interrupted_fixed_fixture`.
 fn gen_fisso_interrotto(dir: &Path) -> Spec {
     let src = std::env::var("NV_INTERRUPTED_FIXED").expect("NV_INTERRUPTED_FIXED: see the module docs");
     std::fs::copy(src, dir.join("fisso-interrotto.nvault")).unwrap();
     let mut c = BTreeMap::new();
-    // = nv-core single_tests::interrupted_fixed_committed (same pat)
     c.insert("tenuto.bin".to_owned(), pat(40, 700_000));
     c.insert("piccolo.txt".to_owned(), b"resta com'era\n".to_vec());
     c.insert("pieno/riempitivo.bin".to_owned(), pat(52, 3_400_000));
@@ -731,7 +668,6 @@ fn gen_fisso_interrotto(dir: &Path) -> Spec {
     }
 }
 
-/// "Aggiorna formato" on a generated (closed) volume.
 fn upgrade(dir: &Path, s: &Spec) {
     let v = Vault::open(&dir.join(s.file), &pw(s.passwords[0].1)).unwrap();
     assert!(v.upgrade_format().unwrap(), "{}", s.file);
@@ -786,6 +722,5 @@ fn generate_compat_fixtures() {
     std::fs::write(out.join("manifest.json"), serde_json::to_string_pretty(&manifest).unwrap() + "\n").unwrap();
     let total: u64 = std::fs::read_dir(&out).unwrap().flatten().map(|e| e.metadata().unwrap().len()).sum();
     println!("fixture set {} written: {total} bytes", out.display());
-    // (single-file volumes carry a 4 MiB region, fixed-size ones their whole capacity: mostly zeros, small in git)
     assert!(total < if single || fixed { 40 << 20 } else { 5 << 20 }, "fixture set too large: {total} bytes");
 }

@@ -1,8 +1,3 @@
-<!--
-  What a file looks like lying on the page. A photograph is a print (decrypted in
-  memory via nvault://, framed by its white border); anything else is a sheet of
-  paper with its type printed on it. Folders are drawn by FolderPeek.
--->
 <script lang="ts">
   import { previewUrl } from '../lib/api';
   import { extension, fileType } from '../lib/filetype';
@@ -11,17 +6,13 @@
   import { decodeMedia } from '../lib/reveal';
   import { videoThumb, videoThumbSettled } from '../lib/videoThumb';
 
-  /** a video frame that ran out of time is asked again after this (lib/videoThumb.ts) */
   const RETRY_MS = 1500;
 
   let { vault, node, size = 40, px }: { vault: VaultId; node: FsNode; size?: number; px?: number } = $props();
 
   const type = $derived(fileType(node));
-  // the largest size asked so far: growing the tiles loads a sharper picture once, shrinking
-  // keeps the one already shown (no reload, no decode again)
   let shown = 0;
   const want = $derived.by(() => (px ? (shown = Math.max(shown, px)) : 0));
-  // a video: a frame made by the webview once the tile is on screen (lib/videoThumb.ts)
   let frame = $state<string | null>(null);
   let box: HTMLElement | undefined = $state();
   $effect(() => {
@@ -38,8 +29,6 @@
         if (a.signal.aborted) return;
         frame = u;
         if (u || videoThumbSettled(vault, node)) return io.disconnect();
-        // ran out of time (the webview's player was busy: a video playing in the preview):
-        // asked again while the tile (or the dock's frame) is still on screen
         ac = null;
         again = setTimeout(() => on && !ac && ask(), RETRY_MS);
       });
@@ -62,7 +51,6 @@
   const src = $derived(type === 'image' ? previewUrl(vault, node.id, want || undefined) : type === 'video' ? (frame ?? '') : '');
   let failed = $state(false);
   const ext = $derived(node.kind === 'file' ? extension(node.name) : '');
-  // landscape sheets for things that are seen rather than read
   const wide = $derived(type === 'video' || type === 'presentation');
 </script>
 
@@ -88,7 +76,6 @@
     justify-content: center;
   }
 
-  /* a print: the photograph and its white border, lying on the paper */
   .print {
     --ascii-surface: var(--print-develop);
     position: absolute;
@@ -111,7 +98,6 @@
     display: block;
   }
 
-  /* a film's frame: a small round play mark in its middle */
   .play-mark {
     position: absolute;
     left: 50%;
@@ -134,7 +120,6 @@
     clip-path: polygon(0 0, 100% 50%, 0 100%);
   }
 
-  /* a sheet: ivory, a folded corner, the type printed in the mono */
   .paper-file {
     position: relative;
     height: 100%;
@@ -158,7 +143,6 @@
     width: 82%;
     aspect-ratio: 1.45;
   }
-  /* the dog-ear */
   .paper-file::after {
     content: '';
     position: absolute;

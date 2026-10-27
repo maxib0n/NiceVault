@@ -1,14 +1,3 @@
-//! Grid thumbnails at the size they are shown: `nvault://<vault>/<node>?thumb=<px>` answers a
-//! JPEG (PNG when the picture has transparency) whose longer side is at most `px`, decoded,
-//! oriented (EXIF) and scaled in memory. The UI asks for the bucket matching the tile size and
-//! the device pixel ratio (S/M/L/XL), so a folder of 24-megapixel photos does not decode 24
-//! megapixels per tile. Kept in a small in-memory cache per open volume, wiped when it locks;
-//! nothing touches disk. Anything that cannot be thumbnailed (not an image, too big, an
-//! animation, already small) falls back to the original bytes (preview.rs).
-//! `?fit=<px>`: the same for a picture looked at whole (quick look): sized to the window
-//! (FIT_BUCKETS), resampled with Lanczos and kept at JPEG quality 92, so a 12-megapixel photo is
-//! not decoded and uploaded to the GPU at full size to be shown at a twelfth of it.
-
 use crate::state::lock_or_recover;
 use image::{DynamicImage, ImageDecoder, ImageReader, Limits};
 use nv_core::Vault;
@@ -17,30 +6,22 @@ use std::collections::VecDeque;
 use std::io::Cursor;
 use std::sync::{Condvar, Mutex};
 
-/// Sizes a thumbnail can have (longer side, device px); requests are rounded up to one.
 pub const BUCKETS: [u32; 6] = [128, 256, 384, 512, 768, 1024];
-/// Sizes of a `fit` request (longer side, device px).
 pub const FIT_BUCKETS: [u32; 4] = [1280, 1600, 2048, 2560];
-/// Marks a `fit` size in a cache entry / a request (`px | FIT`).
 pub const FIT: u32 = 1 << 31;
-/// Source images larger than this are served as they are.
 const MAX_SOURCE: u64 = 48 << 20;
-/// Memory for cached thumbnails (all volumes).
 const CACHE_BYTES: usize = 48 << 20;
-/// Decodes running at once (a big JPEG takes ~4 bytes per pixel while it is scaled).
 const PARALLEL: usize = 3;
 
 pub fn bucket(px: u32) -> u32 {
     BUCKETS.iter().copied().find(|&b| b >= px).unwrap_or(BUCKETS[BUCKETS.len() - 1])
 }
 
-/// `fit=<px>` in a query string, as `bucket | FIT`; None past the largest bucket (the original).
 pub fn requested_fit(query: Option<&str>) -> Option<u32> {
     let px = query?.split('&').find_map(|kv| kv.strip_prefix("fit=")).and_then(|v| v.parse::<u32>().ok()).filter(|&p| p > 0)?;
     FIT_BUCKETS.iter().copied().find(|&b| b >= px).map(|b| b | FIT)
 }
 
-/// `thumb=<px>` in a query string.
 pub fn requested(query: Option<&str>) -> Option<u32> {
     query?.split('&').find_map(|kv| kv.strip_prefix("thumb=")).and_then(|v| v.parse::<u32>().ok()).filter(|&p| p > 0).map(bucket)
 }
@@ -58,7 +39,6 @@ struct Entry {
 static CACHE: Mutex<VecDeque<Entry>> = Mutex::new(VecDeque::new());
 static SLOTS: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
 
-/// Drops every cached thumbnail of a volume (it locked).
 pub fn forget_vault(vault: &str) {
     lock_or_recover(&CACHE).retain(|e| e.vault != vault);
 }
@@ -81,7 +61,6 @@ fn remember(vault: &str, n: &Node, px: u32, mime: &'static str, bytes: &[u8]) {
     }
 }
 
-/// The thumbnail of image node `n`, or None (serve the original).
 pub fn thumbnail(vault_id: &str, v: &Vault, n: &Node, px: u32) -> Option<(Vec<u8>, &'static str)> {
     if n.size == 0 || n.size > MAX_SOURCE {
         return None;
@@ -89,7 +68,6 @@ pub fn thumbnail(vault_id: &str, v: &Vault, n: &Node, px: u32) -> Option<(Vec<u8
     if let Some(hit) = cached(vault_id, n, px) {
         return Some(hit);
     }
-    // a few at a time: the webview asks for a whole folder at once
     {
         let mut busy = lock_or_recover(&SLOTS.0);
         while *busy >= PARALLEL {
@@ -121,7 +99,6 @@ pub fn thumbnail(vault_id: &str, v: &Vault, n: &Node, px: u32) -> Option<(Vec<u8
     r
 }
 
-/// Whether `scale` / `scale_fine` read this format (JPEG, PNG, WebP, BMP).
 fn decodable(src: &[u8]) -> bool {
     ImageReader::new(Cursor::new(src))
         .with_guessed_format()
@@ -130,9 +107,6 @@ fn decodable(src: &[u8]) -> bool {
         .is_some_and(|f| matches!(f, image::ImageFormat::Jpeg | image::ImageFormat::Png | image::ImageFormat::WebP | image::ImageFormat::Bmp))
 }
 
-/// A picture the `image` crate cannot read (HEIC/HEIF, AVIF, TIFF, DNG) made small by the
-/// system: on iOS ImageIO (app/ios NvThumb.swift), as a JPEG. Elsewhere None (the original is
-/// served; a desktop web view cannot show a HEIC anyway and draws the sheet).
 #[cfg(target_os = "ios")]
 fn native(src: &[u8], px: u32) -> Option<(Vec<u8>, &'static str)> {
     unsafe extern "C" {
@@ -140,8 +114,6 @@ fn native(src: &[u8], px: u32) -> Option<(Vec<u8>, &'static str)> {
         fn nv_imageio_free(p: *mut u8, len: usize);
     }
     let mut n = 0usize;
-    // SAFETY: `src` is valid for `len` bytes for the call (ImageIO reads it without keeping it);
-    // the returned buffer of `n` bytes is ours until `nv_imageio_free`.
     unsafe {
         let p = nv_imageio_thumbnail(src.as_ptr(), src.len(), px, &mut n);
         if p.is_null() || n == 0 {
@@ -158,13 +130,10 @@ fn native(_src: &[u8], _px: u32) -> Option<(Vec<u8>, &'static str)> {
     None
 }
 
-/// Decodes `src` (JPEG, PNG, WebP, BMP), applies its EXIF orientation and scales it so the
-/// longer side is `px`; None when it is not one of those, is already that small, or is animated.
 pub fn scale(src: &[u8], px: u32) -> Option<(Vec<u8>, &'static str)> {
     resample(src, px, false)
 }
 
-/// `scale` for a picture looked at whole: Lanczos resampling, JPEG quality 92.
 pub fn scale_fine(src: &[u8], px: u32) -> Option<(Vec<u8>, &'static str)> {
     resample(src, px, true)
 }
@@ -176,7 +145,7 @@ fn resample(src: &[u8], px: u32, fine: bool) -> Option<(Vec<u8>, &'static str)> 
         return None;
     }
     if format == image::ImageFormat::Png && src.windows(4).take(4096).any(|w| w == b"acTL") {
-        return None; // animated PNG: keep it moving
+        return None;
     }
     let mut limits = Limits::default();
     limits.max_image_width = Some(30_000);
@@ -227,7 +196,6 @@ mod tests {
 
     #[test]
     fn heic_goes_to_the_system() {
-        // an ftyp/heic box: not something `image` reads, so it goes to `native` (ImageIO on iOS)
         let heic = [&[0, 0, 0, 24][..], b"ftypheic", &[0, 0, 0, 0], b"mif1heic"].concat();
         assert!(!decodable(&heic));
         let mut jpg = Cursor::new(Vec::new());

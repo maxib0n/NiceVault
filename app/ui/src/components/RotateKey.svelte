@@ -1,12 +1,3 @@
-<!--
-  "Ruota la chiave del volume" (slot_rotate_key): the whole volume is encrypted again under a new
-  master key, so no old copy of its header opens what is written from now on. Three steps in one
-  sheet: 1 what it does, what it needs (free space as large as the volume) and what it costs (only
-  the password typed here stays); 2 which password stays and that password; 3 the work (one call,
-  no progress events: the rosette's lathes turn and the elapsed time counts, no made-up
-  percentage), then done. The sheet cannot be closed while the volume is being written.
-  Hooks: [data-testid=rotate-key] data-step=1|2|3, [data-testid=rotate-done].
--->
 <script lang="ts">
   import { KeyRound, RotateCcwKey, TriangleAlert } from '@lucide/svelte';
   import { onDestroy } from 'svelte';
@@ -47,7 +38,6 @@
   let timer: ReturnType<typeof setInterval> | undefined;
   let wasOpen = false;
 
-  /** the keys a rotation can keep: password slots (a self-destruct password never) */
   const keepable = $derived(slots.filter((s) => s.kind === 'password'));
   const nameOf = (s: SlotInfo | undefined) => s?.label || m.slot_password();
 
@@ -63,7 +53,6 @@
     wasOpen = open;
   });
 
-  // free space: the new copy is written beside the volume before it replaces it
   const need = $derived(stats?.file_size_bytes ?? 0);
   const free = $derived(stats?.free_bytes);
   const roomy = $derived(free === undefined || free >= need);
@@ -134,7 +123,6 @@
       {#if error}<p class="error-text" role="alert">{error}</p>{/if}
     {:else}
       <div class="work" aria-live="polite" data-done={!!done}>
-        <!-- the lathes turn while the volume is written again; they stop when it is done -->
         <span class="seal" class:turning={busy} aria-hidden="true"><Rosette size={92} kind="seal"><RotateCcwKey size={24} strokeWidth={1.4} /></Rosette></span>
         {#if done}
           <p class="done display" data-testid="rotate-done">{m.rot_done()}</p>
@@ -166,7 +154,6 @@
     flex-direction: column;
     gap: var(--space-3);
   }
-  /* what it costs, one line each, its mark in the margin */
   .terms {
     list-style: none;
     margin: 0;
@@ -261,7 +248,6 @@
     margin-bottom: var(--space-2);
     color: var(--accent);
   }
-  /* the lathes turn (a transform on their two canvases: nothing else restyles) */
   .seal.turning :global(.lathe-a) {
     animation: lathe-a 4.8s linear infinite;
   }

@@ -1,12 +1,4 @@
-// Saddle stitching, the way a hand sews it: a needle line (a track) pricked at an even pitch,
-// one length of thread between each pair of holes. The track follows the edge it runs along,
-// corners included (straight runs and circular arcs), so a stitch through a curve is as long as
-// one on a straight; a closed track takes a whole number of stitches, so no stitch is ever cut,
-// and an open one (a seam) ends on a whole stitch at both ends, centred on its length.
-// Pure geometry: drawn on canvas (print.ts drawStitches) or as SVG (Stitch.svelte).
-
 export type Pt = [number, number];
-/** One stitch: from (x0, y0) to (x1, y1). */
 export type Seg = [number, number, number, number];
 
 interface Line {
@@ -22,14 +14,12 @@ interface Arc {
   cx: number;
   cy: number;
   r: number;
-  /** start angle and sweep (radians; positive = clockwise on screen) */
   a0: number;
   da: number;
   len: number;
 }
 type Piece = Line | Arc;
 
-/** A needle line: straight runs and arcs, walked by arc length. */
 export class Track {
   readonly pieces: Piece[] = [];
   readonly closed: boolean;
@@ -53,7 +43,6 @@ export class Track {
     return this;
   }
 
-  /** Point and unit tangent at arc length `s` (wrapped on a closed track, clamped on an open one). */
   at(s: number): [number, number, number, number] {
     const L = this.length;
     if (this.closed) s = ((s % L) + L) % L;
@@ -73,7 +62,6 @@ export class Track {
     return [0, 0, 1, 0];
   }
 
-  /** The track as SVG path data (the groove the pricking iron pressed). */
   svg(): string {
     const f = (v: number) => (Math.round(v * 100) / 100).toString();
     let d = '';
@@ -93,7 +81,6 @@ export class Track {
     return this.closed && d ? d + 'Z' : d;
   }
 
-  /** Strokes the track on a canvas path. */
   trace(path: Path2D | CanvasRenderingContext2D): void {
     let first = true;
     for (const p of this.pieces) {
@@ -113,13 +100,8 @@ export class Track {
   }
 }
 
-/** Corner radii, clockwise from the top-left. */
 export type Radii = number | [number, number, number, number];
 
-/**
- * A closed track round a box, clockwise from the top edge, each corner a quarter circle of its
- * own radius (clamped so two corners never overlap).
- */
 export function roundRect(x: number, y: number, w: number, h: number, radii: Radii): Track {
   const r = typeof radii === 'number' ? [radii, radii, radii, radii] : radii;
   const k = Math.min(1, w / Math.max(1e-6, Math.max(r[0] + r[1], r[3] + r[2])), h / Math.max(1e-6, Math.max(r[0] + r[3], r[1] + r[2])));
@@ -136,28 +118,18 @@ export function roundRect(x: number, y: number, w: number, h: number, radii: Rad
     .arc(x + tl, y + tl, tl, Math.PI, H);
 }
 
-/** An open track: a straight seam. */
 export function seam(x0: number, y0: number, x1: number, y1: number): Track {
   return new Track(false).line(x0, y0, x1, y1);
 }
 
 export interface StitchSpec {
-  /** thread length of one stitch, px (the wanted value: the pitch is evened out) */
   len: number;
-  /** the space between two stitches, px */
   gap: number;
-  /** the stitch leans across the needle line by this much (radians) */
   slant?: number;
-  /** open tracks: room left at each end before the first hole, px */
   margin?: number;
-  /** closed tracks: arc length where the first stitch is centred (default: the top's middle) */
   start?: number;
 }
 
-/**
- * The stitches along `track`: an even pitch that fits a whole number of stitches; each one the
- * straight length of thread between its two holes, leaning by `slant` round its middle.
- */
 export function stitches(track: Track, spec: StitchSpec): Seg[] {
   const L = track.length;
   const pitch0 = spec.len + spec.gap;
@@ -176,7 +148,6 @@ export function stitches(track: Track, spec: StitchSpec): Seg[] {
     const margin = spec.margin ?? spec.gap;
     const room = L - 2 * margin;
     n = Math.max(1, Math.floor((room + spec.gap) / pitch0));
-    // the pitch stays as asked; what is left over is shared by both ends
     pitch = pitch0;
     s0 = margin + (room - (n * pitch - spec.gap)) / 2;
   }
@@ -204,7 +175,6 @@ export function stitches(track: Track, spec: StitchSpec): Seg[] {
   return out;
 }
 
-/** The stitches as SVG path data, moved by (dx, dy) and shortened by `shrink` (a fraction) at each end. */
 export function stitchPath(segs: Seg[], dx = 0, dy = 0, shrink = 0): string {
   const f = (v: number) => (Math.round(v * 100) / 100).toString();
   let d = '';

@@ -1,6 +1,3 @@
-// The phone's floating keys: the clasp's Blocca disc never sits over a row's size or a tile caption;
-// the Importa key floats over the page (no gutter is kept for it) and, scrolled to the end,
-// covers nothing; the last row is reachable above the clasp; the disc wears no light ring.
 import { boot, expect, fileList, listed, test } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -20,7 +17,6 @@ for (const view of ['list', 'grid']) {
           const hit = await page.evaluate(
             ([x, y, w, h]) => {
               const out: string[] = [];
-              // only what the scroller shows counts: a row scrolled under the status bar is clipped
               const view = document.querySelector('.file-view')!.getBoundingClientRect();
               document.querySelectorAll('.file-item .size, .file-item .meta-text, .file-item .name').forEach((e) => {
                 const r = e.getBoundingClientRect();
@@ -34,11 +30,9 @@ for (const view of ['list', 'grid']) {
         }
       }).toPass();
     }
-    // scrolled to the end: the last row ends above the clasp's disc
     const k = (await lock.boundingBox())!;
     const last = (await page.locator('.file-view .file-item').last().boundingBox())!;
     expect(last.y + last.height).toBeLessThanOrEqual(k.y);
-    // no light ring: the disc's shadows hold nothing white
     const shadow = await lock.evaluate((e) => getComputedStyle(e).boxShadow);
     expect(shadow).not.toMatch(/rgba?\(255, 255, 255/);
   });

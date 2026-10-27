@@ -68,7 +68,6 @@ describe('i18n', () => {
     expect(keys(itCat)).toEqual(keys(enCat));
     const params = (v: unknown) => [...JSON.stringify(v).matchAll(/\{(\w+)\}/g)].map((x) => x[1]).sort().join();
     for (const k of keys(itCat)) expect(params((enCat as Record<string, unknown>)[k]), k).toBe(params((itCat as Record<string, unknown>)[k]));
-    // no message left empty, none still in Italian in the English file by mistake
     for (const k of keys(enCat)) expect(JSON.stringify((enCat as Record<string, unknown>)[k])).not.toMatch(/""|\b(della|questo|volume è)\b/);
   });
 });

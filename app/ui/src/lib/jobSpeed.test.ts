@@ -7,7 +7,7 @@ describe('job speed', () => {
     expect(r.rate).toBeNull();
     for (let t = 500; t <= 1500; t += 500) feedRate(r, t, (t / 1000) * 10e6);
     expect(r.rate).toBeCloseTo(10e6, -3);
-    expect(etaSeconds(r, 100e6)).toBeNull(); // 1.5 s in
+    expect(etaSeconds(r, 100e6)).toBeNull();
     feedRate(r, 2000, 20e6);
     expect(etaSeconds(r, 100e6)).toBeCloseTo(8, 0);
   });
@@ -16,7 +16,7 @@ describe('job speed', () => {
     const r = startRate(0);
     for (let t = 500; t <= 5000; t += 500) feedRate(r, t, t * 10e3);
     const before = r.rate!;
-    feedRate(r, 5500, r.done + 1e6); // 2 MB/s for half a second
+    feedRate(r, 5500, r.done + 1e6);
     expect(r.rate!).toBeLessThan(before);
     expect(r.rate!).toBeGreaterThan(2e6 * 3);
     for (let i = 1; i <= 40; i++) feedRate(r, 5500 + i * 500, r.done + 1e6);
@@ -28,10 +28,10 @@ describe('job speed', () => {
     expect(etaSeconds(r, 10)).toBeNull();
     feedRate(r, 1000, 0);
     feedRate(r, 3000, 0);
-    expect(etaSeconds(r, 100)).toBeNull(); // no speed
+    expect(etaSeconds(r, 100)).toBeNull();
     feedRate(r, 4000, 100);
-    expect(etaSeconds(r, 100)).toBeNull(); // done
-    feedRate(r, 4000, 50); // same instant: ignored
+    expect(etaSeconds(r, 100)).toBeNull();
+    feedRate(r, 4000, 50);
     expect(r.done).toBe(100);
   });
 

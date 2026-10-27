@@ -1,28 +1,3 @@
-//! Self-update for the bare portable builds (Linux binary, single Windows .exe, macOS .app zip).
-//!
-//! tauri-plugin-updater only installs AppImage / NSIS / MSI / .app.tar.gz, so this is a small
-//! custom one with the same trust model (minisign, Tauri's `latest.json`):
-//!   1. GET latest.json (the one URL in tauri.conf.json `plugins.updater.endpoints`: an asset of
-//!      the public GitHub release, any static HTTPS host works; plain GET, no token, no
-//!      cookies, no telemetry);
-//!   2. pick `platforms[<os>-<arch>]`, compare semver with this build;
-//!   3. download the artefact (its URL must have the manifest's origin; redirects, e.g. GitHub's
-//!      to its asset CDN, are followed but must stay HTTPS);
-//!   4. verify the minisign signature of the file against the public key in tauri.conf.json;
-//!   5. replace the running executable where it is (USB stick included): write `<name>.new`
-//!      next to it, fsync, keep the current one as `<name>.old`, rename the new one in.
-//!      macOS: the whole `X.app` bundle is swapped (`X.app.old` kept), files byte-identical to
-//!      the signed zip so the ad-hoc signature stays valid). Running from an AppImage, the target
-//!      is the .AppImage file itself ($APPIMAGE; the mounted binary is read-only) and the
-//!      manifest key is `linux-x86_64-appimage`. When the location is not writable
-//!      (installed system-wide) the verified artefact goes to the Downloads folder instead.
-//!
-//! Preferences (check at start on/off, last check): `updater.json` in the OS config dir when
-//! installed; in memory only when portable (nothing on the stick).
-//!
-//! Test / dev overrides (environment): NICEVAULT_UPDATE_URL (manifest URL; https, or http on
-//! 127.0.0.1 / localhost).
-
 use crate::error::{ApiError, ApiResult};
 use minisign_verify::{PublicKey, Signature};
 use serde::{Deserialize, Serialize};
@@ -36,9 +11,6 @@ const PREFS_FILE: &str = "updater.json";
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 const MAX_MANIFEST: u64 = 1 << 20;
 const MAX_ARTIFACT: u64 = 1 << 30;
-
-// ---------------------------------------------------------------------------------------------
-// configuration (tauri.conf.json `plugins.updater`: the one place the project and key live)
 
 #[derive(Deserialize)]
 struct ConfFile {
@@ -54,13 +26,11 @@ struct ConfUpdater {
     endpoints: Vec<String>,
 }
 
-/// (manifest URL, base64 public key) from the embedded tauri.conf.json.
 pub fn embedded_config() -> (String, String) {
     let c: ConfFile = serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json plugins.updater");
     (c.plugins.updater.endpoints[0].clone(), c.plugins.updater.pubkey)
 }
 
-/// `latest.json`'s platform key for this build.
 pub fn platform_key() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => "linux-x86_64",
@@ -73,7 +43,6 @@ pub fn platform_key() -> &'static str {
     }
 }
 
-/// The `.AppImage` this process runs from ($APPIMAGE, set by the AppImage runtime), Linux only.
 pub fn appimage_path() -> Option<PathBuf> {
     if !cfg!(target_os = "linux") {
         return None;
@@ -81,22 +50,16 @@ pub fn appimage_path() -> Option<PathBuf> {
     std::env::var_os("APPIMAGE").map(PathBuf::from).filter(|p| p.is_absolute() && p.is_file())
 }
 
-/// The file that is the app: the AppImage when running from one (current_exe() is then inside
-/// its read-only mount), else the executable.
 pub fn app_exe() -> Option<PathBuf> {
     appimage_path().or_else(|| std::env::current_exe().ok())
 }
 
-/// The manifest key for the way this process runs: Tauri's `<os>-<arch>-appimage` from an AppImage.
 pub fn running_platform() -> String {
     match appimage_path() {
         Some(_) => format!("{}-appimage", platform_key()),
         None => platform_key().to_owned(),
     }
 }
-
-// ---------------------------------------------------------------------------------------------
-// manifest
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Notes {
@@ -143,15 +106,11 @@ pub fn parse_manifest(bytes: &[u8]) -> ApiResult<Manifest> {
     Ok(m)
 }
 
-/// `candidate` is strictly newer than `current` (semver, pre-releases ordered as usual).
 pub fn is_newer(current: &str, candidate: &str) -> ApiResult<bool> {
     let cur = semver::Version::parse(current).map_err(|_| invalid(format!("invalid version: {current}")))?;
     let new = semver::Version::parse(candidate).map_err(|_| invalid(format!("invalid version: {candidate}")))?;
     Ok(new > cur)
 }
-
-// ---------------------------------------------------------------------------------------------
-// signature (Tauri format: base64 of the minisign text files)
 
 fn b64_text(s: &str) -> Option<String> {
     use base64::Engine;
@@ -163,7 +122,6 @@ fn bad_signature() -> ApiError {
     ApiError::new("update_signature", "The update's signature is not valid: it was not installed.")
 }
 
-/// Verifies `data` and returns the signed trusted comment.
 pub fn verify_signature(pubkey_b64: &str, data: &[u8], signature_b64: &str) -> ApiResult<String> {
     let pk = b64_text(pubkey_b64).and_then(|t| PublicKey::decode(&t).ok()).ok_or_else(|| invalid("invalid public key"))?;
     let sig = b64_text(signature_b64).and_then(|t| Signature::decode(&t).ok()).ok_or_else(bad_signature)?;
@@ -171,9 +129,6 @@ pub fn verify_signature(pubkey_b64: &str, data: &[u8], signature_b64: &str) -> A
     Ok(sig.trusted_comment().to_owned())
 }
 
-/// The signed trusted comment (`... version:<v>\tplatform:<k1>,<k2>`, scripts/release.mjs) must
-/// name `version` (the manifest's), our platform, and be newer than `current`: the unsigned
-/// latest.json can no longer serve an old genuine build as an update.
 pub fn check_binding(trusted: &str, version: &str, current: &str, platform: &str) -> ApiResult<()> {
     let field = |k: &str| trusted.split(['\t', ' ']).find_map(|f| f.strip_prefix(k));
     let signed = field("version:").ok_or_else(bad_signature)?;
@@ -183,10 +138,6 @@ pub fn check_binding(trusted: &str, version: &str, current: &str, platform: &str
     Ok(())
 }
 
-/// For "Crea dispositivo" (device/client.rs): the build of another platform, as the manifest
-/// lists it. The signed trusted comment must name exactly the manifest's `version` and
-/// `platform`, and that version must not be older than `min` (the running app): the unsigned
-/// latest.json cannot put an old genuine build on a new device either.
 pub fn check_binding_at_least(trusted: &str, version: &str, min: &str, platform: &str) -> ApiResult<()> {
     let field = |k: &str| trusted.split(['\t', ' ']).find_map(|f| f.strip_prefix(k));
     let signed = field("version:").ok_or_else(bad_signature)?;
@@ -196,29 +147,24 @@ pub fn check_binding_at_least(trusted: &str, version: &str, min: &str, platform:
     Ok(())
 }
 
-/// Version in a signed trusted comment (`version:<v>`), if any.
 pub fn signed_version(trusted: &str) -> Option<String> {
     trusted.split(['\t', ' ']).find_map(|f| f.strip_prefix("version:")).map(str::to_owned)
 }
 
-/// The published file name (the last segment of the URL).
 pub fn artifact_name(url: &str) -> String {
     let name = url.rsplit('/').next().unwrap_or_default();
     if name.is_empty() || name.contains(['\\', ':']) || name == "." || name == ".." { "NiceVault-update".to_owned() } else { name.to_owned() }
 }
 
-/// The manifest URL in use (NICEVAULT_UPDATE_URL overrides the embedded one, tests).
 pub fn manifest_url() -> String {
     std::env::var("NICEVAULT_UPDATE_URL").unwrap_or_else(|_| embedded_config().0)
 }
 
-/// Fetches and parses latest.json (HTTPS only, loopback HTTP for tests).
 pub fn fetch_manifest(url: &str) -> ApiResult<Manifest> {
     check_manifest_url(url)?;
     parse_manifest(&fetch(url, MAX_MANIFEST, Duration::from_secs(30), &mut |_, _| {})?)
 }
 
-/// Downloads one artefact of the manifest and verifies it (origin, signature, binding).
 pub fn fetch_verified(manifest_url: &str, m: &Manifest, platform: &str, pubkey: &str, min: &str, progress: &mut dyn FnMut(u64, Option<u64>)) -> ApiResult<Vec<u8>> {
     let a = m.platforms.get(platform).ok_or_else(|| invalid(format!("no {platform} build in latest.json")))?;
     check_asset_url(manifest_url, &a.url)?;
@@ -228,9 +174,6 @@ pub fn fetch_verified(manifest_url: &str, m: &Manifest, platform: &str, pubkey: 
     Ok(bytes)
 }
 
-// ---------------------------------------------------------------------------------------------
-// network
-
 pub(crate) fn invalid(m: impl Into<String>) -> ApiError {
     ApiError::new("update_invalid", format!("Invalid update: {}", m.into()))
 }
@@ -238,7 +181,6 @@ pub(crate) fn network(e: impl std::fmt::Display) -> ApiError {
     ApiError::new("update_network", format!("Cannot reach the update server ({e})."))
 }
 
-/// (scheme, authority) of an absolute URL.
 pub(crate) fn origin(url: &str) -> Option<(String, String)> {
     let u: ureq::http::Uri = url.parse().ok()?;
     Some((u.scheme_str()?.to_ascii_lowercase(), u.authority()?.as_str().to_ascii_lowercase()))
@@ -249,7 +191,6 @@ pub(crate) fn is_loopback(host_port: &str) -> bool {
     host == "127.0.0.1" || host == "localhost" || host == "[::1]"
 }
 
-/// The manifest URL must be HTTPS (plain HTTP only on loopback, for tests).
 pub fn check_manifest_url(url: &str) -> ApiResult<()> {
     match origin(url) {
         Some((s, _)) if s == "https" => Ok(()),
@@ -258,7 +199,6 @@ pub fn check_manifest_url(url: &str) -> ApiResult<()> {
     }
 }
 
-/// Artefacts are fetched only from the manifest's own origin.
 pub fn check_asset_url(manifest_url: &str, asset_url: &str) -> ApiResult<()> {
     match (origin(manifest_url), origin(asset_url)) {
         (Some(a), Some(b)) if a == b => Ok(()),
@@ -270,7 +210,6 @@ fn agent(https_only: bool, body_timeout: Duration) -> ureq::Agent {
     agent_with(https_only, body_timeout, 5, true)
 }
 
-/// `redirects` = 0: a 3xx is returned as is; `status_errors` = false: 4xx/5xx too (the GitHub API).
 pub(crate) fn agent_with(https_only: bool, body_timeout: Duration, redirects: u32, status_errors: bool) -> ureq::Agent {
     let tls = ureq::tls::TlsConfig::builder().provider(ureq::tls::TlsProvider::NativeTls).build();
     ureq::Agent::config_builder()
@@ -286,14 +225,12 @@ pub(crate) fn agent_with(https_only: bool, body_timeout: Duration, redirects: u3
         .into()
 }
 
-/// GET `url`, at most `max` bytes, `progress(done, total)` while reading.
 pub(crate) fn fetch(url: &str, max: u64, body_timeout: Duration, progress: &mut dyn FnMut(u64, Option<u64>)) -> ApiResult<Vec<u8>> {
     let https_only = origin(url).is_some_and(|(s, _)| s == "https");
     let resp = agent(https_only, body_timeout).get(url).call().map_err(network)?;
     read_body(resp, max, progress)
 }
 
-/// The body of `resp`, at most `max` bytes, `progress(done, total)` while reading.
 pub(crate) fn read_body(mut resp: ureq::http::Response<ureq::Body>, max: u64, progress: &mut dyn FnMut(u64, Option<u64>)) -> ApiResult<Vec<u8>> {
     let total = resp.body().content_length();
     if total.is_some_and(|t| t > max) {
@@ -322,17 +259,12 @@ pub(crate) fn read_body(mut resp: ureq::http::Response<ureq::Body>, max: u64, pr
     Ok(out)
 }
 
-// ---------------------------------------------------------------------------------------------
-// in-place replacement
-
-/// What gets replaced: the executable itself, or (macOS) the `.app` bundle around it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     File(PathBuf),
     Bundle(PathBuf),
 }
 
-/// `zip` artefacts are macOS bundles: the `X.app` that contains `exe` (X.app/Contents/MacOS/bin).
 pub fn target_for(exe: &Path, artifact_is_zip: bool) -> ApiResult<Target> {
     if !artifact_is_zip {
         return Ok(Target::File(exe.to_path_buf()));
@@ -352,13 +284,11 @@ impl Target {
             Target::File(p) | Target::Bundle(p) => p,
         }
     }
-    /// The folder the swap happens in can be written.
     pub fn writable(&self) -> bool {
         self.path().parent().is_some_and(crate::store::dir_writable)
     }
 }
 
-/// `<path>` + suffix (`NiceVault.exe` -> `NiceVault.exe.old`).
 pub fn sibling(path: &Path, suffix: &str) -> PathBuf {
     let mut s = path.as_os_str().to_owned();
     s.push(suffix);
@@ -384,13 +314,9 @@ fn sync_dir(_dir: &Path) {
     }
 }
 
-/// Puts `staged` at `target`, keeping the current one as `<target>.old`. On failure the
-/// original is back at `target`. Works on a running executable on every OS: Windows lets a
-/// running exe be renamed (not overwritten), Unix keeps the old inode mapped.
 pub fn swap_in(target: &Path, staged: &Path) -> std::io::Result<()> {
     let old = sibling(target, ".old");
     remove_any(&old);
-    // Unix files: hard-link the current one to .old, then one atomic rename over it.
     #[cfg(unix)]
     if std::fs::symlink_metadata(target).is_ok_and(|m| m.is_file()) && std::fs::hard_link(target, &old).is_ok() {
         let r = std::fs::rename(staged, target);
@@ -402,7 +328,6 @@ pub fn swap_in(target: &Path, staged: &Path) -> std::io::Result<()> {
         }
         return r;
     }
-    // Everywhere else (Windows, FAT sticks, bundles): move the current one away, then the new one in.
     std::fs::rename(target, &old)?;
     if let Err(e) = std::fs::rename(staged, target) {
         let _ = std::fs::rename(&old, target);
@@ -414,7 +339,6 @@ pub fn swap_in(target: &Path, staged: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Writes `bytes` as the new executable next to `exe` and swaps it in.
 pub fn replace_file(exe: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let staged = sibling(exe, ".new");
     remove_any(&staged);
@@ -437,7 +361,6 @@ pub fn replace_file(exe: &Path, bytes: &[u8]) -> std::io::Result<()> {
     res
 }
 
-/// Unpacks the zip's single top-level `*.app` into `dest` (which becomes that bundle).
 pub fn extract_bundle(zip_bytes: &[u8], dest: &Path) -> std::io::Result<()> {
     use std::io::{Error, ErrorKind};
     let bad = |m: &str| Error::new(ErrorKind::InvalidData, m.to_owned());
@@ -454,8 +377,6 @@ pub fn extract_bundle(zip_bytes: &[u8], dest: &Path) -> std::io::Result<()> {
         }
         seen_app = true;
         let rel: PathBuf = parts.collect();
-        // Nothing is ever written THROUGH a symlink: every folder on the way to
-        // `out` that already exists must be a real folder, and files are created new and not followed.
         let mut at = dest.to_path_buf();
         for c in rel.parent().into_iter().flat_map(Path::components) {
             at.push(c);
@@ -474,9 +395,6 @@ pub fn extract_bundle(zip_bytes: &[u8], dest: &Path) -> std::io::Result<()> {
         if entry.is_symlink() {
             let mut link = String::new();
             entry.take(4096).read_to_string(&mut link)?;
-            // Only links that point down from their own folder (`Versions/Current -> A`,
-            // `Foo -> Versions/Current/Foo`): a chain of such links stays inside the bundle,
-            // whatever order the entries come in. No `..`, no absolute target.
             let target = Path::new(&link);
             if link.is_empty() || !target.components().all(|c| matches!(c, std::path::Component::Normal(_))) {
                 return Err(bad("symlink leaves its folder"));
@@ -507,7 +425,6 @@ pub fn extract_bundle(zip_bytes: &[u8], dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Swaps the `.app` at `bundle` for the one in `zip_bytes` (bundle name kept, `<X.app>.old` kept).
 pub fn replace_bundle(bundle: &Path, zip_bytes: &[u8]) -> std::io::Result<()> {
     let staged = sibling(bundle, ".new");
     remove_any(&staged);
@@ -518,13 +435,9 @@ pub fn replace_bundle(bundle: &Path, zip_bytes: &[u8]) -> std::io::Result<()> {
     res
 }
 
-// ---------------------------------------------------------------------------------------------
-// the updater
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Prefs {
     pub check_on_start: bool,
-    /// Unix ms of the last successful check.
     pub last_check: Option<u64>,
 }
 
@@ -532,14 +445,12 @@ pub struct Prefs {
 pub struct PrefsView {
     pub check_on_start: bool,
     pub last_check: Option<u64>,
-    /// true = kept in memory only (running from a stick).
     pub portable: bool,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum UpdateStatus {
-    /// Automatic check not due (disabled, or done in the last 24 hours).
     Skipped,
     UpToDate { current: String },
     Available { current: String, version: String, notes: Notes, pub_date: Option<String> },
@@ -548,9 +459,7 @@ pub enum UpdateStatus {
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum InstallOutcome {
-    /// Replaced in place: restart to use it.
     Replaced { path: String },
-    /// The app's location is not writable: the verified file is here.
     Downloaded { path: String },
 }
 
@@ -559,12 +468,9 @@ pub struct UpdaterConfig {
     pub pubkey: String,
     pub current_version: String,
     pub platform: String,
-    /// The running executable, captured at start (Linux renames make current_exe() lie later).
     pub exe: PathBuf,
-    /// `None` = portable: preferences in memory only.
     pub config_dir: Option<PathBuf>,
     pub downloads_dir: Option<PathBuf>,
-    /// false (dev builds) = never touch the executable, always go to Downloads.
     pub in_place: bool,
 }
 
@@ -587,7 +493,6 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Updater {
-    /// The real app: config from tauri.conf.json, preferences from `config_dir` (None = portable).
     pub fn for_app(config_dir: Option<PathBuf>) -> Updater {
         let (url, pubkey) = embedded_config();
         Updater::new(UpdaterConfig {
@@ -633,7 +538,6 @@ impl Updater {
         self.prefs()
     }
 
-    /// `auto`: the check at start, skipped when disabled or done less than a day ago.
     pub fn check(&self, auto: bool, now_ms: u64) -> ApiResult<UpdateStatus> {
         if auto {
             let p = lock(&self.prefs).clone();
@@ -664,7 +568,6 @@ impl Updater {
         }
     }
 
-    /// Downloads and verifies the update found by the last `check`. Nothing is written yet.
     pub fn download(&self, progress: &mut dyn FnMut(u64, Option<u64>)) -> ApiResult<()> {
         let (version, asset) =
             lock(&self.available).clone().ok_or_else(|| ApiError::new("update_none", "No update to download."))?;
@@ -676,7 +579,6 @@ impl Updater {
         Ok(())
     }
 
-    /// Puts the downloaded update in place (or in Downloads when that is not possible).
     pub fn install(&self) -> ApiResult<InstallOutcome> {
         let staged = lock(&self.staged).take().ok_or_else(|| ApiError::new("update_none", "Download the update first."))?;
         let is_zip = staged.file_name.to_ascii_lowercase().ends_with(".zip");
@@ -724,7 +626,6 @@ impl Updater {
         Ok(InstallOutcome::Downloaded { path: dest.to_string_lossy().into_owned() })
     }
 
-    /// Starts the updated app (same path as this one). The caller then exits.
     pub fn spawn_updated(&self) -> ApiResult<()> {
         if !*lock(&self.installed) {
             return Err(ApiError::new("update_none", "No update installed."));
@@ -739,9 +640,6 @@ impl Updater {
 pub fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
-
-// ---------------------------------------------------------------------------------------------
-// Tauri commands (contract: app/ui/src/lib/api.ts)
 
 pub mod cmd {
     use super::*;
@@ -784,7 +682,6 @@ pub mod cmd {
     #[tauri::command(rename_all = "snake_case")]
     pub async fn update_restart(app: tauri::AppHandle, st: St<'_>) -> ApiResult<()> {
         blocking(&st, |u| u.spawn_updated()).await?;
-        // RunEvent::Exit locks every volume before the process ends.
         app.exit(0);
         Ok(())
     }
@@ -799,8 +696,6 @@ pub mod cmd {
         blocking(&st, move |u| Ok(u.set_check_on_start(check_on_start))).await
     }
 }
-
-// ---------------------------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -843,7 +738,6 @@ mod tests {
         assert_eq!(m.version, "0.2.0");
         assert_eq!(m.notes(), Notes { it: "novita".into(), en: "news".into() });
         assert_eq!(m.platforms["darwin-aarch64"].url, "https://h/m.zip");
-        // notes only in English: Italian falls back to it
         let m = parse_manifest(br#"{"version":"1.0.0","notes":"only en","platforms":{}}"#).unwrap();
         assert_eq!(m.notes().it, "only en");
         assert!(parse_manifest(br#"{"version":"one","platforms":{}}"#).is_err());

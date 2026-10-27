@@ -1,5 +1,3 @@
-<!-- Phone layout only (styles/mobile.css): "Indietro" above a detail that, on a phone, takes the
-     place of its list. Hidden everywhere else; its presence tells mobile.css a detail is shown. -->
 <script lang="ts">
   import { ArrowLeft } from '@lucide/svelte';
   import { m } from '../paraglide/messages.js';

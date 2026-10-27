@@ -1,5 +1,3 @@
-// node scripts/set-version.mjs            print the version and the files that carry it
-// node scripts/set-version.mjs X.Y.Z      set it everywhere (then `cargo metadata` refreshes Cargo.lock)
 import { allVersions, currentVersion, writeVersion } from "./version-files.mjs";
 
 const next = process.argv[2];

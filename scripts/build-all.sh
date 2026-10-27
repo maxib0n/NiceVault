@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# Build NiceVault for Linux x86_64, Windows x86_64 and macOS (universal) from a Linux box.
-#
-#   scripts/build-all.sh                 # everything
-#   scripts/build-all.sh windows macos   # a subset (linux | windows | macos)
-#   NV_SKIP_UI=1 scripts/build-all.sh    # reuse the existing app/ui/dist
-#
-# Outputs (dist/, gitignored):
-#   dist/NiceVault-linux-x86_64.AppImage  self-contained (WebKitGTK inside); the stick carries this one
-#   dist/NiceVault-linux-x86_64.tar.gz    the bare binary (needs the system's WebKitGTK 4.1)
-#   dist/NiceVault-linux-x86_64           the same binary, what the bare-binary build self-updates from
-#   dist/NiceVault-windows-x86_64.exe     single exe, WebView2 loader linked in, WinFsp loaded at runtime
-#   dist/NiceVault-windows-x86_64.zip     the exe, zipped, for the website
-#   dist/NiceVault-macos-universal.zip    NiceVault.app (arm64 + x86_64), ad-hoc signed
-#   dist/SHA256SUMS
-# Prerequisites and the environment this sets: scripts/BUILD.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,14 +6,10 @@ CROSS="$ROOT/scripts/cross"
 DIST="${NV_DIST_DIR:-$ROOT/dist}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target-cross}"
 
-# ---- toolchain locations (override any of these from the environment) -------------------
 SWIFTLY_TC="$(command ls -d "$HOME"/.local/share/swiftly/toolchains/*/usr 2>/dev/null | sort -V | tail -1 || true)"
 export SDKROOT="${SDKROOT:-$HOME/.swiftpm/swift-sdks/darwin.artifactbundle/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk}"
-# bindgen (winfsp-sys) runs libclang with zig's clang builtin headers: use a libclang of the
-# same major version as `zig cc` (zig 0.16 = clang 21; Fedora's system libclang is newer).
 export LIBCLANG_PATH="${LIBCLANG_PATH:-${SWIFTLY_TC:+$SWIFTLY_TC/lib}}"
 MINGW_BINUTILS="${NV_MINGW_BINUTILS:-$HOME/.local/share/mingw64-binutils/usr/bin}"
-# Perl modules missing from the base system, needed by the vendored OpenSSL's Configure.
 NV_PERL="$HOME/.local/share/nv-perl"
 if [[ -z "${PERL5LIB:-}" && -d "$NV_PERL" ]]; then
     export PERL5LIB="$NV_PERL/usr/share/perl5:$NV_PERL/usr/share/perl5/vendor_perl:$NV_PERL/usr/lib64/perl5:$NV_PERL/usr/lib64/perl5/vendor_perl"
@@ -51,7 +32,6 @@ targets=("$@")
 [[ ${#targets[@]} -eq 0 ]] && targets=(linux windows macos)
 want() { local t; for t in "${targets[@]}"; do [[ "$t" == "$1" ]] && return 0; done; return 1; }
 
-# ---- preflight ---------------------------------------------------------------------------
 need cargo "rustup"
 need pnpm "volta/corepack"
 if want windows || want macos; then
@@ -76,9 +56,11 @@ if want macos; then
     need rcodesign "cargo install --locked apple-codesign"
     need zip "zip"
 fi
+if want linux && [[ -z "${NV_LINUX_HOST:-}" ]]; then
+    need podman "dnf install podman (rootless)"
+fi
 mkdir -p "$DIST" "$NV_CROSS_CACHE"
 
-# ---- UI (once, shared by every target) ---------------------------------------------------
 if [[ -z "${NV_SKIP_UI:-}" ]]; then
     log "UI: pnpm build"
     [[ -d "$ROOT/app/ui/node_modules" ]] || pnpm -C "$ROOT/app/ui" install --frozen-lockfile
@@ -88,22 +70,42 @@ fi
 
 cd "$ROOT"
 
-# ---- Linux x86_64 (native) -----------------------------------------------------------------
-if want linux; then
+if want linux && [[ -z "${NV_LINUX_HOST:-}" ]]; then
+    CF="$ROOT/scripts/linux-build.Containerfile"
+    IMG="localhost/nicevault-linux-build:$(sha256sum "$CF" | cut -c1-12)"
+    LTARGET="${NV_LINUX_TARGET_DIR:-$CARGO_TARGET_DIR-glibc}"
+    LCACHE="${NV_LINUX_CACHE:-$ROOT/.cache/linux-build}"
+    if ! podman image exists "$IMG"; then
+        log "Linux: building the container image $IMG"
+        podman build -f "$CF" -t "$IMG" "$ROOT/scripts"
+    fi
+    mkdir -p "$LTARGET" "$LCACHE/cargo-registry" "$LCACHE/cargo-git" "$LCACHE/xdg"
+    log "Linux x86_64 (container $IMG, target dir $LTARGET)"
+    podman run --rm --security-opt label=disable --ulimit core=0 \
+        -v "$ROOT:$ROOT" -v "$DIST:$DIST" -v "$LTARGET:$LTARGET" \
+        -v "$LCACHE/cargo-registry:/usr/local/cargo/registry" \
+        -v "$LCACHE/cargo-git:/usr/local/cargo/git" \
+        -v "$LCACHE/xdg:/cache/xdg" \
+        -e XDG_CACHE_HOME=/cache/xdg -e NV_LINUX_HOST=1 -e NV_SKIP_UI=1 \
+        -e CARGO_TARGET_DIR="$LTARGET" -e NV_DIST_DIR="$DIST" \
+        -w "$ROOT" "$IMG" bash scripts/build-all.sh linux
+    need objdump "binutils"
+    glibc="$(objdump -T "$DIST/NiceVault-linux-x86_64" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
+    echo "    newest glibc symbol: $glibc"
+    [[ "$(printf '%s\n' "$glibc" GLIBC_2.35 | sort -V | tail -1)" == GLIBC_2.35 ]] || die "binary needs $glibc (> 2.35)"
+fi
+
+if want linux && [[ -n "${NV_LINUX_HOST:-}" ]]; then
     log "Linux x86_64"
     cargo build --release -p "$PKG" --bin "$BIN"
     cp "$CARGO_TARGET_DIR/release/$BIN" "$DIST/NiceVault-linux-x86_64"
     echo "dist/NiceVault-linux-x86_64 ($(size "$DIST/NiceVault-linux-x86_64"))"
-    # tar.gz: one folder holding the binary
     TGZ_STAGE="$NV_CROSS_CACHE/linux-tgz"
     rm -rf "$TGZ_STAGE" && mkdir -p "$TGZ_STAGE/NiceVault-linux-x86_64"
     cp "$CARGO_TARGET_DIR/release/$BIN" "$TGZ_STAGE/NiceVault-linux-x86_64/nicevault"
     tar -C "$TGZ_STAGE" --owner=0 --group=0 --numeric-owner -czf "$DIST/NiceVault-linux-x86_64.tar.gz" NiceVault-linux-x86_64
     echo "dist/NiceVault-linux-x86_64.tar.gz ($(size "$DIST/NiceVault-linux-x86_64.tar.gz"))"
 
-    # AppImage: Tauri's bundler (linuxdeploy + the GTK plugin, downloaded into $XDG_CACHE_HOME/tauri
-    # on first use, no root needed). NO_STRIP: linuxdeploy's bundled strip chokes on the .relr.dyn
-    # sections of current distros' libraries; APPIMAGE_EXTRACT_AND_RUN: no FUSE needed to build.
     log "Linux x86_64 AppImage"
     rm -rf "$CARGO_TARGET_DIR/release/bundle/appimage"
     (cd "$ROOT/app/src-tauri" && NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 ../ui/node_modules/.bin/tauri build --bundles appimage \
@@ -117,7 +119,6 @@ if want linux; then
     echo "dist/NiceVault-linux-x86_64.AppImage ($(size "$DIST/NiceVault-linux-x86_64.AppImage"))"
 fi
 
-# ---- Windows x86_64 (MinGW ABI, zig as C compiler and linker) ----------------------------
 if want windows; then
     log "Windows x86_64 (x86_64-pc-windows-gnu)"
     T=x86_64-pc-windows-gnu
@@ -129,8 +130,6 @@ if want windows; then
     pe="$(x86_64-w64-mingw32-objdump -p "$EXE")"
     imports="$(sed -n 's/^\s*DLL Name: //p' <<<"$pe" | sort -fu)"
     echo "$imports" | sed 's/^/    /'
-    # Only DLLs that ship with Windows 10/11. WinFsp is bound at runtime (LoadLibraryW + GetProcAddress,
-    # winfsp-sys gnu_thunks), never imported; WebView2Loader static.
     system_dll='^((api-ms-win-[a-z0-9-]+|advapi32|bcrypt|bcryptprimitives|combase|comctl32|comdlg32|crypt32|d3d11|dxgi|msimg32|ncrypt|powrprof|wtsapi32|mpr|dbghelp|dwmapi|gdi32|imm32|kernel32|ntdll|ole32|oleaut32|pdh|propsys|secur32|shcore|shell32|shlwapi|user32|userenv|uxtheme|version|winmm|ws2_32|credui|iphlpapi|netapi32|psapi|rpcrt4|setupapi|winhttp|wininet)\.dll|winspool\.drv)$'
     bad="$(echo "$imports" | grep -viE "$system_dll" || true)"
     [[ -z "$bad" ]] || die "non-system DLL imports: $bad"
@@ -148,13 +147,10 @@ if want windows; then
     echo "dist/NiceVault-windows-x86_64.zip ($(size "$DIST/NiceVault-windows-x86_64.zip"))"
 fi
 
-# ---- macOS universal .app -------------------------------------------------------------------
 if want macos; then
     for T in aarch64-apple-darwin x86_64-apple-darwin; do
         log "macOS $T"
         if [[ "$T" == aarch64-* ]]; then min=$MAC_MIN_ARM; else min=$MAC_MIN_X86; fi
-        # zig's linker only reserves room for (and writes) an ad-hoc signature on arm64;
-        # headerpad leaves space for rcodesign to add LC_CODE_SIGNATURE to the x86_64 slice.
         tvar="CARGO_TARGET_$(tr 'a-z-' 'A-Z_' <<<"$T")_RUSTFLAGS"
         env "$tvar=${!tvar:-} -C link-arg=-Wl,-headerpad_max_install_names" \
             MACOSX_DEPLOYMENT_TARGET="$min" cargo zigbuild --release --target "$T" -p "$PKG" --bin "$BIN"
@@ -204,7 +200,6 @@ PLIST
 
     log "macOS: ad-hoc signature (rcodesign)"
     rcodesign sign "$APP" >/dev/null 2>&1 || die "rcodesign sign failed"
-    # (`rcodesign verify` cannot check ad-hoc signatures: it expects a CMS blob.)
     sig="$(rcodesign print-signature-info "$APP/Contents/MacOS/$BIN")"
     [[ "$(grep -c 'flags: CodeSignatureFlags(ADHOC)' <<<"$sig")" -ge 2 ]] || die "both slices must be ad-hoc signed"
     grep -q "identifier: $IDENT" <<<"$sig" || die "signature identifier is not $IDENT"

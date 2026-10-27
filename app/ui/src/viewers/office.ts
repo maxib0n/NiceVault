@@ -1,8 +1,3 @@
-// Read-only text of Office Open XML (docx/xlsx/pptx) and OpenDocument (odt/ods/odp) files:
-// they are ZIPs of XML parts. The XML is parsed into a detached document (DOMParser: no
-// scripts, no external entities, nothing attached to the page) and only text is taken out
-// of it, so the viewer shows the words, not the layout.
-
 import type { ByteSource } from './source';
 import { listZip, readEntry, type ZipEntry } from './zip';
 
@@ -19,7 +14,6 @@ export type OfficeBody =
 export interface OfficeDoc {
   meta: OfficeMeta;
   body: OfficeBody;
-  /** the text was cut at the viewer's caps */
   truncated: boolean;
 }
 
@@ -40,7 +34,6 @@ const all = (n: Document | Element, local: string) => Array.from(n.getElementsBy
 const first = (n: Document | Element, local: string) => n.getElementsByTagNameNS('*', local)[0] as Element | undefined;
 const text = (n: Element | undefined) => n?.textContent?.trim() || undefined;
 
-/** text of an OOXML paragraph: runs, tabs, breaks */
 function ooxmlPara(p: Element): string {
   let s = '';
   const walk = (n: Element) => {
@@ -56,7 +49,6 @@ function ooxmlPara(p: Element): string {
   return s;
 }
 
-/** text of an ODF paragraph: text, spaces, tabs, line breaks, spans */
 function odfPara(p: Element): string {
   let s = '';
   const walk = (n: Node) => {
@@ -149,7 +141,6 @@ export async function readOffice(src: ByteSource, ext: string, signal?: AbortSig
     return { meta, truncated, body: { kind: 'text', blocks } };
   }
 
-  // Office Open XML
   const core = await part('docProps/core.xml').catch(() => null);
   if (core) {
     meta.title = text(first(core, 'title'));
@@ -212,7 +203,6 @@ export async function readOffice(src: ByteSource, ext: string, signal?: AbortSig
       truncated = true;
       break;
     }
-    // skip paragraphs nested in another paragraph (text boxes are read with their parent)
     if (p.parentElement?.closest('p') && p.parentElement.closest('p') !== p) continue;
     const style = first(p, 'pStyle')?.getAttributeNS('*', 'val') ?? first(p, 'pStyle')?.getAttribute('w:val') ?? '';
     const hm = /(?:heading|titolo|berschrift|titre)\s*(\d)/i.exec(style) ?? (/^title$/i.test(style) ? ['', '1'] : null);

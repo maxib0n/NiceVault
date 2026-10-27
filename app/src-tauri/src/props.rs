@@ -1,17 +1,3 @@
-//! Proprietà: what the properties dialog shows about a file, a folder, a selection or the volume.
-//!
-//!  - `fs_props { vault, node }`: at once — name, path, kind, size, dates (modified; created,
-//!    imported and the original path from `nv_core::NodeMeta`), the type sniffed from the first
-//!    bytes, image dimensions (PNG, JPEG, GIF, WebP, BMP headers) and media duration (MP4/MOV/M4A
-//!    `mvhd`, WAV, FLAC, Ogg Vorbis/Opus, WebM/Matroska, MP3 Xing or CBR estimate) when they can be
-//!    read from a few headers (nothing is decoded), the cached SHA-256 when still valid, and a
-//!    folder's direct item count;
-//!  - `fs_props_tree { vault, nodes }` -> job: recursive files / folders / bytes of a folder or a
-//!    selection, walked in the background with `props-progress { job, files, dirs, bytes }`
-//!    (~10/s) and one `props-done { job, files, dirs, bytes, error }`; cancellable (`job_cancel`);
-//!  - `fs_hash { vault, node }` -> job: SHA-256 of a file, `props-progress { job, done_bytes,
-//!    total_bytes }`, `props-done { job, sha256, error }`; the result is cached in the volume.
-
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, Job, lock_or_recover, random_id};
 use nv_core::Vault;
@@ -24,9 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 const PROGRESS_EVERY: Duration = Duration::from_millis(100);
-/// Bytes read from the start of a file for the type and image headers.
 const HEAD: usize = 64 * 1024;
-/// JPEG frames can come after big EXIF / thumbnail segments: scan this far at most.
 const JPEG_SCAN: u64 = 1 << 20;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -34,25 +18,17 @@ pub struct NodeProps {
     pub id: NodeId,
     pub name: String,
     pub kind: Kind,
-    /// "/Foto/Mare.jpg" ("/" = the volume root)
     pub path: String,
     pub size: u64,
-    /// unix ns
     pub mtime: i64,
-    /// unix ns; null = unknown (made before this build kept it)
     pub created: Option<i64>,
-    /// unix ns; null = made inside the volume, or unknown
     pub imported: Option<i64>,
-    /// host path it was imported from
     pub origin: Option<String>,
-    /// sniffed from the first bytes (files)
     pub mime: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub duration_ms: Option<u64>,
-    /// hex, when computed for the current content
     pub sha256: Option<String>,
-    /// folders: items directly inside
     pub children: Option<u64>,
 }
 
@@ -60,7 +36,6 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// "/A/B/name" of `id`.
 pub fn node_path(v: &Vault, id: NodeId) -> ApiResult<String> {
     let mut parts = vec![];
     let mut cur = id;
@@ -76,7 +51,6 @@ pub fn node_path(v: &Vault, id: NodeId) -> ApiResult<String> {
     Ok(format!("/{}", parts.join("/")))
 }
 
-/// Random-access reads of a node (short at EOF).
 struct NodeReader<'a> {
     v: &'a Vault,
     id: NodeId,
@@ -138,7 +112,6 @@ impl AppState {
         Ok(p)
     }
 
-    /// Recursive totals of `nodes` (a folder, a selection) as a cancellable job.
     pub fn fs_props_tree(&self, vault: &str, nodes: Vec<NodeId>) -> ApiResult<String> {
         let v = self.vault(vault)?;
         for &n in &nodes {
@@ -158,7 +131,6 @@ impl AppState {
                     Kind::Dir => stack.push(n),
                 }
             }
-            // the folders given are not counted themselves, only what they hold
             while let Some(d) = stack.pop() {
                 if cancel.load(Ordering::Relaxed) {
                     return Err(ApiError::cancelled());
@@ -184,7 +156,6 @@ impl AppState {
         }))
     }
 
-    /// SHA-256 of a file as a cancellable job; cached in the volume for its current content.
     pub fn fs_hash(&self, vault: &str, node: NodeId) -> ApiResult<String> {
         let v = self.vault(vault)?;
         let n = v.getattr(node)?;
@@ -214,7 +185,6 @@ impl AppState {
                 }
             }
             let digest: [u8; 32] = h.finalize().into();
-            // only if the file did not change meanwhile
             if v.getattr(node).is_ok_and(|now| now.size == n.size && now.mtime == n.mtime) {
                 let _ = v.set_sha256(node, &digest, n.size, n.mtime);
                 let _ = v.flush();
@@ -223,8 +193,6 @@ impl AppState {
         }))
     }
 
-    /// Runs `work` on its own thread as a job of `vault` (cancelled by job_cancel or lock); its
-    /// result object is merged into `props-done`.
     fn props_job(
         &self,
         vault: &str,
@@ -254,10 +222,6 @@ impl AppState {
     }
 }
 
-// ---------------------------------------------------------------------------
-// sniffing (pure functions over bytes; unit-tested)
-
-/// MIME type from the first bytes, or None.
 pub fn sniff(h: &[u8]) -> Option<&'static str> {
     let at = |off: usize, sig: &[u8]| h.len() >= off + sig.len() && &h[off..off + sig.len()] == sig;
     Some(if at(0, b"\x89PNG\r\n\x1a\n") {
@@ -302,7 +266,7 @@ pub fn sniff(h: &[u8]) -> Option<&'static str> {
     } else if at(0, b"Rar!\x1a\x07") {
         "application/vnd.rar"
     } else if at(0, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1") {
-        "application/x-ole-storage" // .doc / .xls / .msg
+        "application/x-ole-storage"
     } else if at(0, b"SQLite format 3\0") {
         "application/vnd.sqlite3"
     } else if at(0, b"NICEVLT1") {
@@ -322,7 +286,6 @@ pub fn sniff(h: &[u8]) -> Option<&'static str> {
     })
 }
 
-/// Office Open XML / OpenDocument / EPUB inside a zip, from the first entry names.
 fn zip_kind(h: &[u8]) -> &'static str {
     let has = |s: &[u8]| h.windows(s.len()).any(|w| w == s);
     if has(b"mimetypeapplication/vnd.oasis.opendocument.text") {
@@ -342,7 +305,6 @@ fn zip_kind(h: &[u8]) -> &'static str {
     }
 }
 
-/// UTF-8 (a cut-off last character allowed) without control bytes other than whitespace.
 fn looks_textual(h: &[u8]) -> bool {
     let h = &h[..h.len().min(8192)];
     let ok = match std::str::from_utf8(h) {
@@ -371,7 +333,6 @@ fn le24(b: &[u8], i: usize) -> Option<u32> {
     Some(u32::from_le_bytes([*b.get(i)?, *b.get(i + 1)?, *b.get(i + 2)?, 0]))
 }
 
-/// Pixel size from the header bytes (`read(off, len)` for JPEGs whose frame comes later).
 pub fn image_size(h: &[u8], read: impl Fn(u64, usize) -> Vec<u8>) -> Option<(u32, u32)> {
     match sniff(h)? {
         "image/png" if h.get(12..16) == Some(b"IHDR") => Some((be32(h, 16)?, be32(h, 20)?)),
@@ -398,7 +359,6 @@ pub fn image_size(h: &[u8], read: impl Fn(u64, usize) -> Vec<u8>) -> Option<(u32
     .filter(|&(w, h)| w > 0 && h > 0)
 }
 
-/// Walks the JPEG segments up to the first SOFn frame header.
 fn jpeg_size(read: impl Fn(u64, usize) -> Vec<u8>) -> Option<(u32, u32)> {
     let mut off = 2u64;
     while off < JPEG_SCAN {
@@ -408,7 +368,7 @@ fn jpeg_size(read: impl Fn(u64, usize) -> Vec<u8>) -> Option<(u32, u32)> {
         }
         let marker = seg[1];
         if marker == 0xff {
-            off += 1; // fill byte
+            off += 1;
             continue;
         }
         if marker == 0xd8 || (0xd0..=0xd7).contains(&marker) || marker == 0x01 {
@@ -421,21 +381,19 @@ fn jpeg_size(read: impl Fn(u64, usize) -> Vec<u8>) -> Option<(u32, u32)> {
             return Some((be16(&seg, 7)?, be16(&seg, 5)?));
         }
         if marker == 0xda || marker == 0xd9 || len < 2 {
-            return None; // image data before any frame header
+            return None;
         }
         off += 2 + len;
     }
     None
 }
 
-/// Playing time from container headers; None when not cheaply known.
 pub fn media_duration(h: &[u8], size: u64, read: impl Fn(u64, usize) -> Vec<u8>) -> Option<u64> {
     let ms = |secs: f64| (secs.is_finite() && secs > 0.0 && secs < 1e9).then(|| (secs * 1000.0).round() as u64);
     match sniff(h)? {
         "video/mp4" | "video/quicktime" | "audio/mp4" => mp4_duration(size, &read).and_then(ms),
         "audio/wav" => wav_duration(h).and_then(ms),
         "audio/flac" => {
-            // STREAMINFO: sample rate 20 bits, channels 3, bps 5, total samples 36
             if h.get(4)? & 0x7f != 0 {
                 return None;
             }
@@ -451,7 +409,6 @@ pub fn media_duration(h: &[u8], size: u64, read: impl Fn(u64, usize) -> Vec<u8>)
     }
 }
 
-/// MP4 / MOV: moov -> mvhd (timescale, duration); the top-level boxes are walked by their headers.
 fn mp4_duration(size: u64, read: &impl Fn(u64, usize) -> Vec<u8>) -> Option<f64> {
     let mut off = 0u64;
     for _ in 0..64 {
@@ -470,7 +427,6 @@ fn mp4_duration(size: u64, read: &impl Fn(u64, usize) -> Vec<u8>) -> Option<f64>
         }
         if kind == b"moov" {
             let moov = read(body, (len.saturating_sub(body - off)).min(1 << 20) as usize);
-            // mvhd is near the start of moov
             let mut i = 0;
             while i + 8 <= moov.len() {
                 let l = be32(&moov, i)? as usize;
@@ -511,7 +467,6 @@ fn wav_duration(h: &[u8]) -> Option<f64> {
     None
 }
 
-/// Ogg: sample rate from the identification header, last granule position from the end.
 fn ogg_duration(h: &[u8], size: u64, read: &impl Fn(u64, usize) -> Vec<u8>) -> Option<f64> {
     let (rate, pre_skip) = if let Some(p) = h.windows(8).position(|w| w == b"OpusHead") {
         (48_000.0, le16(h, p + 10)? as f64)
@@ -526,7 +481,6 @@ fn ogg_duration(h: &[u8], size: u64, read: &impl Fn(u64, usize) -> Vec<u8>) -> O
     (rate > 0.0 && granule != u64::MAX).then(|| (granule as f64 - pre_skip).max(0.0) / rate)
 }
 
-/// Matroska / WebM: Segment > Info > (TimecodeScale, Duration) within the first bytes.
 fn ebml_duration(h: &[u8]) -> Option<f64> {
     fn vint(b: &[u8], i: usize, keep_marker: bool) -> Option<(u64, usize)> {
         let first = *b.get(i)?;
@@ -557,7 +511,7 @@ fn ebml_duration(h: &[u8]) -> Option<f64> {
                 if id == INFO {
                     in_info_until = data.saturating_add(len as usize);
                 }
-                i = data; // descend
+                i = data;
                 continue;
             }
             SCALE => {
@@ -579,7 +533,6 @@ fn ebml_duration(h: &[u8]) -> Option<f64> {
         if in_info_until > 0 && data + len as usize >= in_info_until {
             break;
         }
-        // unknown size (live streams): stop
         if len >= (1u64 << 56) - 1 {
             break;
         }
@@ -588,20 +541,18 @@ fn ebml_duration(h: &[u8]) -> Option<f64> {
     duration.map(|d| d * scale / 1e9)
 }
 
-/// MP3: frames from a Xing / Info / VBRI header, else a constant-bitrate estimate.
 fn mp3_duration(h: &[u8], size: u64) -> Option<f64> {
     let mut i = 0usize;
     if h.starts_with(b"ID3") {
         let sz = h.get(6..10)?.iter().fold(0usize, |a, &b| (a << 7) | (b & 0x7f) as usize);
         i = 10 + sz + if h.get(5)? & 0x10 != 0 { 10 } else { 0 };
     }
-    // first frame sync
     while i + 4 <= h.len() && !(h[i] == 0xff && h[i + 1] & 0xe0 == 0xe0) {
         i += 1;
     }
     let hdr = h.get(i..i + 4)?;
-    let version = (hdr[1] >> 3) & 3; // 3 = MPEG1, 2 = MPEG2, 0 = MPEG2.5
-    let layer = (hdr[1] >> 1) & 3; // 1 = layer III
+    let version = (hdr[1] >> 3) & 3;
+    let layer = (hdr[1] >> 1) & 3;
     let br_idx = (hdr[2] >> 4) as usize;
     let sr_idx = ((hdr[2] >> 2) & 3) as usize;
     if layer != 1 || br_idx == 0 || br_idx == 15 || sr_idx == 3 || version == 1 {
@@ -696,7 +647,6 @@ mod tests {
 
     #[test]
     fn jpeg_frame_after_segments() {
-        // SOI, APP0 (16 bytes), SOF0 with 480x640 (h, w)
         let mut j = vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10];
         j.extend([0u8; 14]);
         j.extend([0xff, 0xc0, 0x00, 0x11, 0x08, 0x01, 0xe0, 0x02, 0x80, 0x03]);
@@ -707,7 +657,7 @@ mod tests {
     #[test]
     fn webp_and_bmp_sizes() {
         let mut vp8x = b"RIFF\0\0\0\0WEBPVP8X\x0a\0\0\0\0\0\0\0".to_vec();
-        vp8x.extend([0x7f, 0x07, 0x00, 0x37, 0x04, 0x00]); // 1920 x 1080
+        vp8x.extend([0x7f, 0x07, 0x00, 0x37, 0x04, 0x00]);
         assert_eq!(image_size(&vp8x, none), Some((1920, 1080)));
         let mut bmp = b"BM".to_vec();
         bmp.extend([0u8; 12]);
@@ -720,13 +670,12 @@ mod tests {
     #[test]
     fn wav_and_flac_durations() {
         let mut w = b"RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x44\xac\0\0".to_vec();
-        w.extend(176_400u32.to_le_bytes()); // byte rate
+        w.extend(176_400u32.to_le_bytes());
         w.extend([4, 0, 16, 0]);
         w.extend(b"data");
         w.extend((176_400u32 * 3).to_le_bytes());
         assert_eq!(media_duration(&w, 100, none), Some(3000));
 
-        // fLaC, STREAMINFO block header (last=0, type 0, len 34), 44100 Hz, 441000 samples = 10 s
         let mut f = b"fLaC\0\0\0\x22".to_vec();
         f.extend([0u8; 10]);
         let rate: u32 = 44_100;
@@ -739,12 +688,11 @@ mod tests {
 
     #[test]
     fn mp4_mvhd() {
-        // ftyp(16) + moov(8 + mvhd v0: 8 + 100)
         let mut b = b"\0\0\0\x10ftypisom\0\0\0\0".to_vec();
         let mut mvhd = vec![0u8; 100];
-        mvhd[0] = 0; // version
-        mvhd[12..16].copy_from_slice(&1000u32.to_be_bytes()); // timescale
-        mvhd[16..20].copy_from_slice(&125_500u32.to_be_bytes()); // duration
+        mvhd[0] = 0;
+        mvhd[12..16].copy_from_slice(&1000u32.to_be_bytes());
+        mvhd[16..20].copy_from_slice(&125_500u32.to_be_bytes());
         let mvhd_box = [&(108u32).to_be_bytes()[..], b"mvhd", &mvhd].concat();
         b.extend((8 + mvhd_box.len() as u32).to_be_bytes());
         b.extend(b"moov");
@@ -756,7 +704,6 @@ mod tests {
 
     #[test]
     fn webm_info_duration() {
-        // EBML header (empty), Segment (unknown size), Info { TimecodeScale 1_000_000, Duration f64 2500.0 ms }
         let mut b = vec![0x1a, 0x45, 0xdf, 0xa3, 0x87, 0x42, 0x82, 0x84, b'w', b'e', b'b', b'm'];
         b.extend([0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
         let mut info = vec![0x2a, 0xd7, 0xb1, 0x83, 0x0f, 0x42, 0x40];
@@ -770,7 +717,6 @@ mod tests {
 
     #[test]
     fn mp3_cbr_estimate() {
-        // MPEG1 layer III, 128 kbps, 44.1 kHz, stereo; 1 MB of it ~ 65.5 s
         let mut b = vec![0xff, 0xfb, 0x90, 0x00];
         b.extend([0u8; 200]);
         assert_eq!(sniff(&b), Some("audio/mpeg"));

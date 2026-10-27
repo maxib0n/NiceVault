@@ -1,5 +1,3 @@
-//! Hybrid X25519 + ML-KEM-768 recipient keys (`Identity` = secret, `Recipient` = public).
-
 use crate::OpenError;
 use crate::header::{Argon, KdfPreset, argon2_kek, new_password_kek};
 use crate::keys::{Key32, random};
@@ -27,13 +25,11 @@ pub const CT_LEN: usize = 1088;
 const PREFIX: &str = "nvpk1";
 const KEY_MAGIC: [u8; 8] = *b"NVKEY001";
 
-/// A recipient's secret key pair. Keep it in a password-protected `.nvkey` file.
 pub struct Identity {
     x25519: Key32,
     mlkem_seed: Zeroizing<[u8; 64]>,
 }
 
-/// Public half of an [`Identity`]; can be added to a vault as a keyslot.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Recipient {
     x25519: [u8; 32],
@@ -64,7 +60,6 @@ impl Identity {
         Recipient { x25519: x.to_bytes(), mlkem_ek: self.dk().encapsulation_key().to_bytes().to_vec() }
     }
 
-    /// Writes a password-protected key file (fails if `path` exists). Uses the Strong KDF.
     pub fn to_file(&self, path: &Path, pw: &SecretString) -> nv_fs::Result<()> {
         self.to_file_with(path, pw, KdfPreset::Strong)
     }
@@ -104,7 +99,6 @@ impl Identity {
         Ok(Identity { x25519: Key32::from_slice(&secret[..32]), mlkem_seed: seed })
     }
 
-    /// KEK for a Recipient slot addressed to this identity.
     pub(crate) fn slot_kek(&self, volume_id: &[u8; 16], eph_pub: &[u8; 32], ct: &[u8]) -> Option<Key32> {
         if ct.len() != CT_LEN {
             return None;
@@ -152,7 +146,6 @@ impl Recipient {
         h.finalize().as_bytes()[..16].try_into().unwrap()
     }
 
-    /// `nvpk1` + base64url(x25519 pub || ML-KEM-768 ek || 4-byte BLAKE3 checksum).
     #[allow(clippy::inherent_to_string_shadow_display)]
     pub fn to_string(&self) -> String {
         let mut b = self.x25519.to_vec();
@@ -182,7 +175,6 @@ impl Recipient {
         Ek::new(&self.mlkem_ek[..].try_into().ok()?).ok()
     }
 
-    /// Fresh ephemeral encapsulation: (eph_pub, mlkem_ct, kek).
     pub(crate) fn seal(&self, volume_id: &[u8; 16]) -> (([u8; 32], Vec<u8>), Key32) {
         let eph = StaticSecret::from(random::<32>());
         let eph_pub = PublicKey::from(&eph).to_bytes();

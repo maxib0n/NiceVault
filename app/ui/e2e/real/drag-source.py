@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-# A tiny X11 drag source for the real-app suite: a GTK3 window at (X, Y) that
-# offers the given files as text/uri-list, exactly like a file manager does.
-# Drive it with xdotool (press on it, move onto the target window, release).
-#   drag-source.py X Y FILE...
-# Prints "ready" once mapped and "drag-end" when a drag finishes.
 import sys
 from urllib.parse import quote
 

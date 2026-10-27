@@ -1,26 +1,15 @@
-// Swipe down to dismiss a bottom sheet (Dialog as a sheet, menus, popovers, the move / rename
-// pages). Pointer Events, touch and pen only. The sheet follows the finger through the registered
-// --nv-t (styles/motion.css: transform is read from it, never animated itself); past ~30 % of its
-// height, or a fast flick, it leaves and `onclose` runs; otherwise it springs back.
-// A stroke is ours only if it starts on the grabber / head (the top of the sheet, or anything
-// marked [data-sheet-handle]) or on content that is scrolled to its top and is pulled down:
-// a scrolling document keeps its own vertical stroke.
-
 import { scrollerOf } from './gestures';
 
 export interface SheetSwipeOptions {
   onclose: () => void;
-  /** false: the node is not a sheet right now (a full page form, a desktop dialog) */
   enabled?: () => boolean;
 }
 
-/** The head of the sheet that always drags it (px from the top edge). */
 export const HANDLE_H = 56;
 export const DISMISS_FRACTION = 0.3;
 export const FLICK_SPEED = 0.5;
 const SLOP = 8;
 
-/** Whether a finished pull dismisses the sheet. */
 export function shouldDismiss(dy: number, height: number, vy: number): boolean {
   return dy > 0 && (dy >= height * DISMISS_FRACTION || (vy >= FLICK_SPEED && dy >= 24));
 }
@@ -67,14 +56,13 @@ export function sheetSwipe(node: HTMLElement, opts: SheetSwipeOptions) {
       if (Math.hypot(dx, dy) < SLOP) return;
       if (dy > 0 && dy > Math.abs(dx) && (start.handle || start.top)) owned = true;
       else {
-        start = null; // a scroll, or sideways: not ours
+        start = null;
         return;
       }
       node.dataset.dragging = 'true';
       try {
         node.setPointerCapture(e.pointerId);
       } catch {
-        /* a synthetic pointer */
       }
     }
     node.style.setProperty('--nv-t', `translate3d(0, ${Math.max(0, dy)}px, 0)`);
@@ -94,7 +82,6 @@ export function sheetSwipe(node: HTMLElement, opts: SheetSwipeOptions) {
     const finish = () => {
       if (dismiss) {
         o.onclose();
-        // the sheet is on its way out (or stays mounted, as a <dialog>): put it back at rest after
         cleanup = window.setTimeout(reset, 120);
       } else reset();
     };
@@ -107,7 +94,6 @@ export function sheetSwipe(node: HTMLElement, opts: SheetSwipeOptions) {
     });
     anim.finished.then(finish, () => undefined);
   };
-  // the stroke is ours: the browser must not pan or rubber-band the page with it
   const tmove = (e: TouchEvent) => {
     if (!e.cancelable || e.touches.length !== 1) return;
     if (owned) return e.preventDefault();

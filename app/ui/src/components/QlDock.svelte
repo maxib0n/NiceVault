@@ -1,8 +1,3 @@
-<!--
-  Full-screen preview (QuickLook): the strip of the folder's other previewable files at the
-  bottom, the current one lifted. It hides after a moment without the pointer (QuickLook decides:
-  `shown`), comes back on any movement or a tap. Opacity / transform only.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import type { FileBrowser } from '../lib/stores/browser.svelte';
@@ -10,8 +5,6 @@
 
   let { browser, shown, onhold }: { browser: FileBrowser; shown: boolean; onhold?: (on: boolean) => void } = $props();
 
-  // while a finger is on the strip, it scrolls (momentum included) or the mouse is over it, the
-  // dock stays: QuickLook's hide timer is paused (onhold true) and starts again once it all ends
   let touching = false;
   let hovering = false;
   let scrollEnd: ReturnType<typeof setTimeout> | null = null;
@@ -39,16 +32,12 @@
   const list = $derived(browser.previewable);
   let strip: HTMLElement | undefined = $state();
 
-  // the current file stays in view as the preview steps: there at once when the dock opens,
-  // glided to as the preview steps. The strip's own scroll only (scrollIntoView would also move
-  // the dialog / page round it)
   let placed = false;
   $effect(() => {
     const id = browser.quickLook;
     void list.length;
     const s = strip;
     if (!s || id === null) return;
-    // after the frames are laid out (the first time, they are not yet)
     const raf = requestAnimationFrame(() => {
       const el = s.querySelector<HTMLElement>(`[data-node="${id}"]`);
       if (!el) return;
@@ -103,8 +92,6 @@
       0 0 0 1px var(--paper-rule),
       var(--shadow-pop);
     backdrop-filter: blur(10px);
-    /* shown / hidden through the registered --nv-o / --nv-t (styles/motion.css: WebKitGTK hands a
-       compositor opacity / transform animation back one frame late, a flash at the end) */
     will-change: opacity;
     --nv-o: 0;
     --nv-t: translate3d(-50%, 18px, 0);
@@ -126,8 +113,6 @@
     gap: 8px;
     overflow-x: auto;
     scrollbar-width: none;
-    /* room inside the strip (it clips: it scrolls) for the current frame lifted 4 px with its
-       2 px ring, and a focus ring (2 px at 2 px) on every side */
     padding: 10px 6px 6px;
   }
   .frame {
@@ -154,8 +139,6 @@
     height: 52px;
     overflow: visible;
   }
-  /* a sheet sized outright (not from the tile's height and an aspect ratio, which iOS WebKit can
-     stretch past the frame): the whole sheet, its corner and its type always inside the tile */
   .frame :global(.paper-file) {
     flex: none;
     width: 36px;

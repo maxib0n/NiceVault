@@ -1,7 +1,3 @@
-//! Cheap mutation fuzzing of the header decoder (no new dependency): random byte edits with a
-//! re-computed checksum, so the mutations reach postcard decoding instead of stopping at the
-//! checksum. `peek` and `open` must answer an error, never panic or allocate wildly.
-
 use crate::common::*;
 use nv_core::Vault;
 
@@ -52,8 +48,6 @@ fn header_decode_survives_mutations() {
             m[c * COPY_LEN..(c + 1) * COPY_LEN].copy_from_slice(&copy);
         }
         std::fs::write(&q, &m).unwrap();
-        // Every 20th case also goes through a full unlock attempt (Argon2id runs: keep it rare).
-        // Mutated KDF parameters may ask for a huge Argon2id: skip those unlocks.
         let full = i % 20 == 0
             && nv_core::peek(&q).is_ok_and(|pk| pk.password_kdf.iter().all(|k| k.m_kib <= 64 * 1024 && k.t <= 4 && k.p <= 8));
         let r = std::panic::catch_unwind(|| {

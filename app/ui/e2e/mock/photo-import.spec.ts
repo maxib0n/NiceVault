@@ -1,6 +1,3 @@
-// The camera-roll import on a phone (stores/photos.svelte.ts, PhotoImportSheet.svelte; mock
-// parity of mobile.rs mobile_import_photos): "N di M" while the items come in, Annulla, the
-// items that could not be imported with their reason and "Riprova questi"; nothing dropped.
 import { boot, expect, item, listed, test } from './helpers';
 import type { Page } from '@playwright/test';
 

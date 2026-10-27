@@ -1,14 +1,3 @@
-//! Android / iOS only: the app sandbox as home, temp and config; files
-//! and volumes picked through the system picker (`content://` URIs on Android, security-scoped
-//! `file://` URLs on iOS), which std::fs can't open, are copied into the sandbox first; the
-//! share sheet for decrypted copies; the camera roll (Android Photo Picker, iOS PHPicker). The
-//! native half is `NvPlugin` (Android: gen/android/app/src/main/java/app/nicevault/desktop/
-//! NvPlugin.kt; iOS: app/ios/Sources/NiceVault/NvPlugin.swift, which also covers the window in
-//! the app switcher and locks the volumes after 30 s in the background).
-//!
-//! Staged plaintext (picked files and photos) lives only in `<app cache>/tmp/nv-import`, is
-//! wiped as soon as its import job ends, and whatever is left there at the next start.
-
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use nv_fs::{Fs, Kind, NodeId};
@@ -28,14 +17,11 @@ fn staging_of(p: &Path) -> Option<PathBuf> {
     crate::mobile_paths::staging_of(&import_root(), p)
 }
 
-/// The native bridge (Android: NvPlugin.kt; iOS: NvPlugin.swift).
 pub struct Bridge(Option<PluginHandle<Wry>>);
 
 #[cfg(target_os = "ios")]
 tauri::ios_plugin_binding!(init_plugin_nvmobile);
 
-/// The app, for the iOS lifecycle hook below and Android's DocumentsProvider (docs.rs), set
-/// once in the plugin's setup.
 static APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
 
 pub fn plugin() -> TauriPlugin<Wry> {
@@ -54,15 +40,10 @@ pub fn plugin() -> TauriPlugin<Wry> {
         .build()
 }
 
-/// The app's state once it is set up (Android's DocumentsProvider may be called before, or in a
-/// process the app's activity never started: then there are no unlocked volumes).
 pub fn app_state() -> Option<Arc<AppState>> {
     APP.get().and_then(|a| a.try_state::<Arc<AppState>>()).map(|s| s.inner().clone())
 }
 
-/// Android: a volume was unlocked or locked: the system picker / Files app re-reads the roots
-/// (NvPlugin.kt `docsChanged`, a root per unlocked volume). Off the caller's thread: `emit`
-/// may run with the state's locks held.
 pub fn docs_changed(app: &AppHandle) {
     if cfg!(target_os = "android")
         && let Ok(h) = bridge(app)
@@ -73,8 +54,6 @@ pub fn docs_changed(app: &AppHandle) {
     }
 }
 
-/// Android: another app is using a volume through the DocumentsProvider (a file open, or a call
-/// in the last 30 s): lib/mobile.ts holds the background lock back meanwhile. iOS: never.
 #[tauri::command(rename_all = "snake_case")]
 pub fn mobile_docs_busy() -> bool {
     #[cfg(target_os = "android")]
@@ -83,9 +62,6 @@ pub fn mobile_docs_busy() -> bool {
     false
 }
 
-/// iOS: NvPlugin.swift calls this (off the main thread, the privacy cover still up) when the
-/// app comes back after 30 s or more in the background, or when the 30 s run out while iOS
-/// still lets it run there: every open volume is locked (reason "screen", as lib/mobile.ts).
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
 pub extern "C" fn nv_mobile_lock_all() {
@@ -94,8 +70,6 @@ pub extern "C" fn nv_mobile_lock_all() {
     }
 }
 
-/// iOS: the web content process was terminated (lib.rs) or the page did not answer after a
-/// return from the background (NvPlugin.swift): every volume locked, then the page reloaded.
 #[cfg(target_os = "ios")]
 pub fn web_content_gone(w: tauri::Webview) {
     std::thread::spawn(move || {
@@ -118,31 +92,23 @@ fn stamp() -> String {
     format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0))
 }
 
-/// Staging folder for picked files (inside the app cache: private to the app).
 fn import_root() -> PathBuf {
     std::env::temp_dir().join("nv-import")
 }
 
-/// iOS: decrypted pictures / videos handed to the photo library (moved into it by Photos).
 fn gallery_root() -> PathBuf {
     std::env::temp_dir().join("nv-gallery")
 }
 
-/// Decrypted copies handed to the share sheet (the only folder the FileProvider exposes).
 fn share_root() -> PathBuf {
     std::env::temp_dir().join("nv-share")
 }
 
-/// The sandbox's Documents folder as it was before `prepare` moved `HOME`.
 static DOCUMENTS: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-/// Points `HOME`, `TMPDIR`, the config folder and the default volume folder at the sandbox.
-/// Called first in `setup`, before the store is opened or any temp file is made: Android's
-/// default temp dir (`/data/local/tmp`) is not writable by apps.
 pub fn prepare(app: &AppHandle) {
     let p = app.path();
     let (Ok(data), Ok(cache), Ok(config)) = (p.app_data_dir(), p.app_cache_dir(), p.app_config_dir()) else { return };
-    // iOS: the app's own Documents (shown in Files), resolved before HOME points elsewhere
     let docs = p.document_dir().ok();
     if let Some(d) = &docs {
         let _ = DOCUMENTS.set(d.clone());
@@ -152,23 +118,17 @@ pub fn prepare(app: &AppHandle) {
     for d in [&data, &volumes, &tmp, &config] {
         let _ = std::fs::create_dir_all(d);
     }
-    // SAFETY: start-up, before the store, the auto-lock ticker and the drive watcher run; the
-    // threads Tauri has started by now don't read these variables.
     unsafe {
         std::env::set_var("HOME", &data);
         std::env::set_var("TMPDIR", &tmp);
         std::env::set_var("NICEVAULT_CONFIG_DIR", config.join("NiceVault"));
         std::env::set_var("NICEVAULT_PORTABLE", "0");
         std::env::set_var("NICEVAULT_VOLUME_DIR", &volumes);
-        // Benvenuto lists every volume in the app's own folders whatever known.json says (an
-        // iOS update moves the container, store.rs relocates the known paths too); Documents and
-        // Documents/NiceVault: volumes put there through the Files app
         let scan: Vec<&Path> = std::iter::once(volumes.as_path()).chain(docs.as_deref()).collect();
         if let Ok(v) = std::env::join_paths(scan) {
             std::env::set_var("NICEVAULT_SCAN_DIRS", v);
         }
     }
-    // a previous run's staged and shared copies (plaintext): gone before anything else
     for d in [import_root(), share_root(), gallery_root()] {
         wipe_dir(&d);
     }
@@ -197,7 +157,6 @@ struct Names {
     names: Vec<String>,
 }
 
-/// Display names of picked URIs from their providers, `uri_name` where there is none.
 fn names_of(app: &AppHandle, uris: &[String]) -> Vec<String> {
     let native = app
         .try_state::<Bridge>()
@@ -207,7 +166,6 @@ fn names_of(app: &AppHandle, uris: &[String]) -> Vec<String> {
     uris.iter().enumerate().map(|(i, u)| native.get(i).filter(|n| !n.trim().is_empty()).map(|n| clean_name(n)).unwrap_or_else(|| uri_name(u))).collect()
 }
 
-/// Copies a picked URI to `dir/name` (new file).
 fn copy_in(app: &AppHandle, uri: &str, dest: &Path) -> ApiResult<()> {
     let url = tauri::Url::parse(uri).map_err(|e| ApiError::new("io", format!("{uri}: {e}")))?;
     let mut opts = OpenOptions::new();
@@ -223,7 +181,6 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> ApiResult<T> + Send + '
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| ApiError::new("error", format!("Internal error: {e}")))?
 }
 
-/// Staging folders, wiped when dropped.
 struct Staged(Vec<PathBuf>);
 impl Drop for Staged {
     fn drop(&mut self) {
@@ -231,9 +188,6 @@ impl Drop for Staged {
     }
 }
 
-/// `fs_import` on mobile: plain paths go through as on desktop; URIs are copied (under their
-/// provider's display name) into a fresh staging folder first. Staged copies (these, and the
-/// ones `mobile_pick_photos` / `mobile_pick_files` made on iOS) are wiped when the job ends.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn fs_import(app: AppHandle, st: State<'_, Arc<AppState>>, vault: String, parent: NodeId, host_paths: Vec<String>) -> ApiResult<String> {
     let s = st.inner().clone();
@@ -251,7 +205,6 @@ pub async fn fs_import(app: AppHandle, st: State<'_, Arc<AppState>>, vault: Stri
                         std::fs::create_dir_all(&dir).map_err(io)?;
                         staged.push(dir.clone());
                     }
-                    // each in its own folder: two picks may have the same name
                     let sub = dir.join(k.to_string());
                     std::fs::create_dir(&sub).map_err(io)?;
                     let dest = sub.join(&names[k]);
@@ -269,8 +222,6 @@ pub async fn fs_import(app: AppHandle, st: State<'_, Arc<AppState>>, vault: Stri
             }
             Ok(())
         })();
-        // wiped when the job has ended, or right away when it fails to start (the closure is
-        // dropped then without running)
         let wipe = Staged(staged);
         r?;
         crate::jobs::fs_import_then(&s, &vault, parent, paths, move || drop(wipe))
@@ -280,7 +231,6 @@ pub async fn fs_import(app: AppHandle, st: State<'_, Arc<AppState>>, vault: Stri
 
 #[derive(Serialize)]
 struct PickArgs {
-    /// iOS: the fresh staging folder the picked files are copied into (Android returns URIs)
     dir: String,
     multiple: bool,
 }
@@ -294,20 +244,14 @@ fn pick(app: &AppHandle, cmd: &str, multiple: bool) -> ApiResult<Vec<String>> {
     let dir = import_root().join(stamp());
     std::fs::create_dir_all(&dir).map_err(io)?;
     let r = handle.run_mobile_plugin::<Picked>(cmd, PickArgs { dir: dir.to_string_lossy().into_owned(), multiple }).map_err(|e| ApiError::new("io", e.to_string()));
-    // nothing picked (or it failed): no empty staging folder left behind
     if !r.as_ref().is_ok_and(|p| p.files.iter().any(|f| !f.contains("://"))) {
         wipe_dir(&dir);
     }
     Ok(r?.files)
 }
 
-// ---------------- camera roll (mobile_import_photos) ----------------
-
-/// The last camera-roll pick, kept for "Riprova questi".
 enum PickSrc {
-    /// NvPlugin.swift keeps the PHPicker results of `session`
     Ios { session: i64, names: Vec<String> },
-    /// content:// URIs of the Photo Picker and their display names
     Android { uris: Vec<String>, names: Vec<String> },
 }
 
@@ -325,16 +269,13 @@ impl PickSrc {
 }
 
 static PICK: std::sync::Mutex<Option<Arc<PickSrc>>> = std::sync::Mutex::new(None);
-/// A camera-roll import is running (one at a time: the native side keeps one pick).
 static PHOTOS_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Download progress (0..1) of the items being fetched, from NvPlugin.swift.
 static FRACTIONS: std::sync::Mutex<Option<std::collections::HashMap<usize, f64>>> = std::sync::Mutex::new(None);
 
 fn fractions() -> std::sync::MutexGuard<'static, Option<std::collections::HashMap<usize, f64>>> {
     FRACTIONS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// iOS: NvPlugin.swift reports the download of item `index` (NSItemProvider's Progress).
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
 pub extern "C" fn nv_mobile_pick_progress(index: isize, fraction: f64) {
@@ -349,7 +290,6 @@ struct PhotoPick {
     session: i64,
     #[serde(default)]
     names: Vec<String>,
-    /// Android: the picked URIs
     #[serde(default)]
     files: Vec<String>,
 }
@@ -395,13 +335,6 @@ fn io_fail(e: &ApiError) -> crate::pick_queue::Fail {
     Fail::new(reason, e.message.clone())
 }
 
-/// The camera roll into a folder of a volume (Android Photo Picker, iOS PHPicker; photos and
-/// videos, originals, no photo-library permission). Every picked item is fetched — iOS waits for
-/// the iCloud download of a photo the phone keeps only as an optimised copy, Android for a
-/// Google Photos one — four at a time, imported as soon as it arrives and its staged copy wiped
-/// (pick_queue.rs). `mobile-pick-progress` reports "N di M" and, at the end, the items that could
-/// not be imported with the reason; `retry` imports those again from the same pick. `None` when
-/// nothing was picked.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn mobile_import_photos(app: AppHandle, st: State<'_, Arc<AppState>>, vault: String, parent: NodeId, retry: Option<Vec<usize>>) -> ApiResult<Option<PhotoImport>> {
     let s = st.inner().clone();
@@ -410,7 +343,6 @@ pub async fn mobile_import_photos(app: AppHandle, st: State<'_, Arc<AppState>>, 
         if PHOTOS_BUSY.load(Ordering::SeqCst) {
             return Err(ApiError::new("busy", "Photos are already being imported."));
         }
-        // the target first: no picker over a locked volume
         s.vault(&vault)?;
         let (src, indices) = match retry {
             Some(ix) => {
@@ -473,7 +405,6 @@ fn photo_feed(app: &AppHandle, st: &Arc<AppState>, src: &PickSrc, indices: &[usi
                 .map(|l| PathBuf::from(l.path))
                 .map_err(native_fail),
             PickSrc::Android { uris, names } => {
-                // the Photo Picker's provider downloads a cloud item (Google Photos) while it is read
                 let dest = slot.join(&names[i]);
                 copy_in(app, &uris[i], &dest).map(|()| dest).map_err(|e| io_fail(&e))
             }
@@ -493,7 +424,6 @@ fn photo_feed(app: &AppHandle, st: &Arc<AppState>, src: &PickSrc, indices: &[usi
                 _ if io_fail(&e).reason == Reason::NoSpace => Reason::NoSpace,
                 _ => Reason::Other,
             };
-            // a full or locked volume: nothing more can go in
             let stop = reason == Reason::NoSpace || e.code == "locked" || e.code == "not_found";
             ImportFail { fail: Fail::new(reason, e.message), stop }
         })
@@ -526,7 +456,6 @@ fn photo_feed(app: &AppHandle, st: &Arc<AppState>, src: &PickSrc, indices: &[usi
                 emit(false, None);
                 if cancel.load(Ordering::SeqCst) && !told {
                     told = true;
-                    // the downloads in flight stop now, not when they are done
                     if let (PickSrc::Ios { session, .. }, Ok(h)) = (src, bridge(app)) {
                         let _ = h.run_mobile_plugin::<()>("cancelPhotos", serde_json::json!({ "session": session }));
                     }
@@ -549,9 +478,6 @@ fn photo_feed(app: &AppHandle, st: &Arc<AppState>, src: &PickSrc, indices: &[usi
     Ok(())
 }
 
-/// iOS: the document picker (Files, iCloud Drive, USB, providers), opened in place through
-/// security-scoped URLs and copied into a staging folder under the file's real name; no copy
-/// is left in the app's Inbox. Android uses the dialog plugin (SAF) and gets "unsupported".
 #[tauri::command(rename_all = "snake_case")]
 pub async fn mobile_pick_files(app: AppHandle, multiple: bool) -> ApiResult<Vec<String>> {
     blocking(move || {
@@ -563,9 +489,6 @@ pub async fn mobile_pick_files(app: AppHandle, multiple: bool) -> ApiResult<Vec<
     .await
 }
 
-/// A volume picked in the system picker (Files, a USB stick, a cloud drive): copied into the
-/// app's Volumes folder (copy-in); returns the path to open. A plain
-/// path is returned as it is.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn mobile_volume_in(app: AppHandle, uri: String) -> ApiResult<String> {
     blocking(move || {
@@ -575,7 +498,6 @@ pub async fn mobile_volume_in(app: AppHandle, uri: String) -> ApiResult<String> 
         }
         let dir = PathBuf::from(std::env::var_os("NICEVAULT_VOLUME_DIR").ok_or_else(|| io("no volume folder"))?);
         if let Some(st) = staged {
-            // iOS: picked into staging (mobile_pick_files): moved into Volumes
             let src = PathBuf::from(&uri);
             let dest = unique_in(&dir, &volume_name(&clean_name(&src.file_name().map(|n| n.to_string_lossy()).unwrap_or_default())));
             let r = std::fs::rename(&src, &dest).map_err(io);
@@ -594,7 +516,6 @@ pub async fn mobile_volume_in(app: AppHandle, uri: String) -> ApiResult<String> 
     .await
 }
 
-/// The file `n` of `v`, decrypted into `out` (1 MiB at a time through `buf`, zeroed after).
 fn decrypt_to(v: &nv_core::Vault, n: &nv_fs::Node, out: &mut impl Write, buf: &mut [u8]) -> ApiResult<()> {
     let mut off = 0u64;
     let r = (|| {
@@ -624,19 +545,10 @@ fn native_err(e: tauri::plugin::mobile::PluginInvokeError) -> ApiError {
 
 #[derive(Serialize)]
 pub struct GallerySaved {
-    /// went into the gallery
     saved: Vec<NodeId>,
-    /// not pictures / videos (folders, documents, formats the gallery refuses): the UI exports
-    /// these to Files as before
     others: Vec<NodeId>,
 }
 
-/// "Salva nella Galleria": pictures and videos of a volume into the phone's gallery. Android:
-/// a MediaStore entry in Pictures/NiceVault or Movies/NiceVault (no storage permission from
-/// Android 10; older ones answer `unsupported`), written straight from the volume through the
-/// entry's file descriptor, nothing staged. iOS: PHPhotoLibrary, add-only access (asked once by
-/// the system: `gallery_denied` when refused); a decrypted copy in `<cache>/tmp/nv-gallery`
-/// that Photos moves into the library, the folder wiped right after either way.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn mobile_save_gallery(app: AppHandle, st: State<'_, Arc<AppState>>, vault: String, nodes: Vec<NodeId>) -> ApiResult<GallerySaved> {
     let s = st.inner().clone();
@@ -667,13 +579,11 @@ pub async fn mobile_save_gallery(app: AppHandle, st: State<'_, Arc<AppState>>, v
                 #[cfg(unix)]
                 let r = {
                     use std::os::fd::FromRawFd;
-                    // SAFETY: NvPlugin.kt detached this descriptor for us: we own it now
                     let mut f = unsafe { std::fs::File::from_raw_fd(o.fd) };
                     decrypt_to(&v, &n, &mut f, &mut buf).and_then(|()| f.sync_all().map_err(io))
                 };
                 #[cfg(not(unix))]
                 let r: ApiResult<()> = Err(io(o.fd));
-                // published, or the half-written entry removed
                 handle.run_mobile_plugin::<()>("galleryClose", serde_json::json!({ "uri": o.uri, "ok": r.is_ok() })).map_err(native_err)?;
                 r?;
             } else {
@@ -702,14 +612,11 @@ struct ShareArgs {
     title: Option<String>,
 }
 
-/// The share sheet for files of a volume: decrypted into the share folder (app cache, wiped at
-/// the next start and ten minutes after), handed out read-only. Folders are skipped.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn mobile_share(app: AppHandle, st: State<'_, Arc<AppState>>, vault: String, nodes: Vec<NodeId>, title: Option<String>) -> ApiResult<()> {
     let s = st.inner().clone();
     blocking(move || {
         let handle = bridge(&app)?;
-        // copies older than ten minutes: the receiving app has had them
         if let Ok(rd) = std::fs::read_dir(share_root()) {
             for e in rd.flatten() {
                 let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d > Duration::from_secs(600));
@@ -743,9 +650,6 @@ pub async fn mobile_share(app: AppHandle, st: State<'_, Arc<AppState>>, vault: S
     .await
 }
 
-/// Where "Esporta" writes on a phone (there is no folder picker): Android's public
-/// Download/NiceVault (apps may create files there by path since Android 11), iOS the app's
-/// Documents folder (shown in the Files app).
 #[tauri::command(rename_all = "snake_case")]
 pub async fn mobile_export_dir(app: AppHandle) -> ApiResult<String> {
     #[cfg(target_os = "android")]

@@ -1,7 +1,3 @@
-//! Password manager commands (`pm_*`): entries stored inside the open volume (nv_core::passwords).
-//! Secrets leave the backend only through `pm_reveal` and `pm_copy` (clipboard, cleared after
-//! `clear_after` seconds if it still holds the copied value). Nothing here logs a secret.
-
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, Job, lock_or_recover, random_id};
 use nv_core::passwords::generate::{self, GenError, GenOptions};
@@ -15,10 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
-/// Default seconds before a copied secret is wiped from the clipboard.
 pub const DEFAULT_CLEAR_AFTER: u64 = 30;
 pub const MAX_CLEAR_AFTER: u64 = 600;
-/// Entries per transaction during an import (one progress event each).
 const IMPORT_BATCH: usize = 25;
 
 impl From<PmError> for ApiError {
@@ -58,9 +52,6 @@ fn secret_of(field: &str) -> ApiResult<Secret> {
     Secret::parse(field).ok_or_else(|| ApiError::new("invalid_field", format!("Campo sconosciuto: {field}")))
 }
 
-// ---------------- clipboard ----------------
-
-/// The system clipboard (Tauri plugin in the app, a fake in tests).
 pub trait Clipboard: Send + Sync {
     fn read(&self) -> Option<String>;
     fn write(&self, text: &str) -> Result<(), String>;
@@ -76,7 +67,6 @@ impl Clipboard for TauriClipboard {
     }
     fn write(&self, text: &str) -> Result<(), String> {
         use tauri_plugin_clipboard_manager::ClipboardExt;
-        // write_secret: excluded from clipboard history / cloud sync / clipboard managers
         let c = self.0.clipboard();
         c.write_secret(text.to_owned()).or_else(|_| c.write_text(text.to_owned())).map_err(|e| e.to_string())
     }
@@ -90,7 +80,6 @@ impl Clipboard for TauriClipboard {
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Copied {
-    /// Seconds until the clipboard is cleared (0 = left alone).
     pub clear_after: u64,
 }
 
@@ -116,7 +105,6 @@ pub enum ImportKind {
     Csv,
 }
 
-/// Wipes the clipboard after `after` unless something else was copied meanwhile.
 fn schedule_clear(clip: Arc<dyn Clipboard>, value: Zeroizing<String>, after: Duration) {
     std::thread::Builder::new()
         .name("nv-clipboard".into())
@@ -131,7 +119,6 @@ fn schedule_clear(clip: Arc<dyn Clipboard>, value: Zeroizing<String>, after: Dur
         .expect("spawn clipboard thread");
 }
 
-/// Reads at most `cap` bytes (no unbounded read of an import or key file).
 fn read_capped(p: &str, cap: usize) -> ApiResult<Vec<u8>> {
     use std::io::Read;
     let mut b = Vec::new();
@@ -142,12 +129,9 @@ fn read_capped(p: &str, cap: usize) -> ApiResult<Vec<u8>> {
     Ok(b)
 }
 
-/// The last value `pm_copy` put on the clipboard: (vault, value, clipboard).
 pub(crate) type LastCopy = Option<(String, Zeroizing<String>, Arc<dyn Clipboard>)>;
 
 impl AppState {
-    /// Clears the clipboard if it still holds the last value copied from `vault` (any vault
-    /// when None): on lock and at exit.
     pub(crate) fn clear_copied(&self, vault: Option<&str>) {
         let mut g = lock_or_recover(&self.last_copy);
         if let Some((v, value, clip)) = g.as_ref()
@@ -184,22 +168,18 @@ impl AppState {
         Ok(self.vault(vault)?.pm_delete(id)?)
     }
 
-    /// Moves entries into `folder` ("" = none); returns how many moved.
     pub fn pm_move(&self, vault: &str, ids: &[String], folder: &str) -> ApiResult<usize> {
         Ok(self.vault(vault)?.pm_move(ids, folder)?)
     }
 
-    /// Renames a folder and its subfolders (merging into an existing one).
     pub fn pm_folder_rename(&self, vault: &str, from: &str, to: &str) -> ApiResult<usize> {
         Ok(self.vault(vault)?.pm_folder_rename(from, to)?)
     }
 
-    /// Deletes a folder: its entries and subfolders move up into its parent.
     pub fn pm_folder_delete(&self, vault: &str, folder: &str) -> ApiResult<usize> {
         Ok(self.vault(vault)?.pm_folder_delete(folder)?)
     }
 
-    /// "Ripara voci importate": maps raw export fields of older imports; returns entries changed.
     pub fn pm_repair(&self, vault: &str) -> ApiResult<usize> {
         Ok(self.vault(vault)?.pm_repair_imported()?)
     }
@@ -208,7 +188,6 @@ impl AppState {
         Ok(self.vault(vault)?.pm_history(id)?)
     }
 
-    /// One secret in clear: `password | username | notes | totp | totp_code | field:<i> | history:<i>`.
     pub fn pm_reveal(&self, vault: &str, id: &str, field: &str) -> ApiResult<Zeroizing<String>> {
         Ok(self.vault(vault)?.pm_reveal(id, secret_of(field)?)?)
     }
@@ -228,7 +207,6 @@ impl AppState {
         Ok(self.vault(vault)?.pm_totp(id)?)
     }
 
-    /// Parses a TOTP input (otpauth URI from a QR code, or a base32 secret) without storing it.
     pub fn pm_totp_check(&self, totp: &str) -> ApiResult<TotpCheck> {
         let t = Totp::parse(totp).map_err(PmError::from)?;
         Ok(TotpCheck { info: t.info(), code: t.now() })
@@ -239,9 +217,6 @@ impl AppState {
         Ok(GeneratedPw { value: g.value.to_string(), entropy_bits: g.entropy_bits })
     }
 
-    /// Starts an import job. Source: `path` on the host, or `data` (text for bitwarden/csv,
-    /// base64 for keepass). Events: `job-progress` {job, done_bytes: entries done, total_bytes:
-    /// entries, current: title}; `job-done` {job, error, imported}.
     pub fn pm_import(
         &self,
         vault: &str,
@@ -313,8 +288,6 @@ impl AppState {
         Ok(job)
     }
 }
-
-// ---------------- Tauri commands ----------------
 
 pub mod cmd {
     use super::*;
@@ -391,7 +364,6 @@ pub mod cmd {
 
     #[tauri::command(rename_all = "snake_case")]
     pub async fn pm_reveal(st: St<'_>, vault: String, id: String, field: String) -> ApiResult<String> {
-        // The IPC layer needs an owned String; it is serialized once and dropped.
         blocking(&st, move |s| s.pm_reveal(&vault, &id, &field).map(|z| z.to_string())).await
     }
 

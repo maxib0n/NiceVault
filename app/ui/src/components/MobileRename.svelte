@@ -1,9 +1,3 @@
-<!--
-  Rename on a phone / tablet (an item's sheet → Rinomina): a slip drawn up from the bottom that
-  rides on the on-screen keyboard (--nv-kb, lib/touch.ts), the name in a field the width of the
-  page, its stem selected, and the two keys under the thumb. The desktop renames in place
-  (RenameInput). Enter commits, Esc / Annulla / Back cancel.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { onMount } from 'svelte';
@@ -26,7 +20,6 @@
     value = name;
     dlg?.showModal();
     if (!input) return;
-    // in the same task as the tap that asked for it: iOS raises the keyboard only then
     input.value = name;
     input.focus();
     const dot = name.lastIndexOf('.');
@@ -111,7 +104,6 @@
   form {
     display: grid;
     gap: 14px;
-    /* the home bar under it, unless the keyboard is up (then the keys sit on the keys) */
     padding: 8px max(18px, var(--safe-right, 0px)) calc(16px + var(--safe-bottom, 0px)) max(18px, var(--safe-left, 0px));
   }
   :global(html[data-keyboard]) form {

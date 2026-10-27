@@ -1,5 +1,3 @@
-// The password manager screen against the mock (pmMock.ts): list, search, CRUD, reveal, copy
-// with the clipboard countdown, live TOTP, generator, import, keyboard shortcuts.
 import type { Page } from '@playwright/test';
 import { boot, expect, expectScreen, test } from './helpers';
 
@@ -21,7 +19,6 @@ test('sidebar entry, list with folders and favourites, search as you type', asyn
   await expect(entries(page)).toHaveCount(2);
   await page.getByTestId('pm-search').fill('');
   await expect(entries(page)).toHaveCount(6);
-  // Ctrl+F focuses the search
   await page.getByTestId('pm-list').focus();
   await page.keyboard.press('Control+f');
   await expect(page.getByTestId('pm-search')).toBeFocused();

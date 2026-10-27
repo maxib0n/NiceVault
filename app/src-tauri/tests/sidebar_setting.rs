@@ -1,6 +1,3 @@
-//! The sidebar folded to a rail (`sidebar_collapsed`): off by default, kept additively in
-//! settings.json next to the keys it does not know, read back by a new run.
-
 use nicevault_app::global::AppSettingsPatch;
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, NoEvents};
@@ -10,7 +7,6 @@ fn sidebar_collapsed_persists_additively() {
     let t = tempfile::tempdir().unwrap();
     let cfg = t.path().join("cfg");
     std::fs::create_dir_all(&cfg).unwrap();
-    // an older settings.json (no sidebar_collapsed) with a key from a newer build
     std::fs::write(cfg.join("settings.json"), br#"{ "language": "it", "from_the_future": 7 }"#).unwrap();
     let loc = || Locations { exe_dir: None, removable: Some(vec![]), config_dir: Some(cfg.clone()) };
     let st = AppState::new(Store::new(loc()), Box::new(NoEvents));

@@ -16,7 +16,6 @@ describe('import space check', () => {
     const f = fits(i, 5 * GIB);
     expect(f.ok).toBe(false);
     expect(f.suggest! % 4096).toBe(0);
-    // the suggested size leaves exactly enough
     expect(fits({ ...i, capacity: f.suggest! }, 5 * GIB).ok).toBe(true);
   });
   it('growable: the drive decides, nothing to extend', () => {

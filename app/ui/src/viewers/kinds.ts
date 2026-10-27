@@ -1,6 +1,3 @@
-// Which in-app viewer shows a file, and how much of it each one will take. Chosen by
-// extension first, then — for names that say nothing — by the first bytes (sniff()).
-
 import { extension } from '../lib/filetype';
 import { languageFor } from './highlight';
 import { OFFICE_EXTS } from './office';
@@ -9,22 +6,19 @@ export type ViewerKind = 'image' | 'video' | 'audio' | 'pdf' | 'markdown' | 'tex
 
 const MB = 1024 * 1024;
 
-/** Above these sizes a viewer shows the "too big" state instead (media stream, so none). */
 export const CAPS: Record<ViewerKind, number> = {
   image: 200 * MB,
   video: Infinity,
   audio: Infinity,
   pdf: 1024 * MB,
-  markdown: 4 * MB, // bigger Markdown is shown as paged text
-  text: Infinity, // paged; at most TEXT_MAX_LOADED in memory
+  markdown: 4 * MB,
+  text: Infinity,
   office: 200 * MB,
-  archive: Infinity, // only the directory is read
+  archive: Infinity,
   info: Infinity,
 };
-/** the text viewer reads pages of this size, and stops after TEXT_MAX_LOADED */
 export const TEXT_PAGE = 256 * 1024;
 export const TEXT_MAX_LOADED = 16 * MB;
-/** the hex view shows this much of the start */
 export const HEX_BYTES = 16 * 1024;
 
 const EXT: Record<string, ViewerKind> = {};
@@ -42,11 +36,10 @@ export function viewerKind(name: string): ViewerKind {
   const ext = extension(name);
   if (EXT[ext]) return EXT[ext];
   if (languageFor(name)) return 'text';
-  if (!ext && /^id_[a-z0-9]+$/i.test(name)) return 'text'; // ssh keys
+  if (!ext && /^id_[a-z0-9]+$/i.test(name)) return 'text';
   return 'info';
 }
 
-/** The kind the bytes say, for files whose name gave none (null: keep the info view). */
 export function sniff(head: Uint8Array): ViewerKind | null {
   const s = (o: number, sig: number[]) => sig.every((v, k) => head[o + k] === v);
   if (s(0, [0x25, 0x50, 0x44, 0x46, 0x2d])) return 'pdf';
@@ -64,7 +57,6 @@ export function sniff(head: Uint8Array): ViewerKind | null {
   return null;
 }
 
-/** A short description of what the first bytes are (info panel), or null. */
 export function magicLabel(head: Uint8Array): string | null {
   const s = (o: number, sig: number[]) => sig.every((v, k) => head[o + k] === v);
   const table: [boolean, string][] = [
@@ -99,7 +91,6 @@ export function magicLabel(head: Uint8Array): string | null {
   return null;
 }
 
-/** rows of 16 bytes: offset, hex, printable ASCII */
 export function hexRows(b: Uint8Array, base = 0): { off: string; hex: string; ascii: string }[] {
   const rows: { off: string; hex: string; ascii: string }[] = [];
   for (let o = 0; o < b.length; o += 16) {

@@ -1,13 +1,3 @@
-<!--
-  A folder as an open security envelope. Its flap stands open behind it, the inside printed
-  with the security tint; it was slit open, so no seal is left on it. What it holds stands up out of it from INSIDE, between the far wall and
-  the near one (prints of its first photos, sheets for its documents, smaller envelopes for
-  its folders); the near wall is a pocket whose V-cut mouth hides their feet. It reads the
-  folder's listing to know what is inside. An empty folder is an envelope never opened: seen
-  from the back, its flap folded down and closed with an intact wax seal in the volume's ink.
-  Every part is a percentage of the picture box: the same envelope at S, M, L and XL and in the
-  list's small row, contents included. No canvas: boxes, clips and small SVGs.
--->
 <script lang="ts">
   import { previewUrl } from '../lib/api';
   import * as api from '../lib/api';
@@ -25,7 +15,6 @@
     vault: VaultId;
     node: FsNode;
     layout?: 'grid' | 'list';
-    /** anything that changes when the listing reloads (re-reads the contents) */
     refresh?: unknown;
     count?: number | null;
   } = $props();
@@ -49,7 +38,7 @@
         const dirs = kids.filter((k) => k.kind === 'dir');
         const out: Peek[] = [];
         for (const k of imgs) {
-          const src = previewUrl(v, k.id, 384); // a print in the envelope: never the full photo
+          const src = previewUrl(v, k.id, 384);
           if (src && out.length < 3) out.push({ kind: 'print', src });
         }
         for (let i = 0; i < files.length && out.length < 3; i++) out.push({ kind: 'sheet' });
@@ -57,7 +46,6 @@
         peeks = out;
       })
       .catch(() => {
-        // a locked or vanished volume: the envelope just stands empty
         if (live) peeks = [];
       });
     return () => {
@@ -65,9 +53,6 @@
     };
   });
 
-  // standing in the envelope, fanned: positions for 1, 2 or 3 pieces (x: % of the box, r: deg,
-  // y: how much lower it stands, % of the box). The middle one stands lowest: the flap's tip
-  // (the printed inside of the flap behind it) always shows.
   const FAN: Record<number, { x: number; r: number; y: number }[]> = {
     1: [{ x: 0, r: -2, y: 0 }],
     2: [
@@ -81,12 +66,10 @@
     ],
   };
   const fan = $derived(FAN[Math.min(3, peeks.length)] ?? []);
-  /** known to hold nothing: the closed envelope, sealed */
   const closed = $derived(count === 0);
 </script>
 
 {#if closed}
-  <!-- nothing in it yet: closed, its flap folded down over the back, the wax seal intact -->
   <span class="envelope closed" data-envelope data-layout={layout} data-empty="true" data-closed aria-hidden="true">
     <span class="back"></span>
     <svg class="back-folds" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -98,18 +81,14 @@
   </span>
 {:else}
 <span class="envelope" data-envelope data-layout={layout} data-empty={peeks.length === 0} aria-hidden="true">
-  <!-- the flap, open: its inside printed with the security tint, its edges cut clean -->
   <span class="flap">
     <span class="flap-in"></span>
     <svg class="flap-edge" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="M0.5 99.5 L50 1 L99.5 99.5" /></svg>
   </span>
-  <!-- the mouth: the inside of the far wall, in its own shadow -->
   <span class="mouth"></span>
   <span class="contents">
       {#each peeks as p, i (i)}
         {@const f = fan[i]}
-        <!-- the kind is a data attribute, not a class: a class "envelope" here would also
-             pick up the root .envelope rule and stretch the piece to the tile -->
         <span class="piece" data-peek={p.kind} style:--x="{f.x}%" style:--r="{f.r}deg" style:--y="{f.y}%">
           {#if p.kind === 'print' && !failed.has(p.src)}
             <img
@@ -130,7 +109,6 @@
         </span>
       {/each}
   </span>
-  <!-- the near wall: a pocket, its mouth cut in a V, the bottom flap's creases below it -->
   <span class="pocket">
     <svg class="folds" viewBox="0 0 100 100" preserveAspectRatio="none">
       <path class="crease" d="M0.6 99.4 L50 58 L99.4 99.4" />
@@ -141,7 +119,6 @@
 {/if}
 
 <style>
-  /* the box: everything below is a share of it, so the envelope is the same at every size */
   .envelope {
     --left: 8%;
     --width: 84%;
@@ -154,7 +131,6 @@
     height: 100%;
   }
 
-  /* ---- the flap, standing open behind the envelope ---- */
   .flap {
     position: absolute;
     left: var(--left);
@@ -166,7 +142,6 @@
     position: absolute;
     inset: 0;
     clip-path: polygon(0 100%, 50% 0, 100% 100%);
-    /* the inside of the stock, printed with a fine security tint (the paper's own ink) */
     background:
       repeating-linear-gradient(60deg, color-mix(in srgb, var(--engrave-2) 34%, transparent) 0 0.6px, transparent 0.6px 3.2px),
       repeating-linear-gradient(-60deg, color-mix(in srgb, var(--engrave-2) 34%, transparent) 0 0.6px, transparent 0.6px 3.2px),
@@ -188,7 +163,6 @@
   }
 
 
-  /* ---- the body: the far wall's inside, seen through the mouth ---- */
   .mouth {
     position: absolute;
     left: var(--left);
@@ -204,21 +178,16 @@
       var(--env-glow);
   }
 
-  /* ---- what it holds, standing inside, their feet in the pocket ---- */
   .contents {
     position: absolute;
     inset: 0;
-    /* lifted under a drop (FileItem): a registered property, not its transform (styles/motion.css) */
     translate: 0 var(--nv-dy);
     transition: --nv-dy var(--dur-ui) var(--ease-out);
   }
   .piece {
     position: absolute;
     left: 50%;
-    /* standing on the inside of the envelope's bottom: the pocket hides the lower part, and no
-       piece rises past a third of the box, so the flap's printed inside stays in view */
     bottom: calc(22% - var(--y));
-    /* narrower than the envelope's mouth even fanned and tilted: nothing stands outside it */
     width: 37%;
     aspect-ratio: 1.12;
     transform: translateX(calc(-50% + var(--x) * 2)) rotate(var(--r));
@@ -227,7 +196,6 @@
       0 0 0 0.5px rgb(var(--cast) / 0.18),
       0 1px 2px rgb(var(--cast) / 0.2);
   }
-  /* a print: the photograph with its white border */
   .piece[data-peek='print'] {
     padding: 2.5px;
     background: var(--print-border);
@@ -242,7 +210,6 @@
     height: 100%;
     object-fit: cover;
   }
-  /* a sheet: ruled lines of text, portrait */
   .piece[data-peek='sheet'] {
     width: 26%;
     aspect-ratio: 0.74;
@@ -254,7 +221,6 @@
     background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--sheet-ink) 30%, transparent) 0 1px, transparent 1px 4px);
     opacity: 0.9;
   }
-  /* a smaller envelope inside, its flap folded down */
   .piece[data-peek='envelope'] {
     width: 36%;
     aspect-ratio: 1.5;
@@ -279,7 +245,6 @@
     vector-effect: non-scaling-stroke;
   }
 
-  /* ---- the near wall: the pocket ---- */
   .pocket {
     position: absolute;
     left: var(--left);
@@ -306,13 +271,11 @@
     stroke: var(--env-crease);
     stroke-width: 0.9;
   }
-  /* the mouth's cut edge catches the light, a hair of shade just under it */
   .lip {
     stroke: var(--env-lip);
     stroke-width: 1.4;
   }
 
-  /* ---- empty: the closed envelope, from the back, sealed ---- */
   .closed .back {
     position: absolute;
     left: var(--left);
@@ -351,7 +314,6 @@
     stroke: var(--env-crease);
     stroke-width: 0.9;
   }
-  /* the flap, folded down to just past the middle: a shade lighter, it catches the light */
   .closed .flap-down {
     bottom: auto;
     height: calc((100% - var(--closed-top) - var(--body-bottom)) * 0.62);
@@ -366,7 +328,6 @@
   .closed .flap-down-edge path {
     stroke: var(--env-lip);
   }
-  /* the seal where the flap's point meets the back */
   .closed .wax {
     position: absolute;
     left: 50%;
@@ -384,7 +345,6 @@
     --closed-top: 30%;
   }
 
-  /* ---- the list's small row: the same envelope, its contents smaller ---- */
   .envelope[data-layout='list'] {
     --left: 4%;
     --width: 92%;
@@ -398,7 +358,6 @@
   .envelope.closed[data-layout='list'] .wax {
     width: 30%;
   }
-  /* in a row the pieces stand taller out of the pocket, or they would not read at 30 px */
   .envelope[data-layout='list'] .piece {
     bottom: calc(34% - var(--y));
     width: 44%;

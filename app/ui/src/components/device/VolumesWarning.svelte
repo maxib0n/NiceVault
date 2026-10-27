@@ -1,7 +1,3 @@
-<!--
-  The drive about to be erased holds NiceVault volumes (Plan.volumes, a read-only scan of its
-  mounted partitions): name them, say they go for good, and ask for one more explicit "I know".
--->
 <script lang="ts">
   import { TriangleAlert } from '@lucide/svelte';
   import { m } from '../../paraglide/messages.js';

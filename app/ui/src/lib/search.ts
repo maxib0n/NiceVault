@@ -1,15 +1,10 @@
-// Search helpers shared by the UI and the mock. They mirror crates/nv-core/src/search.rs (the
-// backend is the source of truth for results): folding, query terms, kind groups, filters,
-// ranking, highlights. Plus `highlightParts` to render a hit's name.
 import type { FsNode, KindGroup, SearchFilters, TagColor, TagId } from './types';
 
 export const KIND_GROUPS: readonly KindGroup[] = ['photos', 'videos', 'audio', 'documents', 'archives', 'code', 'other', 'folders'];
 
-/** The 7 inks + neutral (the order of a tag-colour picker). */
 export const TAG_COLORS: readonly TagColor[] = ['velluto', 'prugna', 'prussia', 'bottiglia', 'seppia', 'ardesia', 'ottanio', 'neutral'];
 export const MAX_TAG_NAME = 64;
 
-/** A tag colour as stored; anything unknown (a newer build's) is shown neutral. */
 export const tagColor = (c: string): TagColor => ((TAG_COLORS as readonly string[]).includes(c) ? (c as TagColor) : 'neutral');
 
 const SPECIAL: Record<string, string> = { ß: 'ss', ẞ: 'ss', æ: 'ae', Æ: 'ae', œ: 'oe', Œ: 'oe', ø: 'o', Ø: 'o', đ: 'd', Đ: 'd', ł: 'l', Ł: 'l', þ: 'th', Þ: 'th', ı: 'i' };
@@ -20,14 +15,12 @@ function foldChar(c: string): string {
   return c.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 }
 
-/** lowercase, no accents / combining marks (NFD), ß ss, æ ae, œ oe, ø o, đ d, ł l, þ th, ı i */
 export function fold(s: string): string {
   let out = '';
   for (const c of s) out += foldChar(c);
   return out;
 }
 
-/** fold() plus, per UTF-16 unit of the result, the [start, end) UTF-16 range of the source char. */
 function foldMapped(s: string): { norm: string; map: [number, number][] } {
   let norm = '';
   const map: [number, number][] = [];
@@ -41,7 +34,6 @@ function foldMapped(s: string): { norm: string; map: [number, number][] } {
   return { norm, map };
 }
 
-/** Words of a query; "..." keeps a phrase; folded, deduplicated. Each must occur in the name. */
 export function terms(text: string): string[] {
   const out: string[] = [];
   const push = (t: string) => {
@@ -67,7 +59,6 @@ const GROUPS: [KindGroup, string][] = [
 const EXT_GROUP = new Map<string, KindGroup>();
 for (const [g, list] of GROUPS) for (const e of list.split(' ')) EXT_GROUP.set(e, g);
 
-/** The filter group of a node (from its extension; folders: "folders"). */
 export function kindGroup(node: Pick<FsNode, 'name' | 'kind'>): KindGroup {
   if (node.kind === 'dir') return 'folders';
   const i = node.name.lastIndexOf('.');
@@ -77,7 +68,6 @@ export function kindGroup(node: Pick<FsNode, 'name' | 'kind'>): KindGroup {
   return EXT_GROUP.get(ext.replace(/[A-Z]/g, (c) => c.toLowerCase())) ?? 'other';
 }
 
-/** Whether a node passes `f` (everything but `within`). */
 export function matchesFilters(node: Pick<FsNode, 'name' | 'kind' | 'size' | 'mtime'>, tags: readonly TagId[], f: SearchFilters | null | undefined): boolean {
   if (!f) return true;
   const g = kindGroup(node);
@@ -96,7 +86,6 @@ export function matchesFilters(node: Pick<FsNode, 'name' | 'kind' | 'size' | 'mt
   return true;
 }
 
-/** 0 whole name (or name without extension), 1 name start, 2 every term at a word start, 3 anywhere. */
 export function rank(norm: string, ts: readonly string[]): number {
   const joined = ts.join(' ');
   const dot = norm.lastIndexOf('.');
@@ -112,7 +101,6 @@ export function rank(norm: string, ts: readonly string[]): number {
   return ts.every(wordStart) ? 2 : 3;
 }
 
-/** Every occurrence of every term in `name`, as merged [start, end) UTF-16 ranges. */
 export function highlights(name: string, ts: readonly string[]): [number, number][] {
   if (!ts.length) return [];
   const { norm, map } = foldMapped(name);
@@ -130,7 +118,6 @@ export function highlights(name: string, ts: readonly string[]): [number, number
   return out;
 }
 
-/** A hit's name cut into plain / matched parts, for rendering (`<mark>` the hit ones). */
 export function highlightParts(name: string, ranges: readonly [number, number][]): { text: string; hit: boolean }[] {
   const out: { text: string; hit: boolean }[] = [];
   let at = 0;
@@ -143,7 +130,6 @@ export function highlightParts(name: string, ranges: readonly [number, number][]
   return out;
 }
 
-/** Text order with digit runs compared as numbers (nv-core natural_cmp over code points). */
 export function naturalCmp(a: string, b: string): number {
   const x = [...a].map((c) => c.codePointAt(0) ?? 0);
   const y = [...b].map((c) => c.codePointAt(0) ?? 0);

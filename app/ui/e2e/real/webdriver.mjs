@@ -1,7 +1,5 @@
-// Minimal W3C WebDriver client (fetch only) for tauri-driver + WebKitWebDriver.
 const ELEMENT = 'element-6066-11e4-a52e-4f735466cecf';
 
-/** Accepts an element id or the {element-6066…: id} reference that scripts return. */
 export function elementId(el) {
   if (typeof el === 'string') return el;
   if (el && typeof el === 'object' && el[ELEMENT]) return el[ELEMENT];
@@ -40,11 +38,9 @@ export class WebDriver {
       this.session = null;
     }
   }
-  /** Run a sync script in the page; `args` are JSON. */
   exec(script, ...args) {
     return this.cmd('POST', '/execute/sync', { script, args });
   }
-  /** Run an async script: the body gets `done` as its last argument. */
   execAsync(script, ...args) {
     return this.cmd('POST', '/execute/async', { script, args });
   }
@@ -64,7 +60,6 @@ export class WebDriver {
   async screenshot() {
     return Buffer.from(await this.cmd('GET', '/screenshot'), 'base64');
   }
-  /** Key presses through the Actions API (real key events in the webview). */
   async keys(...keys) {
     const actions = [];
     for (const k of keys) actions.push({ type: 'keyDown', value: k }, { type: 'keyUp', value: k });

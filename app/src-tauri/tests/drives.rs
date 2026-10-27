@@ -1,8 +1,3 @@
-//! Live drives with an injected fake source (NICEVAULT_FAKE_DRIVES, what the e2e suites use):
-//! plugging a drive emits drives-changed and Benvenuto's scan finds the volume on it; free space
-//! alone emits nothing; pulling the drive out emits again, the volume shows as unreachable and the
-//! open session locks with "removed". Nothing here touches a real device.
-
 use nicevault_app::drives::{Drive, Drives, Source};
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events, NoEvents};
@@ -63,17 +58,14 @@ fn plug_and_pull_a_fake_drive() {
     let mount = t.path().join("media").join("FAKE STICK");
     std::fs::create_dir_all(&mount).unwrap();
     let vol = mount.join("Foto.nvault");
-    // SAFETY: the only test of this binary; set before any thread reads the environment.
     unsafe { std::env::set_var("NICEVAULT_FAKE_DRIVES", &file) };
 
-    // a volume made elsewhere (another session) lives on the stick
     {
         let maker = AppState::new(Store::new(Locations { exe_dir: None, removable: Some(vec![]), config_dir: None }), Box::new(NoEvents));
         let info = maker.vault_create(vol.to_str().unwrap(), SecretString::from("pw".to_owned()), Some("fast")).unwrap();
         maker.vault_lock(&info.id, "user").unwrap();
     }
 
-    // Benvenuto's store detects removable roots at every scan: from the drive source
     let rec = Rec::default();
     let st = AppState::new(Store::new(Locations { exe_dir: None, removable: None, config_dir: None }), Box::new(rec.clone()));
     let drives = Drives::new(Source::detect());
@@ -81,7 +73,6 @@ fn plug_and_pull_a_fake_drive() {
     drives.spawn(Arc::downgrade(&st));
     assert!(st.recent_list().is_empty());
 
-    // plug
     write_drives(&file, &[stick(&mount, 20 << 30)]);
     let ev = rec.wait_count("drives-changed", 1);
     assert_eq!(ev["drives"][0]["label"], "FAKE STICK");
@@ -90,13 +81,11 @@ fn plug_and_pull_a_fake_drive() {
     assert_eq!(r.len(), 1);
     assert_eq!((r[0].name.as_str(), r[0].source, r[0].exists), ("Foto", "removable", true));
 
-    // free space changes alone are not a drive change
     write_drives(&file, &[stick(&mount, 19 << 30)]);
     std::thread::sleep(Duration::from_millis(1200));
     assert_eq!(rec.count("drives-changed"), 1);
     assert_eq!(drives.list()[0].free_bytes, 19 << 30, "drives_list is fresh");
 
-    // open it, then pull the stick (the folder goes away with the mount)
     let info = st.vault_open(vol.to_str().unwrap(), SecretString::from("pw".to_owned())).unwrap();
     std::fs::rename(&mount, t.path().join("gone")).unwrap();
     write_drives(&file, &[]);

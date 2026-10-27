@@ -6,7 +6,6 @@ import { ROOT } from './types';
 
 const DOC = `${STICK}/Documenti.nvault`;
 
-/** Subscribe BEFORE starting the job (events may precede the command's result). */
 async function collect(start: () => Promise<string>): Promise<{ progress: JobProgress[]; done: JobDone }> {
   const progress: JobProgress[] = [];
   const dones: JobDone[] = [];
@@ -34,7 +33,7 @@ describe('api (mock backend)', () => {
     const u = await api.vaultUpgradeFormat(v.id);
     expect(u).toMatchObject({ id: v.id, single_file: true, can_upgrade_format: false });
     expect((await api.vaultListOpen()).find((x) => x.id === v.id)?.single_file).toBe(true);
-    expect((await api.vaultUpgradeFormat(v.id)).single_file).toBe(true); // already: nothing happens
+    expect((await api.vaultUpgradeFormat(v.id)).single_file).toBe(true);
   });
 
   it('creates new volumes single-file, growable and fixed-size alike', async () => {

@@ -35,6 +35,7 @@ texel per device pixel (`--tex-px`), the strength set back on 1x screens (`--tex
 | `paper-grain.webp` | 512 px, 111 KB | cotton paper for the light theme: a fine grain and 900 short fibres, high-passed so the sheet stays even |
 | `felt-board.webp` | 115 KB | the window's board: a dense pressed felt, finer and flatter than the covers' suede (so passports and documents stand off it), same top-left light, no repeat at 1x; procedural (`scripts/gen-textures.py`), CC0 |
 | `cloth-weave.webp` | 512 px, 102 KB | plain-weave book cloth (176 × 152 threads, slubs, slight waviness) for the covers on paper; drawn at 256 px |
+| `*-aNN.webp` | 512 px, ~180 KB each | the tiles above as they print: the strength (NN %, per `--tex-k`) baked into the alpha, laid in a surface's own background (`scripts/gen-textures.py baked`) |
 
 ## Drawn in code (no image assets)
 

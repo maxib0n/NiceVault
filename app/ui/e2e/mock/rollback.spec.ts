@@ -1,4 +1,3 @@
-// A volume that opens older than this computer last saw it (VaultInfo.rolled_back).
 import { boot, expect, test } from "./helpers";
 
 test("rollback notice: shown for an older copy, gone once the version is kept", async ({

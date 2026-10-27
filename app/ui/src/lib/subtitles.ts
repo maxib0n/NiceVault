@@ -1,12 +1,8 @@
-// Sidecar subtitles: files of the same folder with the video's base name and a .srt / .vtt
-// extension (film.srt, film.it.srt, film.en.vtt), read through the app, SRT -> WebVTT in memory.
-
 import { fsList, previewUrl } from './api';
 import type { FsNode, VaultId } from './types';
 
 export type Sidecar = { label: string; lang: string; vtt: string };
 
-/** SRT text -> WebVTT (comma milliseconds to dots, a header; numbers and tags pass through) */
 export function srtToVtt(srt: string): string {
   const body = srt
     .replace(/^﻿/, '')
@@ -15,7 +11,6 @@ export function srtToVtt(srt: string): string {
   return `WEBVTT\n\n${body.trim()}\n`;
 }
 
-/** [base, language?, ext] of "film.it.srt"; null when not a subtitle file */
 export function splitSub(name: string): { base: string; lang: string; ext: 'srt' | 'vtt' } | null {
   const m = /^(.*?)(?:\.([A-Za-z]{2,3}(?:-[A-Za-z]{2,4})?))?\.(srt|vtt)$/i.exec(name);
   return m ? { base: m[1], lang: m[2] ?? '', ext: m[3].toLowerCase() as 'srt' | 'vtt' } : null;
@@ -41,7 +36,6 @@ export async function sidecarTracks(vault: VaultId, video: FsNode): Promise<Side
       const text = await (await fetch(url)).text();
       out.push({ label: s.lang || n.name, lang: s.lang, vtt: s.ext === 'srt' ? srtToVtt(text) : text });
     } catch {
-      /* unreadable: left out */
     }
   }
   return out;

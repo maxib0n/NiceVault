@@ -1,10 +1,5 @@
-//! Pure helpers of the mobile bridge (mobile.rs): names of picked files and the staging layout.
-//! Compiled on the desktop for the unit tests only.
-
 use std::path::{Component, Path, PathBuf};
 
-/// A readable name for a picked URI when the provider gives none: the last path segment,
-/// percent-decoded, after the last `/` or `:` (`.../primary%3ADownload%2Fphoto.jpg` → `photo.jpg`).
 pub fn uri_name(uri: &str) -> String {
     let last = uri.split(['?', '#']).next().unwrap_or(uri).rsplit('/').next().unwrap_or(uri);
     let b = last.as_bytes();
@@ -27,13 +22,11 @@ pub fn uri_name(uri: &str) -> String {
     clean_name(decoded.rsplit(['/', ':']).next().unwrap_or(""))
 }
 
-/// A name that is one path component (no separators, no control characters, never empty).
 pub fn clean_name(n: &str) -> String {
     let n: String = n.trim().chars().map(|c| if c == '/' || c == '\\' || c.is_control() { '_' } else { c }).collect();
     if n.is_empty() || n == "." || n == ".." { "file".to_owned() } else { n }
 }
 
-/// The staging folder (`<root>/<stamp>`) a staged path belongs to, if it is one.
 pub fn staging_of(root: &Path, p: &Path) -> Option<PathBuf> {
     let rest = p.strip_prefix(root).ok()?;
     match rest.components().next()? {
@@ -42,12 +35,10 @@ pub fn staging_of(root: &Path, p: &Path) -> Option<PathBuf> {
     }
 }
 
-/// A volume's file name: `.nvault` added when the picked file has another extension.
 pub fn volume_name(name: &str) -> String {
     if name.to_ascii_lowercase().ends_with(".nvault") { name.to_owned() } else { format!("{name}.nvault") }
 }
 
-/// `name`, or `name (2).nvault`, ... : the first that doesn't exist in `dir`.
 pub fn unique_in(dir: &Path, name: &str) -> PathBuf {
     let (stem, ext) = match name.rfind('.') {
         Some(i) if i > 0 => (&name[..i], &name[i..]),
@@ -59,10 +50,6 @@ pub fn unique_in(dir: &Path, name: &str) -> PathBuf {
         .expect("an unused name")
 }
 
-/// iOS moves an app's data container to a new `.../Data/Application/<UUID>/` folder when the
-/// app is updated (reinstalled over itself): an absolute path recorded by an earlier build
-/// (known.json) points into the old one. `p` rebased onto the container `home` is in, when both
-/// are such container paths (`/private/var/...` and `/var/...` alike); `None` otherwise.
 pub fn rebase_container(p: &Path, home: &Path) -> Option<PathBuf> {
     const MARK: &str = "/Data/Application/";
     let split = |s: &str| -> Option<(usize, usize)> {
@@ -80,15 +67,12 @@ pub fn rebase_container(p: &Path, home: &Path) -> Option<PathBuf> {
     Some(PathBuf::from(format!("{}{}", &hs[..h_end], rest)))
 }
 
-/// What the system gallery takes (iOS Photos, Android MediaStore): a picture or a video.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Media {
     Image,
     Video,
 }
 
-/// `name` as gallery media on this platform (`ios`: what PHPhotoLibrary imports; Android's
-/// MediaStore also takes WebM / Matroska). `None`: not a picture / video, it goes to Files.
 pub fn gallery_kind(name: &str, ios: bool) -> Option<Media> {
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
     match ext.as_str() {
@@ -100,8 +84,6 @@ pub fn gallery_kind(name: &str, ios: bool) -> Option<Media> {
     }
 }
 
-/// The MIME type a document provider / the gallery is told (preview.rs `mime_for` without its
-/// charset and with HTML as HTML: here another app opens the file, nothing runs in our webview).
 pub fn doc_mime(name: &str) -> String {
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
     match ext.as_str() {
@@ -113,21 +95,16 @@ pub fn doc_mime(name: &str) -> String {
     }
 }
 
-/// A DocumentsProvider document id: `<session volume id>/<node id>`. The volume id is the
-/// random one of this unlock (state.rs), so a document id stops working when the volume locks
-/// and never names a file. The root document of a volume is its node 1.
 pub fn doc_id(vault: &str, node: u64) -> String {
     format!("{vault}/{node}")
 }
 
-/// `doc_id` back to (volume id, node id).
 pub fn parse_doc_id(doc: &str) -> Option<(&str, u64)> {
     let (v, n) = doc.rsplit_once('/')?;
     (!v.is_empty() && !v.contains('/')).then_some(())?;
     Some((v, n.parse().ok()?))
 }
 
-/// An `openDocument` mode ("r", "w", "wt", "wa", "rw", "rwt"): (write, truncate).
 pub fn open_mode(mode: &str) -> Option<(bool, bool)> {
     match mode {
         "r" => Some((false, false)),
@@ -169,7 +146,6 @@ mod tests {
             rebase_container(old, home),
             Some(PathBuf::from("/var/mobile/Containers/Data/Application/NEW-UUID/Library/Application Support/app.nicevault.desktop/Volumes/Mio.nvault"))
         );
-        // same container, Android / desktop paths, a bare container: nothing to do
         assert_eq!(rebase_container(Path::new("/var/mobile/Containers/Data/Application/NEW-UUID/a.nvault"), home), None);
         assert_eq!(rebase_container(Path::new("/data/user/0/app.nicevault.desktop/Volumes/a.nvault"), home), None);
         assert_eq!(rebase_container(Path::new("/home/user/a.nvault"), home), None);

@@ -1,10 +1,3 @@
-// Password-manager list timings in the REAL app path: Tauri + nv-core + WebKitGTK, with
-// 2,000 entries imported into a real volume (pm_import with CSV data). Same in-page probe as
-// scripts/pm-perf.mjs (mock, Playwright). Run through e2e-real.sh:
-//   NV_E2E_SCRIPT=pm-perf-real.mjs pnpm e2e:real
-// To measure another build (e.g. the commit before a change): build it with its own
-// CARGO_TARGET_DIR, then NV_E2E_NO_BUILD=1 CARGO_TARGET_DIR=<that dir> NV_E2E_SCRIPT=pm-perf-real.mjs.
-// Writes NV_E2E_OUT/pm-perf-real.json (and prints it). NV_E2E_PM_RUNS = repetitions (default 3).
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pmProbeSource } from '../../scripts/pm-perf.mjs';
@@ -42,7 +35,6 @@ async function waitFor(desc, body, timeout = 30000) {
   throw new Error(`timeout waiting for ${desc} (last: ${JSON.stringify(last)})`);
 }
 const clickButton = async (name) => wd.click(await waitFor(`button ${name}`, `return btn(${JSON.stringify(name)})`));
-/** an async page script: `body` gets `done` */
 const run = (body) => wd.execAsync(`${LIB}\nconst done = arguments[arguments.length - 1];\n${pmProbeSource}\n(async () => { ${body} })().then(done, (e) => done({ error: String(e) }));`);
 
 function csv(n) {
@@ -63,7 +55,6 @@ async function main() {
   wd = new WebDriver(DRIVER);
   await wd.start({ 'tauri:options': { application: APP } });
   await waitFor('app ready', 'return document.querySelector("[data-ready=true]")');
-  // a volume through the wizard (same in every build)
   await clickButton('Nuovo volume');
   const name = await waitFor('name', 'return byLabel("Nome")');
   await wd.clear(name);
@@ -77,7 +68,6 @@ async function main() {
   await clickButton('Apri il volume');
   await waitFor('vault', 'return screen() === "vault"');
 
-  // 2,000 entries into the real volume
   const t0 = Date.now();
   const imp = await run(`
     const inv = window.__TAURI_INTERNALS__.invoke;
@@ -95,8 +85,6 @@ async function main() {
   const runs = [];
   for (let r = 0; r < RUNS; r++) {
     await wd.click(await waitFor('Password nav', 'return screen() !== "passwords" && document.querySelector("[data-testid=nav-passwords]")'));
-    // first render: measured from the click we just sent is not possible over WebDriver, so
-    // leave and come back from the page itself
     await waitFor('passwords', 'return screen() === "passwords" && document.querySelectorAll("[data-testid=pm-entry]").length > 0');
     const first = await run(`
       document.querySelector('[data-testid=nav-files]').click();
@@ -153,7 +141,6 @@ main().catch(async (e) => {
   try {
     await wd?.quit();
   } catch {
-    /* gone */
   }
   process.exit(2);
 });

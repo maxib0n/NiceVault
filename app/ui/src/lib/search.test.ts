@@ -1,5 +1,3 @@
-// Search helpers (mirror of nv-core search.rs: same cases as its unit tests) and the mock's
-// fs_search / tags_* / fs_list parity with app/src-tauri/tests/search.rs.
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as api from './api';
 import { MOCK_PASSWORD, MockBackend, STICK } from './mock';
@@ -88,7 +86,7 @@ describe('fs_search + tags (mock backend)', () => {
     expect(p1.next_cursor).toBe('o5');
     const p2 = await api.fsSearch(vault, '', { limit: 5, sort: 'name', cursor: p1.next_cursor });
     expect(p2.hits[0].node.name).not.toBe(p1.hits[0].node.name);
-    expect(p1.hits[0].node.kind).toBe('dir'); // folders first
+    expect(p1.hits[0].node.kind).toBe('dir');
     await expect(api.fsSearch(vault, '', { cursor: 'nope' })).rejects.toMatchObject({ code: 'invalid_query' });
   });
 
@@ -131,7 +129,6 @@ describe('fs_search + tags (mock backend)', () => {
     expect(up).toMatchObject({ name: 'Vacanze lontane', color: 'seppia', count: 2 });
     await api.tagsUnassign(vault, [t.id], [dir.id]);
     expect(events.at(-1)!.nodes).toEqual([dir.id]);
-    // deleting a node drops its tags (the volume's foreign key)
     await new Promise<void>((resolve) => {
       void api.onJobDone(() => resolve()).then(() => api.fsDelete(vault, [leggimi.id]));
     });

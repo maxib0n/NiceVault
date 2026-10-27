@@ -1,9 +1,3 @@
-<!--
-  The watermark: the volume's own emblem formed in the material itself, not printed
-  on it. In paper, where the mould made the sheet thinner more light comes through:
-  soft tones and a low relief, no edges, no ink. In anthracite it is pressed in: the
-  motif's floor a shade darker, its near wall in shade, its far lip catching the light.
--->
 <script lang="ts">
   import { imageSrc, initialOf, viewOf, type EmblemIconId, type EmblemView } from '../lib/emblem';
   import InkCanvas, { type InkEnv } from './InkCanvas.svelte';
@@ -42,7 +36,6 @@
     return c;
   }
 
-  /** soft: down- and up-sample (a mould never leaves a sharp edge) */
   function soften(src: HTMLCanvasElement, k: number): HTMLCanvasElement {
     let cur = src;
     for (let i = 0; i < 2; i++) {
@@ -75,7 +68,6 @@
     return c;
   }
 
-  /** soft mask -> its alpha as a height field, lit from the top-left as a relief pressed in */
   function pressed(ctx: CanvasRenderingContext2D, height: HTMLCanvasElement, env: InkEnv, w: number, h: number, wall: number) {
     const W = height.width;
     const H = height.height;
@@ -88,7 +80,6 @@
     for (let y = 1; y < H - 1; y++) {
       for (let x = 1; x < W - 1; x++) {
         const i = y * W + x;
-        // the slope seen by a light from the top-left; a hollow turns it round
         const s = -(a[i + 1] - a[i - 1] + a[i + W] - a[i - W]) * k;
         if (s > 0) lit.data[i * 4 + 3] = Math.min(255, s * 255);
         else shade.data[i * 4 + 3] = Math.min(255, -s * 255);
@@ -104,7 +95,6 @@
     const alpha = env.num('--wm-alpha', 1);
     ctx.save();
     ctx.globalAlpha = alpha;
-    // the floor: the material compressed where the die pressed
     ctx.drawImage(tinted(height, env.ink('var(--wm-body)')), 0, 0, w, h);
     put(shade, env.ink('var(--wm-shade)'));
     put(lit, env.ink('var(--wm-light)'));
@@ -117,7 +107,6 @@
     const S = Math.min(w, h);
     const cx = w / 2;
     const cy = h / 2;
-    // the motif, as paper thickness: opaque = thicker
     let motif: HTMLCanvasElement | null = null;
     if (view.kind === 'initial') {
       const fs = S * 0.92;
@@ -130,7 +119,6 @@
         const asc = mt.actualBoundingBoxAscent || fs * 0.7;
         const desc = mt.actualBoundingBoxDescent || 0;
         c.fillStyle = '#000';
-        // optical centre: the letter's ink box, not its advance width
         const dx = ((mt.actualBoundingBoxLeft || 0) - (mt.actualBoundingBoxRight || 0)) / 2;
         c.fillText(letter, cx + (mt.actualBoundingBoxRight ? dx : 0), cy + (asc - desc) / 2);
       });
@@ -148,8 +136,6 @@
         c.stroke(geo);
       });
     } else if (view.kind === 'image') {
-      // a picture is a multitone watermark: thick (darker) where it is dark, thin
-      // (lighter) where it is light, fading into the sheet in an oval
       const t = tone;
       if (!t) return;
       const r = S * 0.47;
@@ -178,7 +164,6 @@
         return soften(m, k);
       };
       if (deboss) {
-        // the picture pressed in: deeper where it is dark
         const k = Math.max(2, S / 90);
         pressed(ctx, ovalMask((d) => d * 0.85, k), env, w, h, k);
         return;
@@ -216,11 +201,8 @@
     const shade = tinted(soft, env.ink('var(--wm-shade)'));
     const body = tinted(soft, env.ink('var(--wm-body)'));
     const alpha = env.num('--wm-alpha', 1);
-    // raised (paper, +1): shade on the bottom-right flanks, light on the top-left ones;
-    // pressed (anthracite, -1): the other way round
     const r = reliefOf(env);
     ctx.save();
-    // the motif's body: thinner paper lets more light through; pressed suede goes darker
     ctx.globalAlpha = alpha * 0.55;
     ctx.drawImage(body, 0, 0, w, h);
     const rim = (src: HTMLCanvasElement, dx: number, dy: number) => {

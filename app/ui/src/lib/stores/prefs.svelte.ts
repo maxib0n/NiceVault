@@ -1,8 +1,3 @@
-// Per-machine UI preferences (view mode, sort). localStorage only: nothing here is
-// sensitive. Wrapped in try/catch for locked-down webviews. The theme is per volume
-// (Settings.theme, stored inside it): `theme` is what is worn now (look.svelte.ts sets it
-// from the active volume; locked screens wear the default, dark); setTheme saves it to the
-// active volume.
 import * as api from '../api';
 import type { SortSpec } from '../sort';
 
@@ -22,7 +17,6 @@ function write(key: string, value: unknown): void {
   try {
     localStorage.setItem(`nv.${key}`, JSON.stringify(value));
   } catch {
-    /* ignore */
   }
 }
 

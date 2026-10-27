@@ -1,6 +1,3 @@
-// Live refresh: files changed outside the app (through the mounted drive) appear in the
-// open folder by themselves; selection and focus survive. Driven by the mock's
-// __nv.mock.simulateExternalChange(dir, opts), the stand-in for fs_events.rs.
 import type { Page } from '@playwright/test';
 import { boot, breadcrumb, expect, expectFolder, fileList, item, listed, modKey, names, nodeId, selectedNames, test } from './helpers';
 
@@ -40,16 +37,13 @@ test.describe('live refresh from the mounted drive', () => {
     await expectFolder(page, 'Foto');
     const before = await names(page);
 
-    // the file manager adds to a folder that is not on screen: nothing to do
     await external(page, lavoro, { add: ['altrove.txt'] });
     await page.waitForTimeout(150);
     expect(await names(page)).toEqual(before);
 
-    // the open folder changes
     await external(page, foto, { add: ['Nuova foto.jpg'] });
     await expect(item(page, 'Nuova foto.jpg')).toBeVisible();
 
-    // the open folder is deleted from the file manager: back to its parent
     await external(page, 1, { remove: ['Foto'] });
     await expectFolder(page, 'Documenti');
     await expect(item(page, 'Foto')).toHaveCount(0);

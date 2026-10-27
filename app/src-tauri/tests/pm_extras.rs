@@ -1,7 +1,3 @@
-//! Password manager additions through AppState (what the commands call): folder moves, the
-//! import mapping and the repair, site icons (setting, background refresh against a local HTTP
-//! site, the nvault:// URL that serves them).
-
 use nicevault_app::pm_icons::{self, Fetcher};
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events};
@@ -57,7 +53,6 @@ fn folders_and_import_mapping_through_the_app() {
     assert_eq!(st.pm_folder_delete(&id, "Casa nuova").unwrap(), 2);
     assert_eq!(st.pm_get(&id, &a).unwrap().summary.folder, "");
 
-    // an export, as CSV data
     let csv = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates/nv-core/tests/fixtures/autofill.csv")).unwrap();
     let job = st.pm_import(&id, serde_json::from_value(json!("csv")).unwrap(), None, Some(csv), None, None).unwrap();
     let done = rec.wait("job-done", |v| v["job"] == job);
@@ -108,7 +103,6 @@ fn site_icons_refresh_store_and_serve() {
     });
     let fetcher = Arc::new(Fetcher::for_test(&origin));
 
-    // off: nothing is fetched, and the choice is kept in settings.json
     st.app_settings_set(serde_json::from_value(json!({ "site_icons": false })).unwrap()).unwrap();
     assert_eq!(st.pm_icons_refresh_with(&id, fetcher.clone()).unwrap(), 0);
     assert!(std::fs::read_to_string(tmp.path().join("cfg/settings.json")).unwrap().contains("\"site_icons\": false"));
@@ -121,10 +115,8 @@ fn site_icons_refresh_store_and_serve() {
     let s = st.pm_get(&id, &e).unwrap().summary;
     let icon_ref = s.icon.clone().expect("icon stored");
     assert!(icon_ref.starts_with("shop.example.com/"));
-    // fresh: not fetched again within the week
     assert_eq!(st.pm_icons_refresh_with(&id, fetcher).unwrap(), 0);
 
-    // served from the volume through nvault://, with the version in the URL
     let req = |u: &str| tauri::http::Request::builder().uri(u).body(Vec::new()).unwrap();
     for url in [format!("nvault://{id}/pm-icon/{icon_ref}"), format!("http://nvault.localhost/{id}/pm-icon/{icon_ref}")] {
         let r = nicevault_app::preview::handle(&st, &req(&url));

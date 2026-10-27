@@ -1,8 +1,3 @@
-<!--
-  The fallback for anything the other viewers do not show: the facts about the file, what its
-  first bytes are, and those bytes in hex (16 KB at a time). Also the "too big" state, with
-  the cap that was hit. Actions: Esporta; "Apri con app esterna" only while mounted.
--->
 <script lang="ts" module>
   export type InfoReason = 'none' | 'too_big' | 'unsupported' | 'error' | 'binary';
 </script>

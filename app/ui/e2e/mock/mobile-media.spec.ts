@@ -1,6 +1,3 @@
-// Phone fixes (iPhone): the full-screen dock stays while touched / scrolled, its sheets
-// are whole inside their tiles, the view size is in the sort sheet; video files get a frame as
-// their thumbnail (made by the webview, lib/videoThumb.ts), with a play mark.
 import { boot, expect, item, listed, test } from './helpers';
 
 test.describe('phone', () => {
@@ -10,7 +7,6 @@ test.describe('phone', () => {
     await boot(page, 'screen=vault&platform=mobile&dir=Personale/Anteprime&preview=server.log');
     const dock = page.getByTestId('ql-dock');
     await expect(dock).toHaveAttribute('data-shown', 'true');
-    // a finger on the strip, scrolling it now and then for longer than the 2 s idle
     await dock.dispatchEvent('touchstart', { touches: [], changedTouches: [] });
     for (let i = 0; i < 6; i++) {
       await page.getByTestId('ql-dock').evaluate((el, x) => el.querySelector('.strip')!.scrollTo({ left: x }), i * 30);
@@ -76,11 +72,9 @@ test.describe('phone: Sposta…', () => {
     await page.getByRole('menuitem', { name: 'Sposta…' }).click();
     const mv = page.getByTestId('mobile-move');
     await expect(mv).toBeVisible();
-    // the page fills the screen
     const box = (await mv.boundingBox())!;
     expect(Math.round(box.width)).toBe(390);
     expect(Math.round(box.height)).toBe(844);
-    // here is where it already is: nothing to do
     await expect(mv.getByRole('button', { name: 'Sposta qui' })).toBeDisabled();
     await mv.getByRole('button', { name: 'Lavoro', exact: true }).click();
     await expect(mv.getByTestId('move-where')).toHaveText('Lavoro');

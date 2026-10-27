@@ -1,10 +1,3 @@
-<!--
-  The ghost image: the document's emblem printed a second time, small and faded, as a
-  screen of fine parallel lines whose weight follows the mark (the way a passport repeats its
-  portrait beside the data). It fades out to an oval cut by a hairline, a microtext legend
-  running round it. Printed in the ink, low in contrast: a detail found when looked for, never
-  a second focus. Fills its positioned parent.
--->
 <script lang="ts">
   import { imageSrc, initialOf, viewOf, type EmblemIconId, type EmblemView } from '../lib/emblem';
   import InkCanvas, { type InkEnv } from './InkCanvas.svelte';
@@ -33,14 +26,8 @@
 
   const N = 96;
 
-  // everything the print depends on (the pixel cache's key, InkCanvas)
   const markKey = $derived(v.kind === 'icon' ? `i:${v.id}` : v.kind === 'image' ? `p:${hashString(v.data_base64)}` : v.kind === 'initial' ? `l:${initialOf(name)}` : v.kind);
 
-  /**
-   * The tone field under the oval's screen (a square as tall as the oval): the mark scaled to
-   * `side` in its middle, its darkness easing to nothing towards the oval's edge, so the lines
-   * swell over the mark and run on as bare hairlines round it.
-   */
   function compose(t: ToneMap, rx: number, ry: number, side: number): ToneMap {
     const M = 128;
     const box = ry * 2;
@@ -51,13 +38,11 @@
     };
     for (let j = 0; j < M; j++) {
       for (let i = 0; i < M; i++) {
-        // the point in the oval's frame, px from its centre
         const dx = ((i + 0.5) / M - 0.5) * box;
         const dy = ((j + 0.5) / M - 0.5) * box;
         const u = dx / side + 0.5;
         const v = dy / side + 0.5;
         if (u < 0 || u > 1 || v < 0 || v > 1) continue;
-        // the mark's own square softened to a disc, and everything eased out before the oval's edge
         const e = Math.hypot(dx / rx, dy / ry);
         const c = Math.hypot(u - 0.5, v - 0.5) * 2;
         const fade = (1 - smooth(0.48, 1, c)) * (1 - smooth(0.66, 0.94, e));
@@ -69,7 +54,6 @@
     }
     return { w: M, h: M, dark };
   }
-  /** the mark as a tone map: drawn at N px, its coverage read back as darkness */
   function markTone(paint: (c: CanvasRenderingContext2D) => void): ToneMap | null {
     const c = document.createElement('canvas');
     c.width = c.height = N;
@@ -127,18 +111,15 @@
     if (!tone) return;
 
     const hw = hair(env.dpr);
-    // the oval: portrait, as large as the window allows (room left for the legend round it)
     const rx = Math.min(w * 0.42, (h - 16) / 2.6);
     const ry = rx * 1.24;
     const cx = w / 2;
     const cy = h / 2;
-    // the screen covers the whole oval; the mark sits in its middle and fades to bare lines
     const box = ry * 2;
     const lines = Math.max(20, Math.round(box / (env.dpr >= 2 ? 2.3 : 2.8)));
     const field = compose(tone, rx, ry, rx * 1.42);
     const inkLine = env.ink('color-mix(in srgb, var(--engrave) 40%, transparent)');
 
-    // the screen, on its own layer so it can be cut to the oval
     const layer = document.createElement('canvas');
     layer.width = Math.max(1, Math.round(w * env.dpr));
     layer.height = Math.max(1, Math.round(h * env.dpr));
@@ -148,7 +129,6 @@
     lineScreen(p, field, cx - box / 2, cy - box / 2, box, lines, hw * 0.5);
     l.fillStyle = inkLine;
     l.fill(p);
-    // cut to the oval, its last millimetre softened
     l.globalCompositeOperation = 'destination-in';
     l.save();
     l.translate(cx, cy);
@@ -163,7 +143,6 @@
     l.restore();
     ctx.drawImage(layer, 0, 0, w, h);
 
-    // the oval cut by a hairline, and the legend round it in microtext
     ctx.save();
     ctx.strokeStyle = env.ink('color-mix(in srgb, var(--engrave) 52%, transparent)');
     ctx.lineWidth = hw * 0.7;
@@ -177,9 +156,7 @@
     ctx.textBaseline = 'middle';
     const R = rx + 5;
     const RY = ry + 5;
-    // walk the ellipse by arc length, one glyph at a time
     const perim = Math.PI * (3 * (R + RY) - Math.sqrt((3 * R + RY) * (R + 3 * RY)));
-    // a whole number of legends round the oval: the pitch is evened out, no word is cut at the seam
     const unit = ctx.measureText('M').width || fs * 0.6;
     const reps = Math.max(1, Math.round(perim / (unit * Math.max(1, legend.length))));
     const count = reps * legend.length;
@@ -189,7 +166,6 @@
     for (let i = 0; i < count; i++) {
       const x = cx + R * Math.cos(t);
       const y = cy + RY * Math.sin(t);
-      // tangent, for the glyph's angle and the next step
       const dx = -R * Math.sin(t);
       const dy = RY * Math.cos(t);
       const speed = Math.hypot(dx, dy) || 1;

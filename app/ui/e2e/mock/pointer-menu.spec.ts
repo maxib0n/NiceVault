@@ -14,11 +14,9 @@ test('click, Shift-click range, Ctrl/Cmd-click toggle, background click clears, 
   expect(await selectedNames(page)).toEqual(['Audio', 'Foto', 'Lavoro']);
   await item(page, 'Leggimi.txt').click({ modifiers: [MOD] });
   expect(await selectedNames(page)).toEqual(['Audio', 'Foto', 'Lavoro', 'Leggimi.txt']);
-  // shift-click from the last ctrl-click anchor
   await item(page, 'Copertina.jpg').click({ modifiers: ['Shift'] });
   expect(await selectedNames(page)).toEqual(['Copertina.jpg', 'Foto profilo.jpg', 'Leggimi.txt']);
   await expect(page.getByRole('button', { name: 'Esporta', exact: true })).toBeEnabled();
-  // click on empty space of the listbox clears
   const box = (await fileList(page).boundingBox())!;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height - 20);
   expect(await selectedNames(page)).toEqual([]);
@@ -75,10 +73,8 @@ test('context menu: right-click inside a selection keeps it; plural labels; fold
   expect(await selectedNames(page)).toEqual(['Audio', 'Chiavi', 'Foto']);
   const menu = page.getByRole('menu', { name: 'Azioni elemento' });
   await expect(menu.getByRole('menuitem')).toHaveText([/Tag…/, /Esporta 3 elementi…/, /Proprietà/, /Elimina 3 elementi/]);
-  // outside click closes
   await page.mouse.click(5, 5);
   await expect(menu).toHaveCount(0);
-  // right-click outside the selection replaces it
   await item(page, 'Video').click({ button: 'right' });
   expect(await selectedNames(page)).toEqual(['Video']);
   await menu.getByRole('menuitem', { name: /Apri/ }).click();
@@ -87,7 +83,6 @@ test('context menu: right-click inside a selection keeps it; plural labels; fold
 
 test('background context menu: Nuova cartella twice gives unique names; Importa file…; Seleziona tutto', async ({ page }) => {
   const bg = async () => {
-    // the list's end padding is the background (a full folder fills the visible part with rows)
     await fileList(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
     const box = (await fileList(page).boundingBox())!;
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 20, { button: 'right' });
@@ -97,13 +92,13 @@ test('background context menu: Nuova cartella twice gives unique names; Importa 
   await expect(menu.getByRole('menuitem')).toHaveText([/Nuova cartella/, /Importa file…/, /Seleziona tutto/, /Proprietà/]);
   await menu.getByRole('menuitem', { name: /Nuova cartella/ }).click();
   await expect(page.getByRole('textbox', { name: 'Nuovo nome' })).toBeFocused();
-  await page.keyboard.press('Enter'); // keep the default name
+  await page.keyboard.press('Enter');
   await expect(item(page, 'Nuova cartella')).toBeVisible();
   menu = await bg();
   await menu.getByRole('menuitem', { name: /Nuova cartella/ }).click();
   await expect(page.getByRole('textbox', { name: 'Nuovo nome' })).toHaveValue('Nuova cartella 2');
   await page.keyboard.press('Escape');
-  await expect(item(page, 'Nuova cartella 2')).toBeVisible(); // created, rename cancelled
+  await expect(item(page, 'Nuova cartella 2')).toBeVisible();
 
   menu = await bg();
   await menu.getByRole('menuitem', { name: /Importa file…/ }).click();
@@ -125,32 +120,26 @@ test('rename collisions and invalid names keep the editor open with an error', a
   await expect(toasts(page).getByRole('alert').getByText('Esiste già un elemento con questo nome.')).toBeVisible();
   await expect(input).toBeVisible();
   await expect(input).toBeFocused();
-  // folder name collision with a file name in the same dir
   await input.fill('Foto');
   await page.keyboard.press('Enter');
   await expect(toasts(page).getByText('Esiste già un elemento con questo nome.')).toHaveCount(2);
   await expect(input).toBeFocused();
-  // a slash is not a valid name
   await input.fill('a/b.txt');
   await page.keyboard.press('Enter');
   await expect(toasts(page).getByText('Nome non valido.').first()).toBeVisible();
   await expect(input).toBeFocused();
-  // empty / whitespace = no change
   await input.fill('   ');
   await page.keyboard.press('Enter');
   await expect(input).toHaveCount(0);
   await expect(item(page, 'Leggimi.txt')).toBeVisible();
-  // trailing spaces are trimmed
   await page.keyboard.press('F2');
   await input.fill('  Leggimi ora.txt  ');
   await page.keyboard.press('Enter');
   await expect(item(page, 'Leggimi ora.txt')).toBeVisible();
-  // blur commits
   await page.keyboard.press('F2');
   await input.fill('Leggi dopo.txt');
   await page.getByRole('heading').or(page.getByRole('navigation', { name: 'Percorso' })).first().click();
   await expect(item(page, 'Leggi dopo.txt')).toBeVisible();
-  // new folder colliding with an existing one gets a free name instead of failing
   await page.getByRole('button', { name: 'Nuova cartella' }).click();
   await input.fill('Lavoro');
   await page.keyboard.press('Enter');
@@ -176,7 +165,6 @@ test('Esc while a (slow) failing rename is still in flight does not throw', asyn
   await page.keyboard.press('F2');
   const input = page.getByRole('textbox', { name: 'Nuovo nome' });
   await input.fill('Copertina.jpg');
-  // slow the mock backend down so the rename is still pending when Esc arrives
   await page.evaluate(() => ((window as unknown as { __nv: { mock: { opts: { speed: number } } } }).__nv.mock.opts.speed = 40));
   await page.keyboard.press('Enter');
   await page.keyboard.press('Escape');
@@ -184,7 +172,6 @@ test('Esc while a (slow) failing rename is still in flight does not throw', asyn
   await expect(toasts(page).getByText('Esiste già un elemento con questo nome.')).toBeVisible();
   await page.waitForTimeout(300);
   await expect(item(page, 'Leggimi.txt')).toBeVisible();
-  // (the auto fixture fails the test on the TypeError the old code threw here)
 });
 
 test('an empty folder: right-click on its notice opens the folder menu', async ({ page }) => {

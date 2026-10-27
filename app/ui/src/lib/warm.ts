@@ -1,12 +1,3 @@
-// Idle-time warm-up: work a first opening would otherwise do in the frame it appears, done once
-// while nothing moves and nobody types (no animation is playing then, so it cannot hitch one).
-//   - fonts: every web font face already loaded is instanced in the canvas text path at the
-//     weights and sizes the glyph decode and the printed microtext use (WebKit builds a font's
-//     platform data on its first use at a size: a few ms each, which landed in Sblocca's first
-//     decode frame);
-//   - Impostazioni's ink chips (components/WarmUp.svelte, into the InkCanvas cache).
-// Each step is a short task of its own, started only after ~2.5 s without input.
-// What ran is logged in window.__nvWarm ([step, ms]).
 import { mount, unmount, type Component } from 'svelte';
 
 let lastInput = typeof performance === 'undefined' ? 0 : performance.now();
@@ -20,7 +11,6 @@ const idle = (fn: () => void) => {
   else setTimeout(fn, 50);
 };
 
-/** Runs `steps` one per idle slot, each once the app has been quiet for a while. */
 function runQuietly(steps: Step[]) {
   const next = () => {
     if (!steps.length) return;
@@ -54,7 +44,6 @@ function fontSteps(): Step[] {
       const key = `${f.style} ${w} ${family}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      // text sizes, then display sizes (Bodoni's optical size makes each size an instance of its own)
       for (const sizes of [[3.8, 9, 10.5, 11, 12, 13, 14, 16], [18, 20, 22, 24, 28, 30, 34, 44, 76]])
         steps.push([
           `font ${key} ${sizes[0]}`,
@@ -70,7 +59,6 @@ function fontSteps(): Step[] {
   return steps;
 }
 
-/** Engraves the chips once, out of sight: drawn on its first rendering update, gone after the next. */
 function warmChips(chips: Component) {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -86,7 +74,6 @@ function warmChips(chips: Component) {
 }
 
 let started = false;
-/** Starts the warm-up once per session (App.svelte), given the component that warms Impostazioni. */
 export function warmUp(chips: Component): void {
   if (started || typeof window === 'undefined') return;
   started = true;
@@ -94,7 +81,6 @@ export function warmUp(chips: Component): void {
     window.addEventListener(ev, () => (lastInput = performance.now()), { capture: true, passive: true });
   runQuietly([
     ['chips', () => warmChips(chips)],
-    // fonts: once they are all in (document.fonts.ready), so the list of faces is complete
     ['fonts', () => void document.fonts?.ready.then(() => runQuietly(fontSteps()))],
   ]);
 }

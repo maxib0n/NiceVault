@@ -5,7 +5,6 @@
 </script>
 
 <section class="toasts" aria-label={m.notifications()}>
-  <!-- errors are assertive, everything else polite -->
   <div class="live" role="alert" aria-live="assertive">
     {#each toasts.items.filter((t) => t.kind === 'error') as t (t.id)}
       {@render toast(t)}
@@ -31,9 +30,6 @@
 {/snippet}
 
 <style>
-  /* inside a volume: at the foot of the page, at its left (never over a page head's keys, the
-     job tray at the right, or the clasp on the cover); on the board: top right, clear of the
-     page's own keys and of everything a click is aimed at */
   .toasts {
     position: fixed;
     left: calc(var(--sidebar-w) + var(--space-4));
@@ -58,7 +54,6 @@
   .live {
     display: contents;
   }
-  /* a printed slip: one sentence, a mark in the margin */
   .toast {
     pointer-events: auto;
     display: flex;

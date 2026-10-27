@@ -1,9 +1,3 @@
-<!--
-  Password generator (pm_generate, OsRng in the backend): random characters or a passphrase,
-  the honest entropy of the chosen recipe as a meter, regenerate / copy / use.
-  `onuse` (from the entry editor) puts the value into the password field.
-  Hooks: [data-testid=gen-value], [data-testid=gen-bits], data-level on the meter.
--->
 <script lang="ts">
   import { Copy, RefreshCw } from '@lucide/svelte';
   import * as api from '../lib/api';
@@ -18,7 +12,6 @@
   let { open, onclose, onuse }: { open: boolean; onclose: () => void; onuse?: (value: string) => void } = $props();
 
   type Kind = 'random' | 'passphrase';
-  // the recipe (not the value) is remembered on this machine: nothing secret in it
   const saved = (() => {
     try {
       return JSON.parse(localStorage.getItem('nv.pm.gen') ?? 'null') as Record<string, unknown> | null;
@@ -40,7 +33,6 @@
   let number = $state(saved?.number === true);
 
   let value = $state('');
-  /** values made by the Rigenera key (each one decodes from glyphs; a recipe change just shows) */
   let rolled = $state(0);
   let bits = $state(0);
   let error = $state<string | null>(null);
@@ -52,7 +44,6 @@
       : { kind, words, language, separator: separator.slice(0, 3), capitalize, number },
   );
 
-  /** `roll`: asked for with the Rigenera key (the new value decodes, in the same frame it lands) */
   async function generate(roll = false) {
     const mine = ++seq;
     try {
@@ -67,7 +58,6 @@
     }
   }
 
-  // a new value whenever the recipe changes (and when the panel opens)
   $effect(() => {
     if (!open) return;
     void opts;
@@ -75,7 +65,6 @@
     try {
       localStorage.setItem('nv.pm.gen', JSON.stringify({ kind, length, lower, upper, digits, symbols, ambiguous, words, language, separator, capitalize, number }));
     } catch {
-      /* ignore */
     }
   });
 
@@ -121,7 +110,6 @@
       <span class="caps">{m.gen_entropy()}</span>
       <span class="bar" role="meter" aria-label={m.gen_entropy()} aria-valuemin={0} aria-valuemax={128} aria-valuenow={Math.round(bits)} aria-valuetext="{m.gen_bits({ n: String(Math.round(bits)) })}, {LEVEL[level]()}">
         <span class="fill" style:--k={Math.min(1, bits / 128)}></span>
-        <!-- the scale's marks where one level gives way to the next (50, 80, 110 bits) -->
         {#each [50, 80, 110] as b (b)}<span class="notch" style:left="{(b / 128) * 100}%"></span>{/each}
       </span>
       <span class="bits mono" data-testid="gen-bits">{m.gen_bits({ n: String(Math.round(bits)) })} · {LEVEL[level]()}</span>

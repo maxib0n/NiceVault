@@ -1,7 +1,3 @@
-// In-browser mock of the pm_* commands (password manager), plugged into MockBackend.invoke.
-// Same names, argument shapes, errors and events as app/src-tauri/src/passwords.rs.
-// Seeded volumes get sample entries (TOTP included); real RFC 6238 codes via WebCrypto.
-
 import { switches } from './switches';
 import { demoPmSeeds } from './mockDemo';
 import type { ApiError, EventMap, EventName, JobDone, JobId, VaultId } from './types';
@@ -21,16 +17,12 @@ import type {
 } from './passwords';
 
 export interface PmMockHost {
-  /** path of an open volume; throws "locked" like MockBackend.vault() */
   pathOf(vault: VaultId): string;
-  /** volumes that start with the sample entries */
   seeded(path: string): boolean;
   wait(ms: number): Promise<void>;
   emit<E extends EventName>(event: E, payload: EventMap[E]): void;
   speed(): number;
-  /** extra generated entries in seeded volumes (?pm=N, perf runs); optional */
   extra?(): number;
-  /** the global site_icons setting (default on) */
   siteIcons?(): boolean;
 }
 
@@ -53,7 +45,6 @@ const HISTORY_KEEP = 10;
 const DAY = 86_400_000;
 const SYMBOLS = '!#$%&()*+,-./:;<=>?@[]^_{|}~';
 const AMBIGUOUS = '0O1lI|';
-/** The backend's lists have 7776 words (entropy is computed with that); the mock samples a few. */
 const WORDLIST_SIZE = 7776;
 const MOCK_WORDS: Record<'en' | 'it', string[]> = {
   en: ['acorn', 'blanket', 'cactus', 'dolphin', 'ember', 'falcon', 'gravel', 'harbor', 'island', 'jigsaw', 'kettle', 'lantern', 'meadow', 'nectar', 'orbit', 'pebble', 'quartz', 'ripple', 'saddle', 'thicket', 'umpire', 'velvet', 'walnut', 'yodel'],
@@ -63,8 +54,6 @@ const MOCK_WORDS: Record<'en' | 'it', string[]> = {
 function err(code: string, message: string): ApiError {
   return { code, message };
 }
-
-// --- TOTP ---------------------------------------------------------------------
 
 function base32Decode(s: string): Uint8Array | null {
   const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -132,10 +121,7 @@ async function totpCode(t: ParsedTotp, nowMs = Date.now()): Promise<PmTotpCode> 
   return { code, remaining: t.period - (secs % t.period), period: t.period, digits: t.digits };
 }
 
-/** Exposed for tests: RFC 6238 vectors in the mock. */
 export const _totp = { parseTotp, totpCode };
-
-// --- generator ------------------------------------------------------------------
 
 function below(n: number): number {
   const zone = 0x1_0000_0000 - (0x1_0000_0000 % n);
@@ -181,7 +167,6 @@ function generate(o: PmGenOptions): PmGenerated {
   for (;;) {
     const v = Array.from({ length }, () => pool[below(pool.length)]).join('');
     if (classes.every((c) => c.some((x) => v.includes(x)))) {
-      // exact count of strings containing every class (inclusion-exclusion), like the backend
       let total = 0;
       for (let mask = 0; mask < 1 << classes.length; mask++) {
         const size = classes.reduce((s, c, i) => (mask & (1 << i) ? s : s + c.length), 0);
@@ -197,8 +182,6 @@ function bitCount(n: number): number {
   for (; n; n &= n - 1) c++;
   return c;
 }
-
-// --- import parsing (simplified mirrors of nv_core::passwords::import) ---------------
 
 interface Imported {
   input: PmEntryInput;
@@ -255,7 +238,6 @@ const CSV_COLS: Record<string, keyof PmEntryInput | 'ignore'> = {
   type: 'ignore', reprompt: 'ignore', archived: 'ignore', fields: 'ignore', icon: 'ignore', vault: 'ignore',
 };
 
-/** Mirrors passwords::tidy: names whose values become websites / times instead of custom fields. */
 const TIDY: Record<string, 'urls' | 'created' | 'updated'> = {
   autofillurls: 'urls', urls: 'urls', uris: 'urls', websites: 'urls', additionalurls: 'urls', matchurl: 'urls',
   createtime: 'created', creationtime: 'created', created: 'created', createdat: 'created', creationdate: 'created', timecreated: 'created',
@@ -263,7 +245,6 @@ const TIDY: Record<string, 'urls' | 'created' | 'updated'> = {
   revisiondate: 'updated', timepasswordchanged: 'updated',
 };
 
-/** unix s / ms / µs or ISO 8601 -> ms (null: not a believable time) */
 export function parseTime(v: string): number | null {
   const t = v.trim();
   let ms: number;
@@ -276,7 +257,6 @@ export function parseTime(v: string): number | null {
   return Number.isFinite(ms) && ms >= 631_152_000_000 && ms < 7_258_118_400_000 ? Math.floor(ms) : null;
 }
 
-/** JSON list of strings / {url|uri|href}, or http(s) URLs separated by spaces / commas (null: not that) */
 export function parseUrls(v: string): string[] | null {
   const t = v.trim();
   if (!t) return null;
@@ -299,7 +279,6 @@ export function parseUrls(v: string): string[] | null {
   return parts.every((p) => /^https?:\/\//i.test(p)) ? [...new Set(parts)] : null;
 }
 
-/** Applies TIDY to an imported entry's custom fields (mirrors import::tidy_imported). */
 function tidyFields(it: Imported) {
   const keep: PmFieldInput[] = [];
   for (const f of it.input.fields ?? []) {
@@ -375,7 +354,6 @@ function parseBitwarden(text: string): Imported[] {
   }));
 }
 
-/** KeePass in the mock: the master password "demo" opens a canned database. */
 function cannedKeepass(): Imported[] {
   return [
     { input: { title: 'Router', username: 'admin', password: 'kp-router-77', urls: ['http://192.168.1.1'], folder: 'Casa/Rete' } },
@@ -383,8 +361,6 @@ function cannedKeepass(): Imported[] {
     { input: { title: 'Gestionale', username: 'm.rossi', password: 'kp-erp-09', urls: ['https://erp.example.it'], folder: 'Lavoro', fields: [{ name: 'PIN', value: '5521', hidden: true }] } },
   ];
 }
-
-// --- seeds ------------------------------------------------------------------------------
 
 function seeds(now: number): { input: PmEntryInput; history?: { password: string; changed: number }[]; age: number }[] {
   if (switches.demo) return demoPmSeeds(now);
@@ -423,7 +399,6 @@ function seeds(now: number): { input: PmEntryInput; history?: { password: string
 const GEN_SITES = ['posta', 'banca', 'forum', 'negozio', 'cloud', 'giochi', 'viaggi', 'lavoro', 'scuola', 'salute', 'news', 'musica'];
 const GEN_FOLDERS = ['', 'Personale', 'Personale/Banche', 'Lavoro', 'Lavoro/Clienti', 'Casa', 'Svago', ''];
 
-/** Deterministic filler entry `i` (perf runs with thousands of entries). */
 export function generated(i: number, now: number): { input: PmEntryInput; created: number; updated: number } {
   const site = GEN_SITES[i % GEN_SITES.length];
   const n = String(i + 1).padStart(4, '0');
@@ -447,7 +422,6 @@ function cleanFolder(f: string): string {
   return f.split(/[/\\]/).map((x) => x.trim()).filter(Boolean).join('/');
 }
 
-/** Mirrors passwords::icon_host: a real DNS name from the first http(s) website. */
 export function iconHost(urls: string[]): string | null {
   for (const u of urls) {
     const m = /^(?:(https?):\/\/)?(?:[^@/]*@)?([^/:?#]+)/i.exec(u.trim());
@@ -459,23 +433,16 @@ export function iconHost(urls: string[]): string | null {
   return null;
 }
 
-// --- the mock ---------------------------------------------------------------------------
-
 export class PmMock {
   private stores = new Map<string, Map<string, StoredEntry>>();
   private idSeq = 0;
   private jobSeq = 0;
-  /** what pm_copy put on the clipboard (tests read it; '' after the auto-clear) */
   clipboard: string | null = null;
 
   constructor(private host: PmMockHost) {}
 
   private iconUrls = new Map<string, string>();
 
-  /**
-   * The mock's "stored icon": a 64 px PNG tile with the host's initial (data: URL, no network,
-   * drawn once per host like the real app's decoded PNGs; SVG where there is no canvas).
-   */
   iconUrl(icon: string): string {
     const host = icon.split('/')[0] ?? '';
     const hit = this.iconUrls.get(host);
@@ -550,7 +517,6 @@ export class PmMock {
     return e;
   }
 
-  /** Mirrors nv_core::passwords::apply. Returns the replaced password, if any. */
   private apply(e: StoredEntry, p: PmEntryInput): string | null {
     const s = e.s;
     const title = p.title !== undefined ? p.title.trim() : s.title;
@@ -558,7 +524,7 @@ export class PmMock {
     let totp = e.totp;
     if (p.totp !== undefined) {
       totp = p.totp.trim() ? p.totp.trim() : null;
-      if (totp) parseTotp(totp); // throws invalid_totp
+      if (totp) parseTotp(totp);
     }
     const uniq = (v: string[]) => [...new Set(v.map((x) => x.trim()).filter(Boolean))];
     s.title = title;
@@ -650,7 +616,6 @@ export class PmMock {
         } else if (data) {
           items = kind === 'csv' ? parseCsv(data) : parseBitwarden(data);
         } else {
-          // a host path in the browser: canned content
           items = kind === 'csv' ? parseCsv('name,url,username,password\nForum,https://forum.example.org,mario,forum-pw-1\n') : cannedKeepass().slice(0, 2);
         }
       } catch (e) {
@@ -738,7 +703,6 @@ export class PmMock {
         try {
           await navigator.clipboard?.writeText(value);
         } catch {
-          /* no clipboard permission in a plain browser tab: the mock keeps its own copy */
         }
         const after = Math.min(Math.max(0, a.clear_after == null ? 30 : Number(a.clear_after)), 600);
         if (after > 0) {
@@ -748,7 +712,6 @@ export class PmMock {
             try {
               if ((await navigator.clipboard?.readText()) === value) await navigator.clipboard.writeText('');
             } catch {
-              /* ignore */
             }
           }, after * 1000 * Math.max(this.host.speed(), 0.001));
         }

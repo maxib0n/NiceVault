@@ -1,10 +1,3 @@
-<!--
-  Emblem picker: initial (monogram) | curated icon | custom image, the frame round it (six,
-  each previewed live with this emblem in it), and whether the volume's look (ink + emblem)
-  shows while it is locked: "Aspetto visibile da chiuso" / "Aspetto cifrato" (show_when_locked
-  IS the appearance visibility; saved with the emblem).
-  Arrow keys move inside each radiogroup; Tab moves between groups.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { ImagePlus } from '@lucide/svelte';
@@ -25,10 +18,8 @@
     onclose,
   }: {
     open: boolean;
-    /** volume name (initial + title) */
     name: string;
     value: EmblemState;
-    /** resolves true when saved (the dialog then closes) */
     onsave: (s: EmblemState) => Promise<boolean>;
     onclose: () => void;
   } = $props();
@@ -41,7 +32,6 @@
   let fileInput: HTMLInputElement | undefined = $state();
   let wasOpen = false;
 
-  // reset the draft each time the dialog opens
   $effect(() => {
     if (open && !wasOpen) {
       emblem = $state.snapshot(value.emblem) as EmblemT;
@@ -251,7 +241,6 @@
     flex-direction: column;
     gap: var(--space-4);
   }
-  /* the emblem as it will be printed on the document */
   .preview {
     display: flex;
     align-items: center;
@@ -314,7 +303,6 @@
     outline-offset: 1px;
   }
 
-  /* the icons, each engraved on a small paper disc */
   .grid {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
@@ -364,7 +352,6 @@
     pointer-events: none;
   }
 
-  /* the frames: each one drawn round this emblem, in a small paper well */
   .frames-block {
     display: flex;
     flex-direction: column;
@@ -398,7 +385,6 @@
       inset 0 1px 2px var(--field-shade),
       0 1px 0 var(--paper-hi);
   }
-  /* two lines are kept for every name, so the wells and the first lines all align */
   .frame-name {
     min-height: 2.5em;
     font-size: var(--text-xs);
@@ -429,7 +415,6 @@
     outline-offset: 1px;
   }
 
-  /* while locked: the look shows, or the volume appears neutral */
   .look {
     display: flex;
     flex-direction: column;

@@ -1,26 +1,3 @@
-/*
- * Accent presets (the volume's ink): one per id in ACCENTS (app/ui/src/lib/accents.ts,
- * app/src-tauri/src/appearance.rs). <html data-accent="<id>"> (the app root) picks one;
- * none = velluto. Dark (the default) = the ink stitched and printed on anthracite
- * Alcantara; light = the same ink printed in intaglio on ivory paper. Any element can
- * carry data-accent too (the swatches in Dettagli, the passports on Benvenuto), so a
- * preset can be shown in place.
- *
- *   --accent       accent text / line work                    (>= 4.5:1 on every page and on the board)
- *   --accent-ink   text and icons ON an --accent fill         (>= 4.5:1 on --accent)
- *   --accent-soft  tinted background (selection, wash)        (--accent and body ink >= 4.5:1 on it)
- *   --accent-line  hairlines, guilloche, focus/UI strokes     (>= 3:1 on the page)
- *   --accent-deep  the ink as a fill: keys, wax, dyed suede   (the key ink, --key-accent-ink, >= 4.5:1 on it)
- *   --foil-hi/--foil/--foil-mid/--foil-lo  the ink's metal, stamped (emblems, covers, seals):
- *                  gold for velluto, rose gold prugna, cool silver prussia, pale gold bottiglia,
- *                  copper seppia, pewter ardesia, platinum ottanio
- *
- * accents.test.ts checks these ratios: refine the values freely, keep ids and token names.
- * No electric blue.
- */
-
-/* light (data-theme="light") */
-/* Rosso velluto */
 :root,
 [data-accent='velluto'] {
   --accent: #9c1730;
@@ -33,7 +10,6 @@
   --foil-mid: var(--gold-mid);
   --foil-lo: var(--gold-lo);
 }
-/* Prugna */
 [data-accent='prugna'] {
   --accent: #8e2050;
   --accent-ink: #fcfaf5;
@@ -45,7 +21,6 @@
   --foil-mid: #cc917c;
   --foil-lo: #93604f;
 }
-/* Blu di Prussia */
 [data-accent='prussia'] {
   --accent: #1f3d66;
   --accent-ink: #fcfaf5;
@@ -57,7 +32,6 @@
   --foil-mid: #acb4bf;
   --foil-lo: #707985;
 }
-/* Verde bottiglia */
 [data-accent='bottiglia'] {
   --accent: #1d5a3d;
   --accent-ink: #fcfaf5;
@@ -69,7 +43,6 @@
   --foil-mid: #c1b372;
   --foil-lo: #877c46;
 }
-/* Terra di Siena */
 [data-accent='seppia'] {
   --accent: #7f4422;
   --accent-ink: #fcfaf5;
@@ -81,7 +54,6 @@
   --foil-mid: #c6845e;
   --foil-lo: #8b5636;
 }
-/* Ardesia */
 [data-accent='ardesia'] {
   --accent: #3d4752;
   --accent-ink: #fcfaf5;
@@ -93,7 +65,6 @@
   --foil-mid: #b0b2b6;
   --foil-lo: #75787d;
 }
-/* Ottanio */
 [data-accent='ottanio'] {
   --accent: #0e5a60;
   --accent-ink: #fcfaf5;
@@ -106,7 +77,6 @@
   --foil-lo: #6c7a79;
 }
 
-/* anthracite (dark) by OS */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']),
   :root:not([data-theme='light'])[data-accent='velluto'],
@@ -195,7 +165,6 @@
   }
 }
 
-/* anthracite (dark) forced (data-theme="dark"): identical */
 :root[data-theme='dark'],
 :root[data-theme='dark'][data-accent='velluto'],
 :root[data-theme='dark'] [data-accent='velluto'] {
@@ -286,10 +255,6 @@
 
 
 
-/* @surfaces-begin (generated: oklch of the anthracite / ivory ramps, re-hued per ink) */
-
-/* surfaces, light: ivory paper with a breath of the ink */
-/* Prugna */
 :root[data-accent='prugna'] {
   --ground: #ebdede;
   --ground-hi: #f6eaeb;
@@ -310,7 +275,6 @@
   --key-dead: #f2e8e7;
   --stage: #ede1e1;
 }
-/* Blu di Prussia */
 :root[data-accent='prussia'] {
   --ground: #dde2e8;
   --ground-hi: #e9eef5;
@@ -331,7 +295,6 @@
   --key-dead: #e8ebee;
   --stage: #e1e5ea;
 }
-/* Verde bottiglia */
 :root[data-accent='bottiglia'] {
   --ground: #dbe5d9;
   --ground-hi: #e7f1e6;
@@ -352,7 +315,6 @@
   --key-dead: #e7ede3;
   --stage: #dfe7dc;
 }
-/* Terra di Siena */
 :root[data-accent='seppia'] {
   --ground: #ecdfd2;
   --ground-hi: #f7ebe0;
@@ -373,7 +335,6 @@
   --key-dead: #f2e9df;
   --stage: #eee2d6;
 }
-/* Ardesia */
 :root[data-accent='ardesia'] {
   --ground: #dae3e7;
   --ground-hi: #e6eff4;
@@ -394,7 +355,6 @@
   --key-dead: #e6eced;
   --stage: #dee6e9;
 }
-/* Ottanio */
 :root[data-accent='ottanio'] {
   --ground: #d8e5e2;
   --ground-hi: #e4f1f0;
@@ -416,9 +376,7 @@
   --stage: #dce7e5;
 }
 
-/* surfaces, dark by OS */
 @media (prefers-color-scheme: dark) {
-  /* Prugna: very dark plum */
   :root:not([data-theme='light'])[data-accent='prugna'] {
     --ground: #2c1c23;
     --ground-hi: #35242c;
@@ -455,7 +413,6 @@
     --lining-base-hi: #322129;
     --lining-base-lo: #1d0e15;
   }
-  /* Blu di Prussia: midnight blue */
   :root:not([data-theme='light'])[data-accent='prussia'] {
     --ground: #18212e;
     --ground-hi: #212a37;
@@ -492,7 +449,6 @@
     --lining-base-hi: #1e2734;
     --lining-base-lo: #0b131f;
   }
-  /* Verde bottiglia: very dark green */
   :root:not([data-theme='light'])[data-accent='bottiglia'] {
     --ground: #16261d;
     --ground-hi: #1f2f25;
@@ -529,7 +485,6 @@
     --lining-base-hi: #1c2c22;
     --lining-base-lo: #08180f;
   }
-  /* Terra di Siena: dark umber */
   :root:not([data-theme='light'])[data-accent='seppia'] {
     --ground: #2b2017;
     --ground-hi: #35291f;
@@ -566,7 +521,6 @@
     --lining-base-hi: #31261d;
     --lining-base-lo: #1d1209;
   }
-  /* Ardesia: dark slate blue-grey */
   :root:not([data-theme='light'])[data-accent='ardesia'] {
     --ground: #1f262b;
     --ground-hi: #282f34;
@@ -603,7 +557,6 @@
     --lining-base-hi: #252c31;
     --lining-base-lo: #11181d;
   }
-  /* Ottanio: dark petrol */
   :root:not([data-theme='light'])[data-accent='ottanio'] {
     --ground: #102629;
     --ground-hi: #192f32;
@@ -642,8 +595,6 @@
   }
 }
 
-/* surfaces, dark forced: identical */
-/* Prugna: very dark plum */
 :root[data-theme='dark'][data-accent='prugna'] {
   --ground: #2c1c23;
   --ground-hi: #35242c;
@@ -680,7 +631,6 @@
   --lining-base-hi: #322129;
   --lining-base-lo: #1d0e15;
 }
-/* Blu di Prussia: midnight blue */
 :root[data-theme='dark'][data-accent='prussia'] {
   --ground: #18212e;
   --ground-hi: #212a37;
@@ -717,7 +667,6 @@
   --lining-base-hi: #1e2734;
   --lining-base-lo: #0b131f;
 }
-/* Verde bottiglia: very dark green */
 :root[data-theme='dark'][data-accent='bottiglia'] {
   --ground: #16261d;
   --ground-hi: #1f2f25;
@@ -754,7 +703,6 @@
   --lining-base-hi: #1c2c22;
   --lining-base-lo: #08180f;
 }
-/* Terra di Siena: dark umber */
 :root[data-theme='dark'][data-accent='seppia'] {
   --ground: #2b2017;
   --ground-hi: #35291f;
@@ -791,7 +739,6 @@
   --lining-base-hi: #31261d;
   --lining-base-lo: #1d1209;
 }
-/* Ardesia: dark slate blue-grey */
 :root[data-theme='dark'][data-accent='ardesia'] {
   --ground: #1f262b;
   --ground-hi: #282f34;
@@ -828,7 +775,6 @@
   --lining-base-hi: #252c31;
   --lining-base-lo: #11181d;
 }
-/* Ottanio: dark petrol */
 :root[data-theme='dark'][data-accent='ottanio'] {
   --ground: #102629;
   --ground-hi: #192f32;
@@ -865,4 +811,3 @@
   --lining-base-hi: #162c2f;
   --lining-base-lo: #03171a;
 }
-/* @surfaces-end */

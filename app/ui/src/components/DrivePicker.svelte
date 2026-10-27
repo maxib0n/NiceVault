@@ -1,10 +1,3 @@
-<!--
-  Where a new volume goes: the drives of this computer as small cards pressed into the
-  form (name, how full it is, file system, removable or internal), plus "Altra cartella…"
-  for any folder. Live: a drive plugged in appears, a drive pulled out goes (and if it was
-  the chosen one, the choice falls back with a line saying so). `dir` is the folder the
-  volume will be written to.
--->
 <script lang="ts">
   import { FolderOpen, HardDrive, Monitor, ShieldCheck, Usb } from '@lucide/svelte';
   import { onMount } from 'svelte';
@@ -15,17 +8,13 @@
   import type { Drive } from '../lib/types';
 
   interface Props {
-    /** the chosen folder */
     dir: string;
     labelledby?: string;
   }
   let { dir = $bindable(), labelledby }: Props = $props();
 
-  /** drive id, or 'other' (a folder picked by hand) */
   let selected = $state<string | null>(null);
-  /** a folder picked with "Altra cartella…" */
   let custom = $state<string | null>(null);
-  /** the chosen drive was pulled out (its name) */
   let gone = $state<string | null>(null);
 
   function driveName(d: Drive): string {
@@ -36,7 +25,6 @@
 
   const usedPct = (d: Drive) => (d.total_bytes > 0 ? Math.min(100, Math.max(0, Math.round(((d.total_bytes - d.free_bytes) / d.total_bytes) * 100))) : 0);
 
-  /** Which card shows `dir`: the drive whose folder it is, else "Altra cartella". */
   function match(list: Drive[], d: string): string | null {
     if (!d) return null;
     const exact = list.find((x) => x.folder === d);
@@ -48,14 +36,12 @@
     void drives.refresh();
   });
 
-  // first list (or first dir): pick the card that shows the default folder
   $effect(() => {
     if (selected !== null || !drives.loaded || !dir) return;
     selected = match(drives.list, dir);
     if (selected === 'other') custom = dir;
   });
 
-  // live: the chosen drive went away -> fall back to the app's drive / the first one
   $effect(() => {
     const list = drives.list;
     if (!selected || selected === 'other') return;
@@ -72,7 +58,6 @@
     }
   });
 
-  // names of drives seen, so a vanished one can still be named
   const seen = new Map<string, string>();
   $effect(() => {
     for (const d of drives.list) seen.set(d.id, driveName(d));
@@ -88,7 +73,6 @@
   }
 
   async function chooseOther() {
-    // where the dialog opens: the last folder picked by hand (else the dialog's own default)
     const start = custom ?? undefined;
     const picked = await api.pickFolder(m.dialog_where_save(), start);
     if (!picked) return;
@@ -98,7 +82,6 @@
     dir = picked;
   }
 
-  // arrows move the focus between cards; Space / Enter choose (Altra cartella opens the dialog)
   function keys(e: KeyboardEvent) {
     if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
     const radios = [...(e.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="radio"]')];
@@ -113,7 +96,6 @@
   }
 
   const kindIcon = (d: Drive) => (d.is_nicevault_device ? ShieldCheck : d.removable ? Usb : d.system ? Monitor : HardDrive);
-  // roving tabindex: the chosen card (or the first) is the one Tab reaches
   const tabStop = $derived(selected ?? drives.list[0]?.id ?? 'other');
 </script>
 
@@ -177,7 +159,6 @@
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: var(--space-2);
   }
-  /* each drive a card standing on the page, like a key; the chosen one ringed in the ink */
   .drive {
     position: relative;
     display: grid;
@@ -252,7 +233,6 @@
     flex-wrap: wrap;
     gap: 4px;
   }
-  /* how full the drive is: a groove filled with ink */
   .bar {
     grid-area: bar;
     display: block;

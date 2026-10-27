@@ -1,68 +1,30 @@
-//! The drives of this computer, live: what "Nuovo volume" offers as places for a new volume and
-//! what tells Benvenuto to re-scan when a drive is plugged in or pulled out.
-//!
-//! Enumeration is read-only everywhere and never asks for a password:
-//!  - Linux: `/proc/self/mountinfo` (block-device mounts, one entry per device), labels from
-//!    `/dev/disk/by-label`, removable/USB from sysfs, sizes from `statvfs`;
-//!  - Windows: `GetLogicalDrives` + `GetDriveTypeW` (removable and fixed), `GetVolumeInformationW`
-//!    (label, file system), `GetDiskFreeSpaceExW`;
-//!  - macOS: `getmntinfo` (local `/dev/disk*` mounts), DiskArbitration descriptions (internal or
-//!    not, volume name).
-//!
-//! Hot-plug: a watcher thread re-enumerates when the OS says something changed and, as a fallback,
-//! every [`POLL`]; it emits `drives-changed { drives }` only when the set of drives changed (not
-//! for free space alone):
-//!  - Linux: `gdbus monitor --system --dest org.freedesktop.UDisks2` (a signal subscription:
-//!    InterfacesAdded / InterfacesRemoved / MountPoints changes) and `poll(POLLPRI)` on
-//!    `/proc/self/mountinfo`, which the kernel signals on every mount / unmount;
-//!  - Windows: `WM_DEVICECHANGE` (`DBT_DEVICEARRIVAL` / `DBT_DEVICEREMOVECOMPLETE`) in the hidden
-//!    window of watch.rs;
-//!  - macOS: DiskArbitration appeared / disappeared / description-changed callbacks.
-//!
-//! Test hook: `NICEVAULT_FAKE_DRIVES=<file.json>` replaces the OS with a JSON array of drives
-//! (see [`Drive`]; re-read at every poll), so the e2e suites can plug and pull drives.
-
 use crate::state::{AppState, lock_or_recover};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::Duration;
 
-/// Fallback re-enumeration interval (the OS signals usually come first).
 pub const POLL: Duration = Duration::from_secs(2);
-/// With a fake source (tests): faster, so plugging a fake drive shows quickly.
 const FAKE_POLL: Duration = Duration::from_millis(400);
-/// Partition labels of a NiceVault device.
 pub const DEVICE_LABELS: [&str; 2] = ["VaultData", "NiceVault"];
 
-/// One mounted drive. `label` may be empty (the UI then names it from `mount_path`, or "this
-/// computer" when `system`).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Drive {
-    /// Stable while mounted: Linux the device path, Windows "E:", macOS the BSD name.
     pub id: String,
     pub label: String,
-    /// Root of the drive as mounted (`/run/media/u/STICK`, `E:\`, `/Volumes/STICK`).
     pub mount_path: String,
-    /// Where a new volume goes when this drive is picked: the app's folder when the executable
-    /// runs from this drive, the Documents folder on the drive holding the home, else the root.
     pub folder: String,
     pub fs_type: Option<String>,
     pub total_bytes: u64,
     pub free_bytes: u64,
-    /// Removable or external (USB stick, SD card, external disk), as opposed to internal.
     pub removable: bool,
-    /// The drive holding the OS / the user's home.
     pub system: bool,
-    /// The executable runs from this drive (portable use).
     pub app_here: bool,
-    /// A partition labelled VaultData / NiceVault (a NiceVault device).
     pub is_nicevault_device: bool,
 }
 
 impl Drive {
-    /// What makes two lists "different" for `drives-changed` (free space alone does not).
     fn key(&self) -> (&str, &str, &str, &Option<String>, bool, bool) {
         (&self.id, &self.mount_path, &self.label, &self.fs_type, self.removable, self.is_nicevault_device)
     }
@@ -76,19 +38,13 @@ fn same_set(a: &[Drive], b: &[Drive]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.key() == y.key())
 }
 
-/// A drive as enumerated, before the app-relative fields are filled in.
 #[derive(Clone, Debug, Default)]
 pub struct Raw {
     pub drive: Drive,
-    /// Every mount point of this device (btrfs subvolumes, bind mounts): used to tell which drive
-    /// holds a folder.
     pub mounts: Vec<PathBuf>,
 }
 
-/// Fills `folder`, `system`, `app_here`, `is_nicevault_device` and sorts: the app's drive first,
-/// then removable ones, then the system drive, then by label.
 pub fn finish(raws: Vec<Raw>, exe_dir: Option<&Path>, home: Option<&Path>, documents: Option<&Path>) -> Vec<Drive> {
-    // the drive holding `p` = the one with the longest mount point that is a prefix of it
     let owner = |p: &Path| -> Option<usize> {
         raws.iter()
             .enumerate()
@@ -121,15 +77,9 @@ pub fn finish(raws: Vec<Raw>, exe_dir: Option<&Path>, home: Option<&Path>, docum
     out
 }
 
-// ---------------------------------------------------------------------------
-// sources
-
-/// Where the list comes from.
 pub enum Source {
     Os,
-    /// `NICEVAULT_FAKE_DRIVES`: a JSON array of [`Drive`] (missing file = no drives).
     FakeFile(PathBuf),
-    /// Tests.
     Custom(Box<dyn Fn() -> Vec<Drive> + Send + Sync>),
 }
 
@@ -166,7 +116,6 @@ fn fake_list(p: &Path) -> Vec<Drive> {
     finish(raws, exe_dir_for_drives().as_deref(), None, None)
 }
 
-/// The mounted drives of this machine.
 pub fn os_list() -> Vec<Drive> {
     let raws = os::enumerate();
     let home = dirs::home_dir();
@@ -174,23 +123,17 @@ pub fn os_list() -> Vec<Drive> {
     finish(raws, exe_dir_for_drives().as_deref(), home.as_deref(), docs.as_deref())
 }
 
-/// Roots of the removable drives Benvenuto scans (store.rs), from the same source as the picker.
 pub fn removable_roots() -> Vec<PathBuf> {
     Source::detect().list().into_iter().filter(|d| d.removable).map(|d| PathBuf::from(d.mount_path)).collect()
 }
 
-// ---------------------------------------------------------------------------
-// watcher
-
 static WAKE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
 
-/// Something may have changed (an OS notification): re-enumerate now.
 pub fn wake() {
     *lock_or_recover(&WAKE.0) = true;
     WAKE.1.notify_all();
 }
 
-/// The live list (Tauri managed state; `drives_list` reads it).
 pub struct Drives {
     source: Source,
     last: Mutex<Vec<Drive>>,
@@ -202,14 +145,12 @@ impl Drives {
         Arc::new(Drives { source, last: Mutex::new(last) })
     }
 
-    /// Fresh enumeration (free space up to date); also updates what the watcher compares with.
     pub fn list(&self) -> Vec<Drive> {
         let now = self.source.list();
         *lock_or_recover(&self.last) = now.clone();
         now
     }
 
-    /// Re-enumerates; `Some(list)` when the set of drives changed since the last look.
     pub fn rescan(&self) -> Option<Vec<Drive>> {
         let now = self.source.list();
         let mut last = lock_or_recover(&self.last);
@@ -218,7 +159,6 @@ impl Drives {
         changed.then_some(now)
     }
 
-    /// One pass of the watcher: on a change, emits `drives-changed { drives }`. Returns whether it did.
     pub fn tick(&self, state: &AppState) -> bool {
         match self.rescan() {
             Some(drives) => {
@@ -229,7 +169,6 @@ impl Drives {
         }
     }
 
-    /// Starts the OS listeners and the watcher thread (ends when the app state is gone).
     pub fn spawn(self: &Arc<Self>, state: Weak<AppState>) {
         let fake = !matches!(self.source, Source::Os);
         if !fake {
@@ -244,7 +183,6 @@ impl Drives {
                     let (mut g, _) = WAKE.1.wait_timeout_while(g, every, |woken| !*woken).unwrap_or_else(|e| e.into_inner());
                     *g = false;
                 }
-                // a burst of notifications (a disk with several partitions) settles first
                 std::thread::sleep(Duration::from_millis(150));
                 *lock_or_recover(&WAKE.0) = false;
                 let Some(s) = state.upgrade() else { return };
@@ -267,10 +205,6 @@ pub mod cmd {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Linux
-
-/// One line of /proc/self/mountinfo, the fields we use.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MountLine {
     pub devno: String,
@@ -281,7 +215,6 @@ pub struct MountLine {
     pub source: String,
 }
 
-/// Parses one mountinfo line: `id parent major:minor root mountpoint opts [optional...] - fstype source superopts`.
 pub fn parse_mountinfo_line(line: &str) -> Option<MountLine> {
     let (left, right) = line.split_once(" - ")?;
     let l: Vec<&str> = left.split(' ').collect();
@@ -299,7 +232,6 @@ pub fn parse_mountinfo_line(line: &str) -> Option<MountLine> {
     })
 }
 
-/// mountinfo escapes space, tab, newline and backslash as \ooo (octal).
 pub fn unescape_mount(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
@@ -316,7 +248,6 @@ pub fn unescape_mount(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// `/dev/disk/by-label` names escape bytes as `\xHH` (udev).
 pub fn unescape_udev(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
@@ -337,7 +268,6 @@ pub fn unescape_udev(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Mounts that are places for files: block devices, writable, not system plumbing.
 pub fn is_user_mount(m: &MountLine) -> bool {
     const SKIP_FS: [&str; 4] = ["squashfs", "iso9660", "udf", "erofs"];
     const SKIP_UNDER: [&str; 8] = ["/boot", "/efi", "/snap", "/var/lib/snapd", "/var/lib/docker", "/var/lib/containers", "/sysroot", "/proc"];
@@ -349,9 +279,6 @@ pub fn is_user_mount(m: &MountLine) -> bool {
         && !SKIP_UNDER.iter().any(|p| Path::new(&m.mount_point).starts_with(p))
 }
 
-/// Groups user mounts by device: one drive per source, represented by its shortest mount point
-/// (the root of a btrfs device rather than a subvolume). `label_of(source)` and `info(source,
-/// mount)` supply what is not in mountinfo.
 pub fn group_mounts(
     lines: &[MountLine],
     label_of: impl Fn(&str) -> Option<String>,
@@ -383,7 +310,6 @@ pub fn group_mounts(
     for r in &mut out {
         let mp = PathBuf::from(&r.drive.mount_path);
         r.drive.label = label_of(&r.drive.id).unwrap_or_else(|| {
-            // udisks mounts at /run/media/$USER/<label>: the folder name is the label
             if r.drive.mount_path == "/" { String::new() } else { mp.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default() }
         });
         (r.drive.total_bytes, r.drive.free_bytes) = space_of(&mp);
@@ -391,7 +317,6 @@ pub fn group_mounts(
     out
 }
 
-/// Whether a `gdbus monitor` line of UDisks2 means the drives may have changed.
 pub fn udisks_line_changes_drives(line: &str) -> bool {
     line.contains("org.freedesktop.DBus.ObjectManager.InterfacesAdded")
         || line.contains("org.freedesktop.DBus.ObjectManager.InterfacesRemoved")
@@ -410,7 +335,6 @@ mod os {
         rd.flatten().filter_map(|e| Some((std::fs::canonicalize(e.path()).ok()?, unescape_udev(&e.file_name().to_string_lossy())))).collect()
     }
 
-    /// sysfs entry of a block device, following device-mapper (LUKS, LVM) down to its disk.
     fn removable(source: &str) -> bool {
         let Ok(dev) = std::fs::canonicalize(source) else { return false };
         let Some(name) = dev.file_name().map(|n| n.to_string_lossy().into_owned()) else { return false };
@@ -419,7 +343,6 @@ mod os {
             Err(_) => return false,
         };
         for _ in 0..4 {
-            // dm-N: look at the (first) device below it
             let below = std::fs::read_dir(sys.join("slaves")).ok().and_then(|mut rd| rd.next()).and_then(|e| e.ok()).map(|e| e.path());
             match below.and_then(|p| std::fs::canonicalize(p).ok()) {
                 Some(p) => sys = p,
@@ -433,7 +356,6 @@ mod os {
     pub(super) fn space(p: &Path) -> (u64, u64) {
         use std::os::unix::ffi::OsStrExt;
         let Ok(c) = std::ffi::CString::new(p.as_os_str().as_bytes()) else { return (0, 0) };
-        // SAFETY: statvfs fills a zeroed struct from a NUL-terminated path.
         unsafe {
             let mut s: libc::statvfs = std::mem::zeroed();
             if libc::statvfs(c.as_ptr(), &mut s) != 0 {
@@ -456,19 +378,16 @@ mod os {
     }
 
     pub(super) fn listen() {
-        // the kernel flags /proc/self/mountinfo (POLLPRI) at every mount table change
         let _ = std::thread::Builder::new().name("nv-mounts".into()).spawn(|| {
             use std::os::fd::AsRawFd;
             let Ok(f) = std::fs::File::open("/proc/self/mountinfo") else { return };
             loop {
                 let mut p = libc::pollfd { fd: f.as_raw_fd(), events: libc::POLLPRI | libc::POLLERR, revents: 0 };
-                // SAFETY: one valid pollfd for the duration of the call.
                 let n = unsafe { libc::poll(&mut p, 1, 60_000) };
                 if n < 0 {
                     return;
                 }
                 if n > 0 {
-                    // re-arm: the event stays pending until this fd reads the table again
                     use std::io::{Read, Seek};
                     let _ = (&f).seek(std::io::SeekFrom::Start(0));
                     let _ = (&f).read_to_end(&mut Vec::new());
@@ -476,10 +395,8 @@ mod os {
                 }
             }
         });
-        // UDisks2 signals (plug / unplug before the mount, label changes); a subscription only
         let mut cmd = Command::new("gdbus");
         cmd.args(["monitor", "--system", "--dest", "org.freedesktop.UDisks2"]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-        // SAFETY: prctl is async-signal-safe; the child dies with us.
         unsafe {
             cmd.pre_exec(|| {
                 libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
@@ -508,9 +425,6 @@ mod os {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Windows
 
 #[cfg(windows)]
 mod os {
@@ -548,8 +462,6 @@ mod os {
     pub(super) fn enumerate() -> Vec<Raw> {
         let mut out = vec![];
         let mut old = 0;
-        // SAFETY: plain Win32 calls with NUL-terminated buffers that outlive them. The error mode
-        // keeps an empty card reader from showing a "no disk" dialog.
         unsafe {
             SetThreadErrorMode(SEM_FAILCRITICALERRORS, &mut old);
             let mask = GetLogicalDrives();
@@ -568,7 +480,7 @@ mod os {
                 let mut fs = [0u16; 261];
                 let (mut serial, mut maxc, mut flags) = (0, 0, 0);
                 if GetVolumeInformationW(root.as_ptr(), name.as_mut_ptr(), 261, &mut serial, &mut maxc, &mut flags, fs.as_mut_ptr(), 261) == 0 {
-                    continue; // no medium
+                    continue;
                 }
                 if flags & FILE_READ_ONLY_VOLUME != 0 {
                     continue;
@@ -596,13 +508,9 @@ mod os {
         out
     }
 
-    /// WM_DEVICECHANGE arrives in watch.rs's hidden window, which calls [`wake`].
     pub(super) fn listen() {}
     pub(super) fn shutdown() {}
 }
-
-// ---------------------------------------------------------------------------
-// macOS
 
 #[cfg(target_os = "macos")]
 mod os {
@@ -642,14 +550,11 @@ mod os {
     const UTF8: u32 = 0x0800_0100;
 
     fn cstr(b: &[c_char]) -> String {
-        // SAFETY: statfs strings are NUL-terminated within their fixed-size arrays.
         unsafe { CStr::from_ptr(b.as_ptr()) }.to_string_lossy().into_owned()
     }
 
-    /// (internal, volume name) from DiskArbitration.
     fn describe(session: CfRef, bsd: &str) -> (Option<bool>, Option<String>) {
         let Ok(name) = std::ffi::CString::new(bsd) else { return (None, None) };
-        // SAFETY: CF/DA calls with valid arguments; every created object is released.
         unsafe {
             let disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, name.as_ptr());
             if disk.is_null() {
@@ -676,7 +581,6 @@ mod os {
 
     pub(super) fn enumerate() -> Vec<Raw> {
         let mut out = vec![];
-        // SAFETY: getmntinfo returns a process-owned array of `n` statfs records.
         unsafe {
             let session = DASessionCreate(kCFAllocatorDefault);
             let mut p: *mut libc::statfs = std::ptr::null_mut();
@@ -709,7 +613,6 @@ mod os {
                         system: root,
                         ..Default::default()
                     },
-                    // the home lives on the Data volume, firmlinked under "/"
                     mounts: if root { vec![PathBuf::from("/")] } else { vec![PathBuf::from(&on)] },
                 });
             }
@@ -729,7 +632,6 @@ mod os {
 
     pub(super) fn listen() {
         let _ = std::thread::Builder::new().name("nv-diskarb".into()).spawn(|| {
-            // SAFETY: DA callbacks on this thread's run loop; the session lives for the process.
             unsafe {
                 let session = DASessionCreate(kCFAllocatorDefault);
                 if session.is_null() {
@@ -757,7 +659,6 @@ mod os {
     pub(super) fn shutdown() {}
 }
 
-/// Stops helper processes (app exit).
 pub fn shutdown() {
     os::shutdown();
 }
@@ -804,7 +705,6 @@ mod tests {
             |_| (100, 40),
         );
         let ids: Vec<&str> = raws.iter().map(|r| r.drive.id.as_str()).collect();
-        // no devtmpfs, no /boot, no snap loop, no read-only CD
         assert_eq!(ids, ["/dev/mapper/luks-test", "/dev/nvme0n1p2", "/dev/sdd1", "/dev/sde2"]);
         let root = &raws[0];
         assert_eq!(root.drive.mount_path, "/", "the btrfs device is shown by its shortest mount");

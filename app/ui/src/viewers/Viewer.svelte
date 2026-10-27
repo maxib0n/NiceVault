@@ -1,11 +1,3 @@
-<!--
-  The in-app viewer for one file (the quick look's body). Picks the viewer by name, then by
-  the first bytes for names that say nothing; every viewer reads the decrypted bytes over
-  the preview URL with Range (source.ts) — into memory only, never a temporary file.
-  Files over a viewer's cap, and anything a viewer cannot show, get the info panel (facts,
-  first bytes in hex) with Esporta and — only while the volume is mounted — "Apri con app
-  esterna" through the mounted drive.
--->
 <script lang="ts">
   import './viewer.css';
   import type { FsNode, VaultInfo } from '../lib/types';
@@ -32,16 +24,13 @@
   }: {
     vault: VaultInfo;
     node: FsNode;
-    /** previewUrl(vault, node); '' when there are no bytes to show (mock without a sample) */
     url: string;
     onexport: () => void;
-    /** the picture is zoomed in (the quick look's swipe-to-step pauses meanwhile) */
     onzoom?: (zoomed: boolean) => void;
   } = $props();
 
   const src = $derived(url ? urlSource(url) : null);
   const named = $derived(viewerKind(node.name));
-  /** what the first bytes say, for a name that said nothing */
   let sniffed = $state<ViewerKind | null | undefined>(undefined);
   let failure = $state<InfoReason | null>(null);
 
@@ -85,7 +74,7 @@
   {:else if kind === 'pdf'}
     <PdfViewer src={src} onfail={fail} {onzoom} />
   {:else if kind === 'markdown'}
-    <MarkdownViewer src={src} {node} onfail={fail} />
+    <MarkdownViewer src={src} {node} {vault} onfail={fail} />
   {:else if kind === 'office'}
     <OfficeViewer src={src} ext={extension(node.name)} onfail={fail} />
   {:else if kind === 'archive'}

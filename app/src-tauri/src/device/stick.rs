@@ -1,30 +1,3 @@
-//! "Aggiorna i programmi sulla chiavetta": when a volume lives on a NiceVault device (a drive
-//! prepared by "Crea dispositivo": a `NiceVault` partition with the marker, a `VaultData` one),
-//! the programs on its NiceVault partition can be brought up to date without reformatting and
-//! without any privilege.
-//!
-//! - Detection ([`sticks`]) is read-only and cheap: the disk list the device backend already
-//!   reads (sysfs / the fake file), the marker (a few hundred bytes) and the presence of the
-//!   three programs (metadata only). No network, no hashing, nothing written.
-//! - The update ([`start_update`]) writes only inside the NiceVault partition's mount folder:
-//!   the running app's own build for its OS (its `.sig` verified when there is one) and, when
-//!   online, the latest signed builds of the other OSes through the updater's download path
-//!   ([`download_signed_builds`] over `client::download`, the path "Crea dispositivo" and
-//!   "Scarica ora" use: release packs opened, then the signature verified). Offline, the other OSes are left as they are ("da scaricare quando online").
-//! - Every program is replaced atomically when there is room for two copies ("safe"):
-//!   `<name>.part` -> fsync -> the current one renamed to `<name>.old` -> rename in -> read back
-//!   and compare SHA-256 -> only then `.old` is removed (a failed check puts the old one back).
-//!   macOS' `NiceVault.app` folder the same way (the signed zip is checked in memory, not kept).
-//!   Then LEGGIMI/README and, last, the marker (its `clients` versions).
-//! - Space ([`Space`], [`plan_space`]): devices made before 1f86d4a have a 128 MiB NiceVault
-//!   partition, too small for two copies of every program. Leftovers (`.part`, `.old`, the old
-//!   macOS zip once the app checks out against it) are removed first ([`tidy`]); then one program
-//!   at a time, smallest first, the safe way when it fits, else "tight": the marker first says
-//!   that OS has no program, the old copy is removed, the new one written and verified. A failed
-//!   tight write leaves that OS "da riscrivere" (`Change::Rewrite`): the marker and README say it
-//!   is missing and the next update writes it. The program this app runs from is never removed.
-//! - The data partition, the volumes and the partition table are never touched.
-
 use super::backend::DiskOps;
 use super::client::{self, Build, Builds, Local, Room};
 use super::job::{DeviceCtx, Log};
@@ -42,7 +15,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-/// Where each OS's program is on the stick, as [`client::write_client`] puts it.
 pub fn program_name(os: Os) -> &'static str {
     match os {
         Os::Linux => client::LINUX_NAME,
@@ -51,96 +23,64 @@ pub fn program_name(os: Os) -> &'static str {
     }
 }
 
-/// Where the new program for an OS comes from.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Source {
-    /// This app (its own OS).
     Running,
-    /// The update channel (the other OSes; needs the network).
     Download,
 }
 
-/// One OS's program on the stick.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct StickOs {
     pub os: Os,
-    /// The file (or `.app` folder) on the NiceVault partition.
     pub file: String,
     pub present: bool,
-    /// Version on the stick (the marker's `clients`), when known.
     pub version: Option<String>,
-    /// The version it would get: this app's for its own OS; `None` for the others (the
-    /// latest of the channel, known only when online).
     pub target: Option<String>,
     pub source: Source,
-    /// Present and not older than this app.
     pub current: bool,
 }
 
-/// A NiceVault device, as Dettagli / Benvenuto show it.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Stick {
     pub disk_id: String,
-    /// `Vendor Model` (may be empty).
     pub name: String,
-    /// Where the NiceVault partition is mounted (`None`: not mounted).
     pub client_mount: Option<String>,
     pub mounted: bool,
-    /// The marker is there (a device "Crea dispositivo" finished). `false` while not mounted.
     pub complete: bool,
     pub data_fs: Option<String>,
-    /// This app's version.
     pub running_version: String,
     pub programs: Vec<StickOs>,
-    /// Something to do: a program missing or older than this app (only known when mounted).
     pub outdated: bool,
-    /// This app runs from the stick itself (its own OS's program is this one).
     pub runs_from_stick: bool,
-    /// Room on the NiceVault partition and how the update would use it (mounted and complete).
     pub space: Option<Space>,
 }
 
-/// How a program is replaced.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
-    /// Beside the current one, which is kept until the new one checks out.
     Safe,
-    /// In place: the current one is removed first (not enough room for two copies).
     Tight,
 }
 
-/// One program in [`Space`].
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct OsSpace {
     pub os: Os,
-    /// Bytes it takes now (with its `.sig`, leftovers and, for macOS, the old zip).
     pub now: u64,
-    /// Bytes the new one takes (before the download: an estimate).
     pub next: u64,
-    /// How it would be written; None: it does not fit even in place.
     pub mode: Option<Mode>,
 }
 
-/// The NiceVault partition's room, for the UI ("Spazio stretto ...") and the outcome.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Space {
-    /// The partition's size (bytes), when known.
     pub size: Option<u64>,
-    /// Free now (bytes), when known.
     pub free: Option<u64>,
-    /// What [`tidy`] frees first (leftovers, the old macOS zip).
     pub reclaim: u64,
-    /// The programs that would be written, in the order they would be (smallest first).
     pub programs: Vec<OsSpace>,
-    /// Some program is replaced in place (one at a time, the old copy removed first).
     pub tight: bool,
-    /// Every program fits at least in place.
     pub fits: bool,
 }
 
-/// Rough size of a program not on the stick yet (only for the estimate before the download).
 fn estimate(os: Os) -> u64 {
     match os {
         Os::Linux => 30 << 20,
@@ -149,7 +89,6 @@ fn estimate(os: Os) -> u64 {
     }
 }
 
-/// The files of one OS's program on the partition (the program first; macOS: the old zip too).
 fn program_files(os: Os) -> Vec<String> {
     let p = program_name(os);
     match os {
@@ -158,12 +97,10 @@ fn program_files(os: Os) -> Vec<String> {
     }
 }
 
-/// Bytes `os`'s program takes on the partition (files, `.part` / `.old` leftovers included).
 fn on_stick(root: &Path, os: Os) -> u64 {
     program_files(os).iter().flat_map(|n| [n.clone(), format!("{n}.part"), format!("{n}.old")]).map(|n| client::dir_size(&root.join(n))).sum()
 }
 
-/// What [`tidy`] would free, without hashing (the old zip counted when the app is there).
 fn reclaimable(root: &Path) -> u64 {
     let mut n = 0;
     for os in Os::ALL {
@@ -179,9 +116,6 @@ fn reclaimable(root: &Path) -> u64 {
     n
 }
 
-/// The order and the way each program would be written: smallest new one first; safe when it
-/// fits beside the current one (and [`client::SLACK`]), in place when it fits once the current
-/// one is gone, else None. `free` None (unknown): all safe.
 pub fn plan_space(free: Option<u64>, items: &[(Os, u64, u64)]) -> Vec<OsSpace> {
     let mut v: Vec<(Os, u64, u64)> = items.to_vec();
     v.sort_by_key(|i| (i.2, i.0 as u8));
@@ -213,7 +147,6 @@ fn newer(current: Option<&str>, candidate: &str) -> bool {
     }
 }
 
-/// A NiceVault device: both labels (the marker is read from the mounted client partition).
 pub fn is_device(d: &Disk) -> bool {
     d.by_label(CLIENT_LABEL).is_some() && d.by_label(DATA_LABEL).is_some()
 }
@@ -223,8 +156,6 @@ fn under(p: &Path, root: &Path) -> bool {
     canon(p).starts_with(canon(root))
 }
 
-/// The NiceVault device that holds `path` (an open volume's file): a partition of it is
-/// mounted at a folder containing the path.
 pub fn device_for_path<'a>(disks: &'a [Disk], path: &Path) -> Option<&'a Disk> {
     disks
         .iter()
@@ -237,8 +168,6 @@ pub fn device_for_path<'a>(disks: &'a [Disk], path: &Path) -> Option<&'a Disk> {
         .map(|(_, d)| d)
 }
 
-/// The stick's state, read-only: the marker, whether each program is there and (`free`: the
-/// backend's room on the partition) the space estimate.
 pub fn status(d: &Disk, client_root: Option<&Path>, l: &Local, free: Option<u64>) -> Stick {
     let marker = client_root.and_then(client::read_marker);
     let runs_from_stick = client_root.is_some_and(|r| under(&l.exe, r));
@@ -255,8 +184,8 @@ pub fn status(d: &Disk, client_root: Option<&Path>, l: &Local, free: Option<u64>
                 file: file.to_owned(),
                 present,
                 version: if own && runs_from_stick { version.or_else(|| Some(l.version.clone())) } else { version },
-                target: own.then(|| l.version.clone()),
-                source: if own { Source::Running } else { Source::Download },
+                target: (own && runs_from_stick).then(|| l.version.clone()),
+                source: if own && runs_from_stick { Source::Running } else { Source::Download },
                 current,
             }
         })
@@ -292,7 +221,6 @@ pub fn status(d: &Disk, client_root: Option<&Path>, l: &Local, free: Option<u64>
     }
 }
 
-/// The NiceVault devices connected (`path` given: only the one holding it). Read-only.
 pub fn sticks(ops: &dyn DiskOps, l: &Local, path: Option<&Path>) -> Vec<Stick> {
     let disks = ops.disks();
     let chosen: Vec<&Disk> = match path {
@@ -317,8 +245,6 @@ fn find_device(ops: &dyn DiskOps, id: &str) -> ApiResult<Disk> {
     Ok(d)
 }
 
-/// Mounts the NiceVault partition (only it), unprivileged: udisks `Filesystem.Mount` on Linux
-/// (no password on a local session), `diskutil mount` on macOS; Windows gives it a letter itself.
 pub fn mount(ctx: &DeviceCtx, id: &str) -> ApiResult<Stick> {
     let d = find_device(ctx.ops.as_ref(), id)?;
     if ctx.ops.client_root(&d).is_none() {
@@ -328,24 +254,14 @@ pub fn mount(ctx: &DeviceCtx, id: &str) -> ApiResult<Stick> {
     Ok(fresh(ctx.ops.as_ref(), &d, &ctx.local))
 }
 
-/// [`status`] with the backend's root and room.
 fn fresh(ops: &dyn DiskOps, d: &Disk, l: &Local) -> Stick {
     let root = ops.client_root(d);
     let free = root.as_deref().and_then(|r| ops.client_free(d, r));
     status(d, root.as_deref(), l, free)
 }
 
-// ---------------------------------------------------------------------------------------------
-// the builds
-
-/// What [`download_signed_builds`] got, and the OSes that failed (with why).
 pub type Downloaded = (Vec<Build>, Vec<(Os, ApiError)>);
 
-/// The latest signed builds of `want` from the update channel, through `client::download` (the
-/// device's download path: release pack opened, signature of the plaintext verified, never older
-/// than this app). The manifest is read first so that an OS whose channel version is not newer
-/// than `have` (what the stick holds) is not downloaded. Err = the channel could not be read
-/// (offline); per-OS failures come back with the OS.
 pub fn download_signed_builds(
     l: &Local,
     manifest_url: &str,
@@ -369,9 +285,6 @@ pub fn download_signed_builds(
         .collect();
     Ok((got.files, failed))
 }
-
-// ---------------------------------------------------------------------------------------------
-// writing
 
 fn sha(b: &[u8]) -> [u8; 32] {
     Sha256::digest(b).into()
@@ -398,14 +311,11 @@ fn mib(n: u64) -> String {
     format!("{:.1} MB", n as f64 / 1_000_000.0)
 }
 
-/// Room left on the partition holding `dir` (None: unknown).
 fn free_bytes(dir: &Path) -> Option<u64> {
     let f = super::job::free_space(dir);
     (f > 0).then_some(f)
 }
 
-/// Moves `staged` in place of `dest`, keeping the current one as `<dest>.old` until `check`
-/// passes; a failed check puts the old one back. Then `.old` is removed.
 fn swap_checked(dir: &Path, name: &str, staged: &Path, check: impl Fn(&Path) -> bool) -> ApiResult<()> {
     let dest = dir.join(name);
     let old = dir.join(format!("{name}.old"));
@@ -438,7 +348,6 @@ fn swap_checked(dir: &Path, name: &str, staged: &Path, check: impl Fn(&Path) -> 
     Ok(())
 }
 
-/// One small file (README, marker, `.sig`): `<name>.part` -> fsync -> [`swap_checked`].
 pub fn replace_file(dir: &Path, name: &str, bytes: &[u8]) -> ApiResult<()> {
     if free_bytes(dir).is_some_and(|f| f < bytes.len() as u64 + (256 << 10)) {
         return Err(no_space(name));
@@ -463,14 +372,11 @@ fn write_part(dir: &Path, name: &str, bytes: &[u8]) -> ApiResult<std::path::Path
     #[cfg(unix)]
     if name == client::LINUX_NAME {
         use std::os::unix::fs::PermissionsExt;
-        // exFAT gives every file the execute bit anyway; on others this sets it
         let _ = std::fs::set_permissions(&part, std::fs::Permissions::from_mode(0o755));
     }
     Ok(part)
 }
 
-/// The signature next to a program: replaced, or removed when the new one has none (a stale
-/// `.sig` would not match it).
 fn replace_sig(dir: &Path, name: &str, sig: Option<&str>) -> ApiResult<()> {
     let file = format!("{name}.sig");
     match sig {
@@ -482,17 +388,12 @@ fn replace_sig(dir: &Path, name: &str, sig: Option<&str>) -> ApiResult<()> {
     }
 }
 
-/// What one program is written from.
 struct Src<'a> {
     os: Os,
     file: Option<&'a Build>,
     bundle: Option<&'a Path>,
 }
 
-/// Writes `src`'s program, `mode` safe (beside the current one, kept until verified) or tight
-/// (the current one already removed). `fault`: the tests' injected failure, after the bytes are
-/// written. macOS: `NiceVault.app` only (from the signed zip in memory, or this app's bundle);
-/// returns its record for the marker.
 fn install(root: &Path, src: &Src, room: &Room, mode: Mode, fault: &dyn Fn() -> Option<ApiError>) -> ApiResult<Option<super::MacRecord>> {
     let name = program_name(src.os);
     let part = root.join(format!("{name}.part"));
@@ -507,7 +408,6 @@ fn install(root: &Path, src: &Src, room: &Room, mode: Mode, fault: &dyn Fn() -> 
             (_, Some(f), _) => write_part(root, name, &f.bytes).map(|_| ()),
             _ => Ok(()),
         }?;
-        // the room once written (the fake partition counts: over its size is a full disk)
         if room.free() == Some(0) {
             return Err(no_space(name));
         }
@@ -550,11 +450,6 @@ fn install(root: &Path, src: &Src, room: &Room, mode: Mode, fault: &dyn Fn() -> 
     Ok(None)
 }
 
-/// Before writing: a program missing beside its `.old` (an update cut short) gets it back;
-/// `.part` / `.old` leftovers go; the old macOS zip goes once `NiceVault.app` checks out against
-/// it (its record kept in the marker); an app that no longer matches its record is marked
-/// missing in the marker (it gets rewritten). Never the program this app runs from. Returns the
-/// bytes freed.
 pub fn tidy(root: &Path, marker: &mut Marker, room: &Room) -> u64 {
     let mut freed = 0;
     let mut gone = |p: &Path| {
@@ -594,25 +489,14 @@ pub fn tidy(root: &Path, marker: &mut Marker, room: &Room) -> u64 {
     freed
 }
 
-// ---------------------------------------------------------------------------------------------
-// the job
-
-/// What happened to one OS's program.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Change {
-    /// Replaced with a newer (or this app's) build.
     Updated,
-    /// Already current: nothing written.
     Unchanged,
-    /// Needs the network ("da scaricare quando online"): left as it was.
     Offline,
-    /// The download, its signature, the room or the write failed: left as it was.
     Failed,
-    /// Replaced in place (tight space) and the new write failed: the old copy is gone, the marker
-    /// and README say it is missing, the next update writes it ("da riscrivere").
     Rewrite,
-    /// This app runs from it (started from the stick): left as it is; update it from another computer.
     InUse,
 }
 
@@ -622,18 +506,14 @@ pub struct OsResult {
     pub from: Option<String>,
     pub to: Option<String>,
     pub result: Change,
-    /// Why (Failed / Offline / Rewrite), the backend's message.
     pub error: Option<ApiError>,
-    /// How it was written (Updated / Rewrite).
     pub mode: Option<Mode>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct UpdateOutcome {
     pub results: Vec<OsResult>,
-    /// The stick afterwards.
     pub stick: Stick,
-    /// The room as the writing started (after [`tidy`], real sizes).
     pub space: Option<Space>,
 }
 
@@ -661,7 +541,6 @@ fn res(os: Os, from: Option<String>, to: Option<String>, result: Change, error: 
     OsResult { os, from, to, result, error, mode }
 }
 
-/// The update itself (also run synchronously by the tests).
 pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, disk_id: &str, log: &Log) -> ApiResult<UpdateOutcome> {
     let mut em = Emit { st, job, last: Instant::now() };
     let cancelled = || if cancel.load(Ordering::Relaxed) { Err(ApiError::cancelled()) } else { Ok(()) };
@@ -675,7 +554,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
     if !before.complete {
         return Err(ApiError::new("stick_not_device", "The NiceVault partition has no marker: finish it with Crea dispositivo > Completa."));
     }
-    // never the data partition: its mount must not be (or hold) the client folder
     if let Some(data) = d.by_label(DATA_LABEL)
         && data.mountpoints.iter().any(|m| !m.is_empty() && (under(&root, Path::new(m)) || under(Path::new(m), &root)))
     {
@@ -686,19 +564,11 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
     let had = |os: Os| before.programs.iter().find(|p| p.os == os).and_then(|p| p.version.clone().filter(|_| p.present));
     cancelled()?;
 
-    // this app for its own OS (unless it runs from this very stick)
     let mut builds = Builds::default();
-    if !before.runs_from_stick {
-        let local = client::local_builds(l, &[l.os]);
-        builds.files.extend(local.files);
-        builds.mac_bundle = local.mac_bundle;
-    }
 
-    // the others from the update channel
     let free = || ops.client_free(&d, &root);
     let room = Room { free: &free, running: &l.exe };
-    let mut others: Vec<(Os, Option<String>)> = Os::ALL.into_iter().filter(|o| *o != l.os).map(|o| (o, had(o))).collect();
-    // an app that no longer matches its record is rewritten even when its version is current
+    let mut others: Vec<(Os, Option<String>)> = Os::ALL.into_iter().filter(|o| !(*o == l.os && before.runs_from_stick)).map(|o| (o, had(o))).collect();
     if app_changed(&root, &marker) {
         for o in others.iter_mut().filter(|o| o.0 == Os::Macos) {
             o.1 = None;
@@ -714,10 +584,14 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
         }
         Err(e) => offline = Some(e),
     }
+    if !before.runs_from_stick && !builds.has(l.os) && offline.is_some() {
+        let local = client::local_builds(l, &[l.os]);
+        builds.files.extend(local.files);
+        builds.mac_bundle = local.mac_bundle;
+    }
     log.event("builds", json!({ "offline": offline, "failed": failed.iter().map(|(o, e)| json!({"os": o, "error": e})).collect::<Vec<_>>(), "files": builds.files.iter().map(|f| json!({"name": f.name, "origin": f.origin, "version": f.version, "bytes": f.bytes.len(), "signed": f.sig.is_some()})).collect::<Vec<_>>() }));
     cancelled()?;
 
-    // room: leftovers and the old macOS zip go first, then the plan with the real sizes
     let freed = tidy(&root, &mut marker, &room);
     let writes: Vec<(Os, u64, u64)> = Os::ALL.into_iter().filter(|o| builds.has(*o)).map(|o| (o, on_stick(&root, o), client::new_size(&builds, o))).collect();
     let size = d.by_label(CLIENT_LABEL).map(|p| p.size).filter(|s| *s > 0);
@@ -725,7 +599,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
     log.event("space", json!({ "freed": freed, "space": space }));
     st.emit("job-progress", json!({ "job": job, "step": "space", "os": null, "done_bytes": 0, "total_bytes": 0, "current": "space", "space": space }));
 
-    // write: one OS at a time, smallest first; safe when two copies fit, else in place
     let total = builds.total_bytes().max(1);
     let mut done = 0u64;
     let mut results: Vec<OsResult> = vec![];
@@ -739,10 +612,8 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
                 (Change::Failed, Some(e.clone()))
             } else if os == l.os && before.runs_from_stick {
                 (Change::InUse, None)
-            } else if os != l.os && offline.is_some() {
+            } else if offline.is_some() {
                 (Change::Offline, offline.clone())
-            } else if os == l.os {
-                (Change::Failed, Some(ApiError::new("client_missing", "This app's own build could not be read.")))
             } else {
                 (Change::Unchanged, None)
             };
@@ -750,7 +621,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
             continue;
         }
         let to = file.and_then(|f| f.version.clone()).or_else(|| bundle.is_some().then(|| l.version.clone()));
-        // this app's build identical to the one on the stick: nothing to write
         if let Some(f) = file
             && os != Os::Macos
             && std::fs::read(root.join(&f.name)).is_ok_and(|b| sha(&b) == sha(&f.bytes))
@@ -765,7 +635,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
             continue;
         }
         cancelled()?;
-        // the mode now (the room is read again: what was written before counts)
         let (now, next) = (on_stick(&root, os), client::new_size(&builds, os));
         let mode = match room.free() {
             None => Mode::Safe,
@@ -780,7 +649,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
         };
         em.progress("copy", Some(os), done, total, true);
         if mode == Mode::Tight {
-            // the marker first says this OS has no program; then its old copy goes
             set_client(&mut marker, os, None);
             if os == Os::Macos {
                 marker.mac_app = None;
@@ -825,7 +693,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, d
     Ok(UpdateOutcome { results, stick, space: Some(space) })
 }
 
-/// Whether `NiceVault.app` no longer matches the record in the marker (read-only).
 fn app_changed(root: &Path, m: &Marker) -> bool {
     let app = root.join(client::MAC_APP);
     app.is_dir() && !root.join(client::MAC_ZIP).is_file() && m.mac_app.as_ref().is_some_and(|r| client::tree_digest(&app).as_deref() != Some(r.tree_sha256.as_str()))
@@ -835,7 +702,6 @@ fn set_client(m: &mut Marker, os: Os, v: Option<String>) {
     m.clients.insert(client::os_key(os).to_owned(), v);
 }
 
-/// LEGGIMI / README (which programs are still missing), then the marker, last.
 fn finish(root: &Path, marker: &mut Marker) -> ApiResult<()> {
     let missing: Vec<Os> = Os::ALL.into_iter().filter(|o| std::fs::symlink_metadata(root.join(program_name(*o))).is_err()).collect();
     let fs: DataFs = serde_json::from_value(serde_json::Value::String(marker.data_fs.clone())).unwrap_or(DataFs::Exfat);
@@ -848,9 +714,7 @@ fn finish(root: &Path, marker: &mut Marker) -> ApiResult<()> {
     replace_file(root, MARKER, &serde_json::to_vec_pretty(marker).unwrap())
 }
 
-/// Starts the update thread (one per drive at a time). Returns the job id.
 pub fn start_update(ctx: &Arc<DeviceCtx>, st: &AppState, disk_id: &str) -> ApiResult<String> {
-    // refuse at once what the job would refuse first (the UI shows it next to the button)
     let d = find_device(ctx.ops.as_ref(), disk_id)?;
     if ctx.ops.client_root(&d).is_none() {
         return Err(ApiError::new("stick_not_mounted", "The NiceVault partition is not mounted."));
@@ -896,7 +760,6 @@ mod tests {
         replace_file(t.path(), "prog", b"new").unwrap();
         assert_eq!(std::fs::read(t.path().join("prog")).unwrap(), b"new");
         assert!(!t.path().join("prog.old").exists());
-        // a new file (nothing to keep)
         replace_file(t.path(), "other", b"x").unwrap();
         assert_eq!(std::fs::read(t.path().join("other")).unwrap(), b"x");
     }

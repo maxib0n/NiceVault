@@ -1,5 +1,3 @@
-// A phone's list of a big folder (virtualised, FileView): the first rows are drawn at the top,
-// with the phone's taller touch rows and compact head, and again after scrolling away and back.
 import { boot, expect, fileList, item, listed, test } from './helpers';
 
 const N = 240;
@@ -29,7 +27,6 @@ test(`phone list of ${N}: the first rows are on screen at the top, and after scr
     const box = (await item(page, name(1)).boundingBox())!;
     const view = (await scroller.boundingBox())!;
     expect(box, 'first row rendered').not.toBeNull();
-    // the first row sits at the top of the list, inside the view
     expect(box.y).toBeGreaterThanOrEqual(view.y - 1);
     expect(box.y).toBeLessThan(view.y + 120);
   };
@@ -37,12 +34,10 @@ test(`phone list of ${N}: the first rows are on screen at the top, and after scr
   await expect(async () => {
     expect(await scroller.evaluate((el) => el.scrollTop)).toBe(0);
     await firstOnTop();
-    // the rows after it too, no hole above them
     await expect(item(page, name(2))).toBeVisible();
     await expect(item(page, name(5))).toBeInViewport();
   }).toPass();
 
-  // far down and back
   await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight / 2));
   await expect(item(page, name(N / 2 + 2))).toBeInViewport();
   await scroller.evaluate((el) => (el.scrollTop = 0));
@@ -52,7 +47,6 @@ test(`phone list of ${N}: the first rows are on screen at the top, and after scr
     await firstOnTop();
   }).toPass();
 
-  // scrolled far down, out to the parent and in again: the folder opens at its first rows
   await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight - el.clientHeight));
   await expect(item(page, name(N))).toBeInViewport();
   await page.getByRole('button', { name: 'Cartella superiore' }).first().click();

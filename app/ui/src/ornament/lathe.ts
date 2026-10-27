@@ -1,10 +1,5 @@
-// Security-print geometry, the way a rose engine cuts it: deterministic curves
-// built in code and stroked at device resolution (see InkCanvas.svelte). Pure
-// functions: no DOM, no randomness that is not seeded.
-
 export type Pt = [number, number];
 
-/** Seeded PRNG (mulberry32): the same document always prints the same. */
 export function prng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -16,7 +11,6 @@ export function prng(seed: number): () => number {
   };
 }
 
-/** A stable small hash of a string (volume names seed their own engraving). */
 export function hashString(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -28,11 +22,6 @@ export function hashString(s: string): number {
 
 const TAU = Math.PI * 2;
 
-/**
- * A band of interlaced wavy rings (the classic guilloché "lace"): `lines` closed
- * curves r(t) = rm + a·sin(k·t + k·φᵢ) + a2·sin(k2·t + k2·φᵢ + p2), with the
- * phases φᵢ spread evenly across one lobe, so neighbours cross and weave.
- */
 export interface RingSpec {
   rm: number;
   lines: number;
@@ -41,7 +30,6 @@ export interface RingSpec {
   k2?: number;
   a2?: number;
   p2?: number;
-  /** 1 or -1: which way the lace leans */
   dir?: 1 | -1;
 }
 
@@ -62,7 +50,6 @@ export function ring(path: Path2D, cx: number, cy: number, R: number, s: RingSpe
   }
 }
 
-/** Petal rosette: each line is an epitrochoid-like loop, r swinging between r0 and r1 with lobes that lean. */
 export interface PetalSpec {
   r0: number;
   r1: number;
@@ -81,7 +68,6 @@ export function petals(path: Path2D, cx: number, cy: number, R: number, s: Petal
     for (let j = 0; j <= samples; j++) {
       const t = (j / samples) * TAU;
       const u = k * (t + phi);
-      // the lobe leans: the angle is pushed forward on the way out, back on the way in
       const r = R * (rm + amp * Math.cos(u));
       const th = t + lean * Math.sin(u) / k;
       const x = cx + r * Math.cos(th);
@@ -93,17 +79,11 @@ export function petals(path: Path2D, cx: number, cy: number, R: number, s: Petal
   }
 }
 
-/**
- * Looped lace (an epicycle): a point carried round a circle of radius rc while it
- * circles, `k` times per turn, at radius a. When a·k > rc the path throws loops;
- * `lines` copies offset in phase interlace into a chain of open loops.
- */
 export interface LoopSpec {
   rc: number;
   a: number;
   k: number;
   lines: number;
-  /** flattens the loops radially (1 = round) */
   squash?: number;
 }
 
@@ -115,7 +95,6 @@ export function loops(path: Path2D, cx: number, cy: number, R: number, s: LoopSp
     for (let j = 0; j <= samples; j++) {
       const t = (j / samples) * TAU;
       const u = k * t + phi;
-      // local frame: radial (cos t, sin t), tangential (-sin t, cos t)
       const rr = R * (rc + a * squash * Math.cos(u));
       const tt = R * a * Math.sin(u);
       const x = cx + rr * Math.cos(t) - tt * Math.sin(t);
@@ -127,7 +106,6 @@ export function loops(path: Path2D, cx: number, cy: number, R: number, s: LoopSp
   }
 }
 
-/** Fine radial strokes between r0 and r1 (a milled edge, a sunburst). */
 export function rays(path: Path2D, cx: number, cy: number, R: number, r0: number, r1: number, n: number): void {
   for (let i = 0; i < n; i++) {
     const t = (i / n) * TAU;
@@ -142,10 +120,6 @@ export function circle(path: Path2D, cx: number, cy: number, r: number): void {
   path.closePath();
 }
 
-/**
- * A straight guilloché run between (x0,y0) and (x1,y1), `h` wide: two families of
- * sines leaning opposite ways, `lines` each, wavelength `per`, bounded by two rules.
- */
 export function run(path: Path2D, x0: number, y0: number, x1: number, y1: number, h: number, lines: number, per: number, rules = true): void {
   const dx = x1 - x0;
   const dy = y1 - y0;
@@ -178,7 +152,6 @@ export function run(path: Path2D, x0: number, y0: number, x1: number, y1: number
   }
 }
 
-/** A field of fine waves (security tint): horizontal lines, each gently modulated by two slow sines. */
 export function waves(path: Path2D, x: number, y: number, w: number, h: number, gap: number, seed: number, amp = 6): void {
   const r = prng(seed);
   const f1 = 40 + r() * 30;
@@ -196,7 +169,6 @@ export function waves(path: Path2D, x: number, y: number, w: number, h: number, 
   }
 }
 
-/** Security fibres: short curling strokes, scattered by a seeded hand. */
 export interface Fibre {
   pts: Pt[];
   tone: 0 | 1 | 2;
@@ -225,7 +197,6 @@ export function fibres(w: number, h: number, count: number, seed: number): Fibre
   return out;
 }
 
-/** ICAO 9303 check digit (weights 7-3-1) over the MRZ alphabet. */
 export function checkDigit(s: string): string {
   const w = [7, 3, 1];
   let sum = 0;
@@ -237,7 +208,6 @@ export function checkDigit(s: string): string {
   return String(sum % 10);
 }
 
-/** Text in the MRZ alphabet: uppercase A-Z, digits, '<' for everything else. */
 export function mrzText(s: string): string {
   return s
     .normalize('NFD')

@@ -1,10 +1,3 @@
-// A tiny syntax highlighter for the code viewer (no dependency: none was installed, and a
-// full grammar engine is far more than a quick look needs). Sticky regexes per language turn
-// text into classed tokens; the viewer renders them as text nodes inside <span>s, never as
-// HTML. Classes: com (comment), str (string), num, kw (keyword), lit (true/null…), type,
-// fn (called name), key (object/config key), tag, attr, meta (decorator, preprocessor,
-// section header), del/ins (diff lines), op (punctuation that carries meaning).
-
 export type TokenClass = 'com' | 'str' | 'num' | 'kw' | 'lit' | 'type' | 'fn' | 'key' | 'tag' | 'attr' | 'meta' | 'del' | 'ins' | 'op';
 export interface Token {
   c: TokenClass | null;
@@ -120,7 +113,6 @@ map('ini', 'toml ini cfg conf properties env editorconfig gitconfig desktop serv
 map('sql', 'sql');
 map('diff', 'diff patch');
 
-/** The highlighter's language for a file name, or null for plain text. */
 export function languageFor(name: string): string | null {
   const lower = name.toLowerCase();
   if (lower === 'dockerfile' || lower === 'makefile' || lower.endsWith('.mk')) return 'shell';
@@ -168,20 +160,18 @@ export function tokenize(text: string, lang: string | null): Token[] {
       if (!m || m[0].length === 0) continue;
       const s = m[0];
       if (cls === 'ident') {
-        // a name glued to the previous word char is part of it (e.g. "x1y")
         let c: TokenClass | null = null;
         const key = lang === 'sql' ? s.toLowerCase() : s;
         if (L.keywords?.has(key)) c = 'kw';
         else if (L.literals?.has(s)) c = 'lit';
         else if (L.types?.has(s)) c = 'type';
-        else if (text.charCodeAt(i + s.length) === 40 /* ( */) c = 'fn';
+        else if (text.charCodeAt(i + s.length) === 40 ) c = 'fn';
         else if (/^[A-Z][a-z]\w*$/.test(s) && lang !== 'shell' && lang !== 'sql') c = 'type';
         push(c, s);
       } else push(cls, s);
       i += s.length;
       continue outer;
     }
-    // no rule: one char of plain text (a run of word chars at once, so numbers inside names stay plain)
     const w = /[\w$]+|\s+|./y;
     w.lastIndex = i;
     const s = w.exec(text)![0];
@@ -192,7 +182,6 @@ export function tokenize(text: string, lang: string | null): Token[] {
   return out;
 }
 
-/** Tokens split into lines (a token spanning lines is cut at each newline). */
 export function toLines(tokens: Token[]): Token[][] {
   const lines: Token[][] = [[]];
   for (const t of tokens) {

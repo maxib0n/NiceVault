@@ -1,6 +1,3 @@
-//! Password-manager importers against fixture files, and an import into a real volume.
-//! Fixtures: tests/fixtures (see README there for where each one comes from).
-
 use keepass::db::{Entry, fields};
 use keepass::{Database, DatabaseKey};
 use nv_core::passwords::import::{self, ImportError};
@@ -42,11 +39,9 @@ fn bitwarden_json_export() {
     assert_eq!(field(mail, "Domanda"), ("Colore preferito", false));
     assert_eq!(mail.history.len(), 2);
     assert_eq!(mail.created, Some(1_672_531_200_000));
-    // nameless login: title from the host; an unusable TOTP is kept as a hidden field
     let forum = by_title(&v, "forum.example.org");
     assert!(forum.entry.totp.is_none());
     assert_eq!(field(forum, "TOTP"), ("not a secret!", true));
-    // secure note and card
     assert_eq!(s(&by_title(&v, "Codice allarme").entry.notes), "1234#");
     let card = by_title(&v, "Carta");
     assert_eq!(field(card, "number"), ("4111111111111111", true));
@@ -98,8 +93,6 @@ fn keepass_kdbx31_fixture() {
     assert_eq!(by_title(&v, "asdf").entry.folder.as_deref(), Some("Internet"));
 }
 
-/// Writes a KDBX4 with groups, an `otp` URI, KeePass 2 TimeOtp-* fields, a protected custom
-/// field, history and a key file, then imports it.
 #[test]
 fn keepass_kdbx4_written_here() {
     let mut db = Database::new();
@@ -162,12 +155,10 @@ fn keepass_kdbx4_written_here() {
     assert_eq!(srv.entry.folder.as_deref(), Some(""));
     let t = Totp::parse(s(&srv.entry.totp)).unwrap();
     assert_eq!((t.algorithm, t.digits, t.period), (Algorithm::Sha256, 8, 60));
-    // RFC 6238 SHA256 seed is 32 bytes; this one is the 20-byte SHA1 seed: compare with a direct build.
     let direct = Totp::new(b"12345678901234567890".to_vec(), Algorithm::Sha256, 8, 60).unwrap();
     assert_eq!(t.code_at(1_234_567_890), direct.code_at(1_234_567_890));
     assert!(srv.entry.fields.is_none(), "TimeOtp-* fields are consumed");
 
-    // ...and into a volume: entries, folders, history and TOTP survive.
     let tmp = tempfile::tempdir().unwrap();
     let vault = Vault::create(&tmp.path().join("kp.nvault"), &SecretString::from("pw".to_owned()), KdfPreset::Fast).unwrap();
     let ids = vault.pm_insert_many(v).unwrap();
@@ -190,11 +181,8 @@ fn field_names(e: &ImportedEntry) -> Vec<&str> {
     e.entry.fields.as_deref().unwrap_or_default().iter().map(|f| f.name.as_str()).collect()
 }
 
-/// Known bookkeeping columns of each exporter are mapped (websites, times, TOTP, hidden card
-/// data) or dropped; unknown columns stay custom fields.
 #[test]
 fn csv_known_fields_are_mapped() {
-    // an export: AUTOFILLURLS JSON + CREATETIME / MODIFYTIME in unix seconds
     let v = import::csv(&fixture("autofill.csv")).unwrap();
     let ms = by_title(&v, "login.microsoftonline.com");
     assert_eq!(urls(ms), ["https://login.microsoftonline.com/", "https://account.example.com/"]);
@@ -260,12 +248,10 @@ fn csv_known_fields_are_mapped() {
     assert_eq!(urls(rf), ["https://rf.example.com/login", "https://rf.example.com/"]);
     assert!(rf.entry.fields.is_none(), "{:?}", field_names(rf));
 
-    // Firefox: timePasswordChanged is the modification time
     let ff = import::csv(&fixture("firefox.csv")).unwrap();
     assert_eq!(ff[0].updated, Some(1_700_000_000_000));
 }
 
-/// Bitwarden JSON / KeePass custom fields with known names are mapped the same way.
 #[test]
 fn json_and_keepass_custom_fields_are_mapped() {
     let json = br#"{"encrypted":false,"folders":[],"items":[{"type":1,"name":"Sito","login":{"username":"u","password":"p","uris":[{"uri":"https://a.example"}]},
@@ -297,8 +283,6 @@ fn raw_fields(v: &Vault, id: &str) -> Vec<String> {
     v.pm_get(id).unwrap().fields.iter().map(|f| f.name.clone()).collect()
 }
 
-/// Entries imported before the mapping: the repair converts their raw fields in place, once at
-/// the next open and again on request, without touching anything else. Idempotent.
 #[test]
 fn repair_converts_raw_import_fields() {
     use nv_core::passwords::{EntryPatch, FieldInput, REPAIR_KEY};
@@ -308,7 +292,6 @@ fn repair_converts_raw_import_fields() {
     let path = tmp.path().join("r.nvault");
     let v = Vault::create(&path, &SecretString::from("pw".to_owned()), KdfPreset::Fast).unwrap();
     let raw = |name: &str, value: &str| FieldInput { name: name.into(), value: z(value), hidden: false };
-    // what the old CSV importer stored
     let ms = v
         .pm_create(EntryPatch {
             title: Some("login.microsoftonline.com".into()),
@@ -332,7 +315,6 @@ fn repair_converts_raw_import_fields() {
         .summary
         .id;
     let plain = v.pm_create(EntryPatch { title: Some("Normale".into()), fields: Some(vec![raw("PIN", "1234")]), ..Default::default() }).unwrap();
-    // the volume was opened by a build without the repair: forget that it ran at create
     v.meta_set(REPAIR_KEY, None).unwrap();
     v.close().unwrap();
 
@@ -350,7 +332,6 @@ fn repair_converts_raw_import_fields() {
     assert_eq!(p, plain, "an entry without import fields is untouched");
     assert_eq!(p.fields[0].value.as_deref(), Some("1234"), "the repair never hides a field");
 
-    // idempotent: nothing left to do, nothing changes
     let before = serde_json::to_string(&v.pm_list().unwrap()).unwrap();
     assert_eq!(v.pm_repair_imported().unwrap(), 0);
     assert_eq!(serde_json::to_string(&v.pm_list().unwrap()).unwrap(), before);
@@ -374,14 +355,12 @@ fn folders_move_rename_delete() {
     assert_eq!(v.pm_get(&d.id).unwrap().summary.updated, d.updated, "a move is not an edit");
     assert_eq!(v.pm_move(std::slice::from_ref(&d.id), "Casa/Rete").unwrap(), 0, "already there");
 
-    // rename takes the subfolders along, not a folder that only shares the prefix
     v.pm_move(std::slice::from_ref(&c.id), "Lavoretti").unwrap();
     assert_eq!(v.pm_folder_rename("Lavoro", "Ufficio").unwrap(), 2);
     assert_eq!((folder(&a.id), folder(&b.id), folder(&c.id)), ("Ufficio".into(), "Ufficio/Clienti".into(), "Lavoretti".into()));
     assert!(matches!(v.pm_folder_rename("Inesistente", "X"), Err(PmError::NotFound)));
     assert!(matches!(v.pm_folder_rename("Ufficio", " / "), Err(PmError::Invalid(_))));
 
-    // delete: entries and subfolders move up one level
     assert_eq!(v.pm_folder_delete("Ufficio").unwrap(), 2);
     assert_eq!((folder(&a.id), folder(&b.id)), ("".into(), "Clienti".into()));
     v.pm_move(std::slice::from_ref(&b.id), "Casa/Rete/Sotto").unwrap();
@@ -415,14 +394,12 @@ fn site_icons_are_stored_in_the_volume() {
     v.pm_icon_put("www.example.com", Some(&png), 1000).unwrap();
     assert_eq!(v.pm_list().unwrap().iter().find(|s| s.id == e.summary.id).unwrap().icon.as_deref(), Some("www.example.com/1000"));
     assert_eq!(v.pm_get(&e.summary.id).unwrap().summary.icon.as_deref(), Some("www.example.com/1000"));
-    // a failed refresh keeps the icon, only the attempt time moves
     v.pm_icon_put("www.example.com", None, 2000).unwrap();
     assert_eq!(v.pm_icon_get("www.example.com").unwrap(), png);
     assert_eq!(v.pm_icon_hosts().unwrap(), [("www.example.com".to_owned(), Some(2000))]);
     v.pm_icon_put("none.example", None, 3000).unwrap();
     assert!(v.pm_icon_get("none.example").is_err());
     v.close().unwrap();
-    // stored inside the encrypted volume
     let raw = std::fs::read(&path).unwrap();
     assert!(!raw.windows(8).any(|w| w == b"fake\x00\x00\x00\x00" || w == b"example."));
 }

@@ -1,13 +1,3 @@
-<!--
-  "Programmi sulla chiavetta" (Dettagli > Volume): shown only when the active volume lives on a
-  NiceVault device (device_sticks { path }). One ledger line per OS — the version on the stick,
-  an arrow, the version it would get (this app's for its own OS; the latest, signed, for the
-  others) — then "Aggiorna i programmi sulla chiavetta". During the update each line says what
-  is happening to it; afterwards what happened (aggiornato · già aggiornato · da scaricare quando
-  online · non aggiornato). Not mounted: says so and offers "Monta NiceVault".
-  Set like FormatUpgrade beside it: a dashed rule over it, a small seal on the left, the keys on
-  the right. Hooks: [data-testid=stick-programs][data-state], [data-os].
--->
 <script lang="ts">
   import { Usb } from '@lucide/svelte';
   import type { OsId } from '../../lib/device';
@@ -34,7 +24,6 @@
   });
   const partial = $derived(run?.phase === 'done' && run.results.some((r) => r.result === 'offline' || r.result === 'failed' || r.result === 'rewrite'));
 
-  /** the programs as the lines show them: during / after a run, the versions from before it */
   const lines = $derived<StickOs[]>(run && run.phase !== 'error' ? run.before.programs : (stick?.programs ?? []));
 
   const resultOf = (os: OsId): StickOsResult | null => run?.results.find((r) => r.os === os) ?? null;
@@ -143,7 +132,6 @@
     padding-top: var(--space-3);
     border-top: 1px dashed var(--paper-rule-2);
   }
-  /* the small engraved seal of the row (as FormatUpgrade's): quiet, in ink when all is current */
   .mark {
     grid-row: span 2;
     align-self: start;
@@ -191,7 +179,6 @@
     margin: var(--space-2) 0 0;
     color: var(--ink-3);
   }
-  /* the ledger: one ruled line per system, versions in the mono like figures in a register */
   .ledger {
     grid-column: 2 / -1;
     list-style: none;
@@ -233,7 +220,6 @@
     color: var(--accent);
     background: var(--accent-soft);
   }
-  /* "ultima versione": words, not a figure */
   .ver.new[data-word='true'] {
     font-family: inherit;
     font-size: 12px;

@@ -1,14 +1,3 @@
-// README screenshots and GIFs: the real UI against the in-browser mock backend, English, with the
-// demo content of src/lib/mockDemo.ts (?demo=1). Output goes to docs/media/ at the repo root.
-//
-//   pnpm shots                 everything
-//   pnpm shots welcome gif     only the shots / GIFs whose name matches one of the words (regexes)
-//
-// Needs Chromium from Playwright (`pnpm exec playwright install chromium`) and ffmpeg on PATH.
-// It starts its own Vite dev server on NV_SHOTS_PORT (default 5291), or uses BASE=http://host:port.
-// Still images are WebP; GIFs are recorded with Playwright's video and converted with ffmpeg
-// (palettegen/paletteuse), each kept under 4 MB.
-
 import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -28,12 +17,9 @@ mkdirSync(OUT, { recursive: true });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// --- dev server ---------------------------------------------------------------------------------
-
 let vite = null;
 async function startServer() {
   if (process.env.BASE) return;
-  // node + vite's own script, not `pnpm exec`: one process, so stopping it leaves nothing behind
   vite = spawn(process.execPath, [join(UI, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: UI, stdio: 'ignore' });
   for (let i = 0; i < 120; i++) {
     try {
@@ -46,8 +32,6 @@ async function startServer() {
 function stopServer() {
   if (vite) vite.kill('SIGTERM');
 }
-
-// --- browser ------------------------------------------------------------------------------------
 
 function chromePath() {
   const root = join(homedir(), '.cache/ms-playwright');
@@ -67,14 +51,12 @@ async function launch() {
 }
 
 const DESKTOP = { width: 1280, height: 800 };
+const HD = process.env.NV_SHOTS_HD === '1';
 const PHONE = { width: 390, height: 844 };
 
 
-// GIFs only: the leather and felt grain is per-pixel noise that GIF cannot compress (10 MB for 15 s),
-// so its strength is turned right down while recording. Stills keep the full texture.
-const CALM = `*{--board-tex-alpha:.05!important;--sheet-tex-alpha:.05!important;--cloth-tex-alpha:.1!important;--tex-k:.1!important}`;
+const CALM = `*{--board-tex-print:none!important;--sheet-tex-print:none!important;--cloth-tex-print:none!important}`;
 
-// A visible pointer for the GIFs: Playwright's video does not draw one.
 const CURSOR = () => {
   const mk = () => {
     if (document.getElementById('__cur')) return;
@@ -93,14 +75,15 @@ const CURSOR = () => {
   else mk();
 };
 
-// no ?lang=: the context's locale (en-US) picks English, as it would on a real machine
 const URL_BASE = 'demo=1';
 const url = (q) => `${BASE}/?${URL_BASE}&${q}`;
 
 async function newPage(browser, { size = DESKTOP, dpr = 1, mobile = false, record = null, motion = false } = {}) {
+  const hd = !!record && HD;
+  if (hd) size = { width: Math.round(size.width * 1.5), height: Math.round(size.height * 1.5) };
   const ctx = await browser.newContext({
     viewport: size,
-    deviceScaleFactor: dpr,
+    deviceScaleFactor: hd ? 1 : dpr,
     hasTouch: mobile,
     isMobile: mobile,
     locale: 'en-US',
@@ -114,7 +97,7 @@ async function newPage(browser, { size = DESKTOP, dpr = 1, mobile = false, recor
   page.on('console', (m) => m.type() === 'error' && !/favicon/.test(m.text()) && errors.push(m.text()));
   if (record) {
     await page.addInitScript(CURSOR);
-    await page.addInitScript(`document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(CALM)};document.head.appendChild(s)})`);
+    if (!HD) await page.addInitScript(`document.addEventListener('DOMContentLoaded',()=>{const s=document.createElement('style');s.textContent=${JSON.stringify(CALM)};document.head.appendChild(s)})`);
   }
   return { ctx, page, errors };
 }
@@ -128,8 +111,6 @@ async function checkNoServer(page, name) {
   const text = await page.evaluate(() => document.body.innerText);
   void text;
 }
-
-// --- stills -------------------------------------------------------------------------------------
 
 const toWebp = (png, webp) => {
   const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', png, '-c:v', 'libwebp', '-quality', '90', '-compression_level', '6', webp]);
@@ -156,7 +137,6 @@ const bigTiles = (page) => page.locator('[data-testid=view-size] [role=radio]').
 const PW = 'input[autocomplete="current-password"], input[type="password"]';
 
 async function stills(browser) {
-  // desktop, dark (the default look)
   await still(browser, 'welcome-dark', 'screen=welcome');
   await still(browser, 'unlock-dark', 'screen=unlock');
   await still(browser, 'files-grid-dark', 'screen=vault&view=grid&dir=Photos/Alps 2025', { pre: bigTiles });
@@ -171,14 +151,12 @@ async function stills(browser) {
   await still(browser, 'device-drive-dark', 'screen=device&device_step=disk');
   await still(browser, 'device-confirm-dark', 'screen=device&device_step=confirm', { wait: 1200 });
   await still(browser, 'device-done-dark', 'screen=device&device_step=done', { wait: 1500 });
-  // desktop, light
   const L = '&theme=light&app_theme=light';
   await still(browser, 'welcome-light', `screen=welcome${L}`);
   await still(browser, 'unlock-light', `screen=unlock${L}`);
   await still(browser, 'files-grid-light', `screen=vault&view=grid&dir=Photos/Alps 2025${L}`, { pre: bigTiles });
   await still(browser, 'files-list-light', `screen=vault&view=list&dir=Work${L}`);
   await still(browser, 'passwords-light', `screen=passwords&entry=Harbor Credit Union${L}`);
-  // phone
   const P = { size: PHONE, dpr: 2, mobile: true };
   await still(browser, 'phone-unlock', 'screen=unlock&platform=mobile', P);
   await still(browser, 'phone-files-grid', 'screen=vault&view=grid&platform=mobile', P);
@@ -188,7 +166,6 @@ async function stills(browser) {
   await still(browser, 'phone-files-grid-light', `screen=vault&view=grid&platform=mobile${L}`, P);
 }
 
-// The README header: the app icon (docs/media/icon.png, from app/src-tauri/icons) and the title, set in the app's own fonts.
 async function header(browser) {
   if (!wanted('header')) return;
   const { ctx, page, errors } = await newPage(browser, { size: { width: 1600, height: 420 } });
@@ -205,13 +182,9 @@ async function header(browser) {
   console.log(`ok   header.webp  ${(statSync(join(OUT, 'header.webp')).size / 1024).toFixed(0)} KB`);
 }
 
-// --- GIFs ---------------------------------------------------------------------------------------
-
 const MAX_GIF = 3.8 * 1024 * 1024;
 
 function toGif(video, gif, { from = 0, width = 960, fps = 12 } = {}) {
-  // Playwright's video carries compression noise and the UI animates a lot, so a plain conversion is
-  // 7+ MB: denoise first (hqdn3d), then back off size, frame rate and palette until it fits.
   const bayer = 'bayer:bayer_scale=5';
   const ladder = [
     [width, fps, 256, bayer],
@@ -236,7 +209,6 @@ function toGif(video, gif, { from = 0, width = 960, fps = 12 } = {}) {
   throw new Error(`${gif} is still over 4 MB`);
 }
 
-/** Smooth pointer travel to an element's centre (the CURSOR overlay shows it). */
 async function point(page, locator, { steps = 28, dx = 0, dy = 0 } = {}) {
   await locator.scrollIntoViewIfNeeded();
   const b = await locator.boundingBox();
@@ -256,7 +228,6 @@ async function dblclick(page, locator, opt) {
   await page.mouse.dblclick(b.x + b.width / 2, b.y + b.height / 2);
 }
 
-/** The GIF starts here (after the page settled), not at the blank page the video opens with. */
 const startClip = (page) => { page.__clipAt = Date.now(); };
 
 async function gif(browser, name, run, opt = {}) {
@@ -279,7 +250,6 @@ async function gif(browser, name, run, opt = {}) {
 const item = (page, name) => page.getByRole('option').filter({ has: page.getByTestId('item-name').and(page.getByText(name, { exact: true })) });
 
 async function gifs(browser) {
-  // 1. unlock: the shelf, a volume, the password, the files
   await gif(browser, 'unlock', async (page) => {
     await boot(page, 'screen=welcome');
     await page.waitForTimeout(1500);
@@ -295,7 +265,6 @@ async function gifs(browser) {
     await page.waitForTimeout(2000);
   });
 
-  // 2. browse, open a photo, step through, full screen
   await gif(browser, 'browse-preview', async (page) => {
     await boot(page, 'screen=vault&view=grid');
     await page.waitForTimeout(2200);
@@ -315,7 +284,6 @@ async function gifs(browser) {
     await page.waitForTimeout(1800);
   });
 
-  // 3. make a NiceVault device from a USB stick (dry run in the mock: nothing is erased anywhere)
   await gif(browser, 'create-device', async (page) => {
     await boot(page, 'screen=welcome');
     await page.waitForTimeout(1500);
@@ -340,7 +308,6 @@ async function gifs(browser) {
     await page.waitForTimeout(2000);
   });
 
-  // 4. phone: unlock, folders, a photo, swipe between photos
   await gif(browser, 'phone-swipe', async (page) => {
     const cdp = await page.context().newCDPSession(page);
     const touch = async (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
@@ -381,8 +348,6 @@ async function gifs(browser) {
     await page.waitForTimeout(1200);
   }, { size: PHONE, dpr: 1, mobile: true, gifWidth: 390 });
 }
-
-// ------------------------------------------------------------------------------------------------
 
 let failed = false;
 try {

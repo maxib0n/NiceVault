@@ -1,16 +1,7 @@
-//! Freshness: an attacker holding an OLDER copy of the same volume (a backup, a cloud-sync
-//! version, a forensic image, the stick last month) writes parts of it back.
-//! Nothing in the format ties the header, the database pages and the appearance to each other
-//! in time, so every one of these goes unnoticed today.
-
 use crate::common::*;
 use nv_core::{Appearance, KdfPreset, OpenError, Vault};
 use nv_fs::{Fs, Kind, ROOT};
 
-/// An old copy of the header written back into the current file would
-/// revive the old password; the database remembers the header seq it last saw, so the volume
-/// refuses (`rolled_back`) and nothing is written. Revocation against someone using their own
-/// tools needs a new master key: see `rotation.rs`.
 #[test]
 fn old_header_written_back_is_refused() {
     let t = tempfile::tempdir().unwrap();
@@ -28,14 +19,9 @@ fn old_header_written_back_is_refused() {
     let before = std::fs::read(&p).unwrap();
     assert_eq!(Vault::open(&p, &pw("leaked")).err(), Some(OpenError::RolledBack));
     assert!(std::fs::read(&p).unwrap() == before, "refused without writing");
-    // The new password is not in the old header either: the user needs the current header back.
     assert_eq!(Vault::open(&p, &pw("new-secret")).err(), Some(OpenError::WrongPassword));
 }
 
-/// F-02a: the whole database region of an older copy, under the current header: opens with
-/// the current password and shows the old files. The file alone cannot tell (every page is
-/// authentic, the header is the current one); what catches it is a number remembered outside
-/// the file: the commit counter the app anchors per volume id (`Vault::commit_seq`).
 #[test]
 fn database_rollback_is_detected_against_the_anchor() {
     let t = tempfile::tempdir().unwrap();
@@ -58,8 +44,6 @@ fn database_rollback_is_detected_against_the_anchor() {
     assert!(v.commit_seq().unwrap() < anchor, "rolled-back database not older than the anchor");
 }
 
-/// F-02a honest limit, kept as the record of it: without an anchor (portable mode, another
-/// computer, first open here) nothing in the file reveals a whole-database rollback.
 #[test]
 #[ignore = "honest limit: a whole-file or whole-database rollback cannot be seen from the file alone (anchor: see above)"]
 fn database_rollback_is_detected() {
@@ -78,11 +62,6 @@ fn database_rollback_is_detected() {
     assert!(r.is_err(), "rolled-back database accepted: {:?}", r.map(|d| d.into_iter().map(|e| e.0).collect::<Vec<_>>()));
 }
 
-/// F-02b: pages of an older copy written back into the current file. Every page is
-/// individually authentic (same key, same page number), so SQLCipher accepts them, and the
-/// volume can show a state that never existed (neither the old one nor the current one).
-/// Tries each changed page alone (old page into the new file) and each changed page kept
-/// alone (new page into the old file).
 #[test]
 #[ignore = "honest limit (local volumes): page-level rollback can yield a never-existing mixed state"]
 fn single_page_rollback_is_detected() {
@@ -129,9 +108,6 @@ fn single_page_rollback_is_detected() {
     assert!(mixed.is_empty(), "{} changed pages; never-existing states accepted:\n{}", changed.len(), mixed.join("\n"));
 }
 
-/// The appearance MAC binds volume_id but not the header seq: an older authentic
-/// appearance spliced into the current header passed as authentic (`appearance_tampered` false).
-/// The database now records which appearance goes with which header (fresh.rs).
 #[test]
 fn appearance_replay_is_flagged() {
     let t = tempfile::tempdir().unwrap();
@@ -153,9 +129,6 @@ fn appearance_replay_is_flagged() {
     assert!(v.appearance_tampered(), "replayed appearance {:?} accepted as authentic", v.appearance());
 }
 
-/// The same with the appearance stripped (the section is outside `header_mac`): flagged,
-/// and the app's re-sync then restores it. A volume this build never wrote (no record) and a
-/// header written since by another build (newer seq) are taken as they are.
 #[test]
 fn appearance_strip_is_flagged_and_unrecorded_volumes_are_not() {
     let t = tempfile::tempdir().unwrap();
@@ -172,7 +145,6 @@ fn appearance_strip_is_flagged_and_unrecorded_volumes_are_not() {
     let v = Vault::open(&p, &pw("pw")).unwrap();
     assert!(v.appearance_tampered(), "stripped appearance accepted");
     v.close().unwrap();
-    // untouched: not flagged, also on the next open
     std::fs::write(&p, &saved).unwrap();
     for _ in 0..2 {
         let v = Vault::open(&p, &pw("pw")).unwrap();

@@ -1,383 +1,364 @@
-// A small CommonMark-ish Markdown parser for the in-app reader. It produces a plain tree
-// that MarkdownViewer renders with Svelte elements and text nodes, so nothing in a file can
-// become HTML: raw HTML tags are shown as text, images are never fetched (their alt text is
-// shown instead), and only http(s)/mailto links survive, opened outside the app on an
-// explicit, confirmed click.
+import MarkdownItCtor, { type MarkdownIt, type StateBlock, type StateInline, type Token } from 'markdown-it';
+import footnote from 'markdown-it-footnote';
+import deflist from 'markdown-it-deflist';
+import { full as emoji } from 'markdown-it-emoji';
+import sub from 'markdown-it-sub';
+import sup from 'markdown-it-sup';
+import mark from 'markdown-it-mark';
+import abbr from 'markdown-it-abbr';
+import anchor from 'markdown-it-anchor';
+import DOMPurify from 'dompurify';
+import { languageFor, tokenize } from './highlight';
 
-export type Inline =
-  | { t: 'text'; s: string }
-  | { t: 'code'; s: string }
-  | { t: 'em' | 'strong' | 'del'; c: Inline[] }
-  | { t: 'link'; href: string | null; c: Inline[] }
-  | { t: 'img'; alt: string; src: string }
-  | { t: 'br' };
+export { safeHref, localImagePath, resolveVolumePath } from './links';
+import { safeHref, localImagePath } from './links';
 
-export type Block =
-  | { t: 'h'; level: 1 | 2 | 3 | 4 | 5 | 6; c: Inline[] }
-  | { t: 'p'; c: Inline[] }
-  | { t: 'code'; lang: string; s: string }
-  | { t: 'quote'; c: Block[] }
-  | { t: 'list'; ordered: boolean; start: number; items: { task: boolean | null; c: Block[] }[] }
-  | { t: 'hr' }
-  | { t: 'table'; align: ('left' | 'center' | 'right' | null)[]; head: Inline[][]; rows: Inline[][][] };
-
-const MAIL_KEYS = new Set(['subject', 'body', 'cc', 'bcc']);
-// eslint-disable-next-line no-control-regex
-const MAIL_CTRL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
-
-/**
- * A link the reader may open (outside the app). Anything else is shown as text. Same rules
- * as the backend (viewers.rs checked_link): http(s) without credentials; mailto
- * with the address and subject/body/cc/bcc only (no `attach=`); a backtick or `$` refuses it.
- */
-export function safeHref(raw: string): string | null {
-  const h = raw.trim().replace(/^<|>$/g, '');
-  if (!/^(https?:\/\/|mailto:)/i.test(h) || /[\s"<>\\`$]/.test(h) || h.length > 2048) return null;
-  let u: URL;
-  try {
-    u = new URL(h);
-  } catch {
-    return null;
-  }
-  if (u.protocol === 'http:' || u.protocol === 'https:') return u.username || u.password || !u.hostname ? null : u.href;
-  if (u.protocol !== 'mailto:' || !/^[A-Za-z0-9@.\-_+,!#'*^{}~]*$/.test(u.pathname)) return null;
-  const q: string[] = [];
-  for (const part of u.search.slice(1).split('&')) {
-    const i = part.indexOf('=');
-    const k = (i < 0 ? part : part.slice(0, i)).toLowerCase();
-    if (!MAIL_KEYS.has(k)) continue;
-    let v: string;
-    try {
-      v = decodeURIComponent(i < 0 ? '' : part.slice(i + 1));
-    } catch {
-      return null;
-    }
-    if (MAIL_CTRL.test(v)) return null;
-    q.push(`${k}=${encodeURIComponent(v)}`);
-  }
-  return `mailto:${u.pathname}${q.length ? '?' + q.join('&') : ''}`;
+export interface TocItem {
+  level: number;
+  id: string;
+  text: string;
 }
 
-// ---------------------------------------------------------------- inlines
+export interface Rendered {
+  html: string;
+  toc: TocItem[];
+  front: [string, string][] | null;
+  math: boolean;
+  mermaid: boolean;
+}
 
-const PUNCT = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/;
+export interface Labels {
+  note: string;
+  tip: string;
+  important: string;
+  warning: string;
+  caution: string;
+  done: string;
+  todo: string;
+  image: string;
+  imageBlocked: string;
+}
 
-function findClose(s: string, from: number, delim: string): number {
-  for (let i = from; i <= s.length - delim.length; i++) {
-    const ch = s[i];
-    if (ch === '\\') {
-      i++;
+const EN: Labels = {
+  note: 'Note',
+  tip: 'Tip',
+  important: 'Important',
+  warning: 'Warning',
+  caution: 'Caution',
+  done: 'Done',
+  todo: 'To do',
+  image: 'Image',
+  imageBlocked: 'not loaded',
+};
+
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+export function splitFrontMatter(src: string): { front: [string, string][] | null; body: string } {
+  const m = /^---[ \t]*\n([\s\S]*?)\n(?:---|\.\.\.)[ \t]*(?:\n|$)/.exec(src);
+  if (!m) return { front: null, body: src };
+  const pairs: [string, string][] = [];
+  for (const line of m[1].split('\n')) {
+    if (!line.trim() || /^\s*#/.test(line)) continue;
+    const kv = /^([^\s:#][^:]*):[ \t]*(.*)$/.exec(line);
+    if (kv && !/^\s/.test(line)) pairs.push([kv[1].trim(), kv[2].trim().replace(/^(["'])(.*)\1$/, '$2')]);
+    else if (pairs.length) {
+      const last = pairs[pairs.length - 1];
+      const item = line.trim().replace(/^-\s+/, '');
+      last[1] = last[1] && last[1] !== '|' && last[1] !== '>' ? `${last[1]}, ${item}` : item;
+    }
+  }
+  return { front: pairs.length ? pairs.slice(0, 40) : null, body: '\n'.repeat(m[0].split('\n').length - 1) + src.slice(m[0].length) };
+}
+
+function mathInline(state: StateInline, silent: boolean): boolean {
+  const s = state.src;
+  const start = state.pos;
+  if (s.charCodeAt(start) !== 0x24 || s.charCodeAt(start + 1) === 0x24) return false;
+  const first = s[start + 1];
+  if (!first || /\s/.test(first)) return false;
+  let end = start + 1;
+  for (;;) {
+    end = s.indexOf('$', end);
+    if (end < 0) return false;
+    if (s[end - 1] === '\\') {
+      end++;
       continue;
     }
-    if (ch === '`') {
-      // skip code spans
-      const run = /^`+/.exec(s.slice(i))![0];
-      const end = s.indexOf(run, i + run.length);
-      if (end > 0) i = end + run.length - 1;
-      continue;
+    break;
+  }
+  if (/\s/.test(s[end - 1]) || /\d/.test(s[end + 1] ?? '')) return false;
+  if (!silent) {
+    const t = state.push('math_inline', 'span', 0);
+    t.content = s.slice(start + 1, end);
+    t.markup = '$';
+  }
+  state.pos = end + 1;
+  return true;
+}
+
+function mathBlock(state: StateBlock, startLine: number, endLine: number, silent: boolean): boolean {
+  let pos = state.bMarks[startLine] + state.tShift[startLine];
+  let max = state.eMarks[startLine];
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false;
+  if (!state.src.startsWith('$$', pos)) return false;
+  pos += 2;
+  let first = state.src.slice(pos, max);
+  let last = '';
+  let next = startLine;
+  let found = false;
+  if (first.trim().endsWith('$$')) {
+    first = first.trim().slice(0, -2);
+    found = true;
+  }
+  if (silent) return true;
+  while (!found) {
+    next++;
+    if (next >= endLine) break;
+    pos = state.bMarks[next] + state.tShift[next];
+    max = state.eMarks[next];
+    if (pos < max && state.sCount[next] < state.blkIndent) break;
+    const line = state.src.slice(pos, max);
+    if (line.trim().endsWith('$$')) {
+      last = line.trim().slice(0, -2);
+      found = true;
     }
-    if (s.startsWith(delim, i) && !/\s/.test(s[i - 1] ?? ' ')) {
-      // `*a**` — for single `*`, a following `*` belongs to a longer run
-      if (delim.length === 1 && s[i + 1] === delim) {
-        i++;
-        continue;
+  }
+  if (!found) return false;
+  state.line = next + 1;
+  const t = state.push('math_block', 'div', 0);
+  t.block = true;
+  t.content = [first, next > startLine ? state.getLines(startLine + 1, next, state.tShift[startLine], true) : '', last].filter((x) => x.trim()).join('\n').trim();
+  t.map = [startLine, state.line];
+  t.markup = '$$';
+  return true;
+}
+
+const ALERTS = ['note', 'tip', 'important', 'warning', 'caution'] as const;
+type Alert = (typeof ALERTS)[number];
+
+function slugify(s: string): string {
+  const base =
+    s
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .slice(0, 64) || 'section';
+  return `md-${base}`;
+}
+
+function attr(t: Token, name: string): string | null {
+  const v = t.attrGet(name);
+  return v === null || v === undefined ? null : String(v);
+}
+
+function inlineText(t: Token | undefined): string {
+  return (t?.children ?? [])
+    .filter((c) => c.type === 'text' || c.type === 'code_inline' || c.type === 'emoji')
+    .map((c) => c.content)
+    .join('');
+}
+
+function build(labels: Labels): MarkdownIt {
+  const md = new MarkdownItCtor('default', {
+    html: false,
+    linkify: true,
+    typographer: false,
+    breaks: false,
+    maxNesting: 40,
+  });
+  md.validateLink = () => true;
+  md.linkify.set({ fuzzyEmail: false });
+  md.use(footnote).use(deflist).use(emoji).use(sub).use(sup).use(mark).use(abbr).use(anchor, { slugify, tabIndex: false });
+  md.inline.ruler.after('escape', 'math_inline', mathInline);
+  md.block.ruler.after('blockquote', 'math_block', mathBlock, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
+
+  md.core.ruler.after('block', 'md_alerts', (state) => {
+    const ts = state.tokens;
+    for (let i = 0; i + 2 < ts.length; i++) {
+      if (ts[i].type !== 'blockquote_open' || ts[i + 1].type !== 'paragraph_open' || ts[i + 2].type !== 'inline') continue;
+      const m = /^\[!(note|tip|important|warning|caution)\][ \t]*(?:\n|$)/i.exec(ts[i + 2].content);
+      if (!m) continue;
+      ts[i].meta = { alert: m[1].toLowerCase() as Alert };
+      ts[i + 2].content = ts[i + 2].content.slice(m[0].length);
+      if (!ts[i + 2].content.trim()) {
+        ts[i + 1].hidden = ts[i + 3].hidden = true;
+        ts[i + 2].content = '';
       }
-      return i;
     }
-  }
-  return -1;
-}
+  });
 
-/** `[text](dest)`: index of the matching `]` and the destination, or null */
-function linkAt(s: string, i: number): { textEnd: number; dest: string; end: number } | null {
-  let depth = 0;
-  for (let k = i; k < s.length; k++) {
-    const ch = s[k];
-    if (ch === '\\') {
-      k++;
-      continue;
+  md.core.ruler.after('inline', 'md_tasks', (state) => {
+    const ts = state.tokens;
+    for (let i = 2; i < ts.length; i++) {
+      if (ts[i].type !== 'inline' || ts[i - 1].type !== 'paragraph_open' || ts[i - 2].type !== 'list_item_open') continue;
+      const first = ts[i].children?.[0];
+      const m = first?.type === 'text' ? /^\[([ xX])\][ \t]+/.exec(first.content) : null;
+      if (!m || !first) continue;
+      first.content = first.content.slice(m[0].length);
+      const box = new state.Token('md_task', '', 0);
+      box.meta = { done: m[1] !== ' ' };
+      ts[i].children!.unshift(box);
+      ts[i - 2].attrJoin('class', 'md-task');
     }
-    if (ch === '[') depth++;
-    else if (ch === ']') {
-      depth--;
-      if (depth === 0) {
-        if (s[k + 1] !== '(') return null;
-        const m = /^\(\s*(<[^>\n]*>|[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+("[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/.exec(s.slice(k + 1));
-        if (!m) return null;
-        return { textEnd: k, dest: m[1], end: k + 1 + m[0].length };
-      }
-    }
-  }
-  return null;
-}
+  });
 
-export function parseInline(s: string, depth = 0): Inline[] {
-  const out: Inline[] = [];
-  let buf = '';
-  const flush = () => {
-    if (buf) out.push({ t: 'text', s: buf });
-    buf = '';
+  md.core.ruler.push('md_align', (state) => {
+    for (const t of state.tokens) {
+      if (t.type !== 'th_open' && t.type !== 'td_open') continue;
+      const st = attr(t, 'style');
+      const m = st && /text-align:\s*(left|center|right)/.exec(st);
+      t.attrs = null;
+      if (m) t.attrSet('class', `md-al-${m[1]}`);
+    }
+  });
+
+  const r = md.renderer.rules;
+  const deadLinks: boolean[] = [];
+  r.link_open = (tokens, idx) => {
+    const href = attr(tokens[idx], 'href') ?? '';
+    if (/^#[^\s"<>]*$/.test(href) && href.length > 1) {
+      deadLinks.push(false);
+      return `<a href="${esc(href)}" class="md-anchor">`;
+    }
+    const safe = safeHref(href);
+    deadLinks.push(!safe);
+    return safe ? `<a href="${esc(safe)}" class="md-link" title="${esc(safe)}">` : '<span class="md-deadlink">';
   };
-  let i = 0;
-  while (i < s.length) {
-    const ch = s[i];
-    if (ch === '\\' && i + 1 < s.length) {
-      if (s[i + 1] === '\n') {
-        flush();
-        out.push({ t: 'br' });
-        i += 2;
-        continue;
-      }
-      if (PUNCT.test(s[i + 1])) {
-        buf += s[i + 1];
-        i += 2;
-        continue;
-      }
-    }
-    if (ch === '\n') {
-      if (buf.endsWith('  ')) {
-        buf = buf.replace(/ +$/, '');
-        flush();
-        out.push({ t: 'br' });
-      } else buf = buf.replace(/ +$/, '') + ' ';
-      i++;
-      continue;
-    }
-    if (ch === '`') {
-      const run = /^`+/.exec(s.slice(i))![0];
-      const end = s.indexOf(run, i + run.length);
-      if (end > 0 && s[end + run.length] !== '`') {
-        flush();
-        let code = s.slice(i + run.length, end).replace(/\n/g, ' ');
-        if (/^ .*[^ ].* $/.test(code)) code = code.slice(1, -1);
-        out.push({ t: 'code', s: code });
-        i = end + run.length;
-        continue;
-      }
-      buf += run;
-      i += run.length;
-      continue;
-    }
-    if (depth < 8 && (ch === '[' || (ch === '!' && s[i + 1] === '['))) {
-      const img = ch === '!';
-      const l = linkAt(s, img ? i + 1 : i);
-      if (l) {
-        flush();
-        const text = s.slice(img ? i + 2 : i + 1, l.textEnd);
-        if (img) out.push({ t: 'img', alt: text.replace(/[\\*_`[\]]/g, ''), src: l.dest.replace(/^<|>$/g, '') });
-        else out.push({ t: 'link', href: safeHref(l.dest), c: parseInline(text, depth + 1) });
-        i = l.end;
-        continue;
-      }
-    }
-    if (ch === '<') {
-      const m = /^<((?:https?:\/\/|mailto:)[^\s<>]+)>/i.exec(s.slice(i));
-      if (m) {
-        flush();
-        out.push({ t: 'link', href: safeHref(m[1]), c: [{ t: 'text', s: m[1] }] });
-        i += m[0].length;
-        continue;
-      }
-    }
-    if ((ch === 'h' || ch === 'H') && !/\w/.test(s[i - 1] ?? ' ')) {
-      const m = /^https?:\/\/[^\s<>]*[^\s<>.,:;"')\]!?*_~]/i.exec(s.slice(i));
-      if (m) {
-        flush();
-        out.push({ t: 'link', href: safeHref(m[0]), c: [{ t: 'text', s: m[0] }] });
-        i += m[0].length;
-        continue;
-      }
-    }
-    if (depth < 8 && (ch === '*' || ch === '_' || ch === '~')) {
-      const dbl = s[i + 1] === ch;
-      const delim = ch === '~' ? (dbl ? '~~' : '') : dbl ? ch + ch : ch;
-      const opensWord = !/\s/.test(s[i + delim.length] ?? ' ');
-      // `_` inside a word (snake_case) is not emphasis
-      const intraword = ch === '_' && /\w/.test(s[i - 1] ?? ' ');
-      if (delim && opensWord && !intraword) {
-        const close = findClose(s, i + delim.length, delim);
-        if (close > i + delim.length && !(ch === '_' && /\w/.test(s[close + delim.length] ?? ' '))) {
-          flush();
-          const inner = parseInline(s.slice(i + delim.length, close), depth + 1);
-          out.push({ t: ch === '~' ? 'del' : delim.length === 2 ? 'strong' : 'em', c: inner });
-          i = close + delim.length;
-          continue;
-        }
-      }
-      buf += delim || ch;
-      i += (delim || ch).length;
-      continue;
-    }
-    buf += ch;
-    i++;
-  }
-  flush();
-  return out;
+  r.link_close = () => (deadLinks.pop() ? '</span>' : '</a>');
+  r.image = (tokens, idx, _o, env) => {
+    const t = tokens[idx];
+    const src = attr(t, 'src') ?? '';
+    const alt = md.renderer.renderInlineAsText(t.children ?? [], md.options, env);
+    const local = localImagePath(src);
+    const shown = esc(alt || labels.image);
+    if (local) return `<span class="md-img md-img-local" data-path="${esc(local)}" title="${esc(local)}">${shown}</span>`;
+    return `<span class="md-img" title="${esc(src.slice(0, 300))}">${shown} <span class="md-img-note">${esc(labels.imageBlocked)}</span></span>`;
+  };
+  r.md_task = (tokens, idx) => {
+    const done = !!tokens[idx].meta?.done;
+    return `<span class="md-box" role="img" aria-label="${esc(done ? labels.done : labels.todo)}" data-done="${done ? 1 : 0}"></span>`;
+  };
+  r.math_inline = (tokens, idx) => `<span class="md-math" data-display="0">${esc(tokens[idx].content)}</span>`;
+  r.math_block = (tokens, idx) => `<div class="md-math" data-display="1">${esc(tokens[idx].content)}</div>\n`;
+  r.blockquote_open = (tokens, idx) => {
+    const a = tokens[idx].meta?.alert as Alert | undefined;
+    if (!a) return '<blockquote>\n';
+    return `<blockquote class="md-alert md-alert-${a}"><p class="md-alert-title">${esc(labels[a])}</p>\n`;
+  };
+  const code = (lang: string, body: string) => {
+    if (lang === 'mermaid') return `<div class="md-mermaid"><pre class="md-code" data-lang="mermaid"><code>${esc(body)}</code></pre></div>\n`;
+    if (lang === 'math' || lang === 'latex' || lang === 'tex' || lang === 'katex') return `<div class="md-math" data-display="1">${esc(body)}</div>\n`;
+    const hl = lang ? languageFor(`x.${ALIAS[lang] ?? lang}`) : null;
+    const inner = tokenize(body.replace(/\n$/, ''), hl)
+      .map((t) => (t.c ? `<span class="t-${t.c}">${esc(t.s)}</span>` : esc(t.s)))
+      .join('');
+    const label = lang && /^[\w+#.-]{1,24}$/.test(lang) ? ` data-lang="${esc(lang)}"` : '';
+    return `<pre class="md-code"${label}><code>${inner}</code></pre>\n`;
+  };
+  r.fence = (tokens, idx) => {
+    const t = tokens[idx];
+    return code((t.info.trim().split(/\s+/)[0] ?? '').toLowerCase(), t.content);
+  };
+  r.code_block = (tokens, idx) => code('', tokens[idx].content);
+  r.table_open = () => '<div class="md-table-wrap"><table class="vw-table">\n';
+  r.table_close = () => '</table></div>\n';
+  return md;
 }
 
-// ---------------------------------------------------------------- blocks
+const ALIAS: Record<string, string> = {
+  javascript: 'js',
+  typescript: 'ts',
+  shell: 'sh',
+  console: 'sh',
+  bash: 'sh',
+  python: 'py',
+  rust: 'rs',
+  yml: 'yaml',
+  golang: 'go',
+  'c++': 'cpp',
+  csharp: 'cs',
+  html: 'html',
+  xml: 'xml',
+  svelte: 'svelte',
+};
 
-const RE_FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^`\s]*)[^`]*$/;
-const RE_ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
-const RE_HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
-const RE_LIST = /^( {0,3})([-*+]|\d{1,9}[.)])([ \t]+|$)/;
-const RE_QUOTE = /^ {0,3}> ?/;
-const RE_TABLE_SEP = /^ *\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *$/;
+const TAGS = [
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'hr', 'strong', 'em', 's', 'del', 'code', 'pre', 'blockquote',
+  'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'span', 'div', 'sup', 'sub', 'mark', 'abbr',
+  'dl', 'dt', 'dd', 'section',
+];
+const ATTRS = ['href', 'id', 'class', 'title', 'start', 'role', 'aria-label', 'data-path', 'data-display', 'data-done', 'data-lang'];
 
-function splitRow(line: string): string[] {
-  let l = line.trim();
-  if (l.startsWith('|')) l = l.slice(1);
-  if (l.endsWith('|') && !l.endsWith('\\|')) l = l.slice(0, -1);
-  const cells: string[] = [];
-  let cur = '';
-  for (let i = 0; i < l.length; i++) {
-    if (l[i] === '\\' && l[i + 1] === '|') {
-      cur += '|';
-      i++;
-    } else if (l[i] === '|') {
-      cells.push(cur.trim());
-      cur = '';
-    } else cur += l[i];
-  }
-  cells.push(cur.trim());
-  return cells;
+let purifier: ReturnType<typeof DOMPurify> | null = null;
+
+export function sanitize(html: string): string {
+  purifier ??= DOMPurify(window);
+  return purifier.sanitize(html, {
+    ALLOWED_TAGS: TAGS,
+    ALLOWED_ATTR: ATTRS,
+    ALLOW_DATA_ATTR: true,
+    ALLOW_ARIA_ATTR: true,
+    ALLOWED_URI_REGEXP: /^(?:https?:\/\/|mailto:|#)/i,
+    FORBID_ATTR: ['style'],
+    RETURN_TRUSTED_TYPE: false,
+  }) as string;
 }
 
-function startsBlock(line: string): boolean {
-  return RE_FENCE.test(line) || RE_ATX.test(line) || RE_HR.test(line) || RE_QUOTE.test(line) || RE_LIST.test(line);
+export function sanitizeMath(html: string): string {
+  purifier ??= DOMPurify(window);
+  return purifier.sanitize(html, {
+    USE_PROFILES: { html: true, mathMl: true },
+    FORBID_TAGS: ['a', 'img', 'iframe', 'form', 'input', 'button', 'object', 'embed', 'video', 'audio', 'style', 'link'],
+    FORBID_ATTR: ['href', 'src', 'xlink:href', 'action', 'formaction'],
+    ALLOW_DATA_ATTR: false,
+    RETURN_TRUSTED_TYPE: false,
+  }) as string;
 }
 
-export function parseMarkdown(src: string, depth = 0): Block[] {
-  const lines = src.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').split('\n');
-  const out: Block[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (/^\s*$/.test(line)) {
-      i++;
-      continue;
-    }
-    let m: RegExpExecArray | null;
-    if ((m = RE_FENCE.exec(line))) {
-      const fence = m[1];
-      const indent = /^ */.exec(line)![0].length;
-      const body: string[] = [];
-      i++;
-      while (i < lines.length && !new RegExp(`^ {0,3}${fence[0]}{${fence.length},}\\s*$`).test(lines[i])) {
-        body.push(lines[i].replace(new RegExp(`^ {0,${indent}}`), ''));
-        i++;
+export function sanitizeSvg(svg: string): string {
+  purifier ??= DOMPurify(window);
+  return purifier.sanitize(svg, {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    ADD_TAGS: ['style'],
+    FORBID_TAGS: ['a', 'foreignObject', 'image', 'use', 'script', 'animate', 'set', 'animateTransform', 'animateMotion'],
+    FORBID_ATTR: ['href', 'xlink:href', 'onload', 'onerror'],
+    ALLOW_DATA_ATTR: false,
+    RETURN_TRUSTED_TYPE: false,
+  }) as string;
+}
+
+const cache = new Map<string, MarkdownIt>();
+
+export function renderMarkdown(src: string, labels: Labels = EN): Rendered {
+  const key = JSON.stringify(labels);
+  let md = cache.get(key);
+  if (!md) cache.set(key, (md = build(labels)));
+  const { front, body } = splitFrontMatter(src.replace(/\r\n?/g, '\n'));
+  const env: Record<string, unknown> = { docId: 'md' };
+  const tokens = md.parse(body, env);
+  const toc: TocItem[] = [];
+  let math = false;
+  let mermaid = false;
+  const walk = (list: Token[]) => {
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if (t.type === 'heading_open' && toc.length < 200) {
+        const id = attr(t, 'id');
+        if (id) toc.push({ level: Number(t.tag.slice(1)), id, text: inlineText(list[i + 1]) });
       }
-      i++;
-      out.push({ t: 'code', lang: m[2].toLowerCase(), s: body.join('\n') });
-      continue;
-    }
-    if ((m = RE_ATX.exec(line))) {
-      out.push({ t: 'h', level: m[1].length as 1, c: parseInline(m[2] ?? '') });
-      i++;
-      continue;
-    }
-    if (RE_HR.test(line)) {
-      out.push({ t: 'hr' });
-      i++;
-      continue;
-    }
-    if (/^ {4}/.test(line)) {
-      const body: string[] = [];
-      while (i < lines.length && (/^ {4}/.test(lines[i]) || /^\s*$/.test(lines[i]))) body.push(lines[i++].slice(4));
-      while (body.length && /^\s*$/.test(body[body.length - 1])) body.pop();
-      out.push({ t: 'code', lang: '', s: body.join('\n') });
-      continue;
-    }
-    if (RE_QUOTE.test(line)) {
-      const body: string[] = [];
-      while (i < lines.length && !/^\s*$/.test(lines[i]) && (RE_QUOTE.test(lines[i]) || body.length)) {
-        if (!RE_QUOTE.test(lines[i]) && startsBlock(lines[i])) break;
-        body.push(lines[i].replace(RE_QUOTE, ''));
-        i++;
+      if (t.type === 'math_inline' || t.type === 'math_block') math = true;
+      if (t.type === 'fence') {
+        const lang = t.info.trim().split(/\s+/)[0]?.toLowerCase();
+        if (lang === 'mermaid') mermaid = true;
+        if (lang === 'math' || lang === 'latex' || lang === 'tex' || lang === 'katex') math = true;
       }
-      out.push({ t: 'quote', c: depth < 12 ? parseMarkdown(body.join('\n'), depth + 1) : [{ t: 'p', c: [{ t: 'text', s: body.join(' ') }] }] });
-      continue;
+      if (t.children) walk(t.children);
     }
-    if ((m = RE_LIST.exec(line))) {
-      const ordered = /\d/.test(m[2]);
-      const marker = ordered ? m[2].slice(-1) : m[2];
-      const start = ordered ? parseInt(m[2], 10) : 1;
-      const items: { task: boolean | null; c: Block[] }[] = [];
-      while (i < lines.length) {
-        const lm = RE_LIST.exec(lines[i]);
-        if (!lm || /\d/.test(lm[2]) !== ordered || (ordered ? lm[2].slice(-1) : lm[2]) !== marker) break;
-        const contentIndent = lm[0].length || lm[1].length + lm[2].length + 1;
-        const body = [lines[i].slice(lm[0].length)];
-        i++;
-        let blank = false;
-        while (i < lines.length) {
-          const l = lines[i];
-          if (/^\s*$/.test(l)) {
-            blank = true;
-            body.push('');
-            i++;
-            continue;
-          }
-          const ind = /^ */.exec(l)![0].length;
-          if (ind >= Math.min(contentIndent, 4)) {
-            body.push(l.slice(Math.min(ind, contentIndent)));
-            blank = false;
-            i++;
-            continue;
-          }
-          if (blank || RE_LIST.test(l) || startsBlock(l)) break;
-          body.push(l); // lazy continuation
-          i++;
-        }
-        while (body.length && body[body.length - 1] === '') body.pop();
-        let text = body.join('\n');
-        let task: boolean | null = null;
-        const tm = /^\[([ xX])\][ \t]+/.exec(text);
-        if (tm) {
-          task = tm[1] !== ' ';
-          text = text.slice(tm[0].length);
-        }
-        items.push({ task, c: depth < 12 ? parseMarkdown(text, depth + 1) : [{ t: 'p', c: [{ t: 'text', s: text }] }] });
-        if (blank && i < lines.length && !RE_LIST.test(lines[i])) break;
-      }
-      out.push({ t: 'list', ordered, start, items });
-      continue;
-    }
-    // table: a header row, then a separator row
-    if (line.includes('|') && i + 1 < lines.length && RE_TABLE_SEP.test(lines[i + 1]) && lines[i + 1].includes('-')) {
-      const head = splitRow(line);
-      const align = splitRow(lines[i + 1]).map((c) => (c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : c.startsWith(':') ? 'left' : null));
-      i += 2;
-      const rows: Inline[][][] = [];
-      while (i < lines.length && lines[i].includes('|') && !/^\s*$/.test(lines[i])) {
-        const cells = splitRow(lines[i]);
-        rows.push(head.map((_, k) => parseInline(cells[k] ?? '')));
-        i++;
-      }
-      out.push({ t: 'table', align, head: head.map((c) => parseInline(c)), rows });
-      continue;
-    }
-    // paragraph (with setext heading underline)
-    const para: string[] = [line.trim()];
-    i++;
-    let setext: 1 | 2 | 0 = 0;
-    while (i < lines.length && !/^\s*$/.test(lines[i])) {
-      if (/^ {0,3}=+\s*$/.test(lines[i])) {
-        setext = 1;
-        i++;
-        break;
-      }
-      if (/^ {0,3}-+\s*$/.test(lines[i])) {
-        setext = 2;
-        i++;
-        break;
-      }
-      if (startsBlock(lines[i])) break;
-      para.push(lines[i].replace(/^ +/, ''));
-      i++;
-    }
-    const text = para.join('\n');
-    out.push(setext ? { t: 'h', level: setext, c: parseInline(text) } : { t: 'p', c: parseInline(text) });
-  }
-  return out;
+  };
+  walk(tokens);
+  const html = sanitize(md.renderer.render(tokens, md.options, env));
+  return { html, toc, front, math, mermaid };
 }

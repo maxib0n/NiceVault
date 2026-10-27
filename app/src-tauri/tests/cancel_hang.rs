@@ -1,10 +1,3 @@
-//! Cancel hang: a big import cancelled on a fixed-size single-file volume on
-//! a USB stick, grown earlier in the session. The job stopped but its tray entry stayed, and every
-//! folder kept loading: the job removed its half-written file in one secure DELETE under the store
-//! lock (GBs of writes), and sent job-done only after that. Here, on an emulated slow stick
-//! (nv_core::slowio), cancelled at several points: job-done (error `cancelled`) comes promptly,
-//! `fs_list` answers within 1 s all along, nothing of the file is left.
-
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events};
 use nv_core::slowio::{self, SlowIo};
@@ -17,9 +10,7 @@ use std::time::{Duration, Instant};
 
 #[derive(Default)]
 struct Ev {
-    /// job -> job-done payload
     done: Mutex<Vec<(String, serde_json::Value)>>,
-    /// done_bytes of the last job-progress
     bytes: AtomicU64,
     cv: Condvar,
 }
@@ -77,7 +68,6 @@ fn cancelled_import_ends_and_leaves_nothing() {
         .vault_create_sized(stick.join("VaultData.nvault").to_str().unwrap(), SecretString::from("pw".to_owned()), Some("fast"), Some(64 << 20))
         .unwrap();
     let id = info.id.clone();
-    // grown first, as a long-lived volume would be
     st.vault_resize(&id, 512 << 20).unwrap();
 
     slowio::set(Some(SlowIo { bytes_per_sec: 40e6, dirty_cap: 4_000_000_000, sync_ms: 20 }));
@@ -105,7 +95,6 @@ fn cancelled_import_ends_and_leaves_nothing() {
         st.job_cancel(&job);
         let done = ev.wait_done(&job, Duration::from_secs(20)).unwrap_or_else(|| panic!("cancel at {cancel_at_mb} MiB: no job-done"));
         eprintln!("cancel at {cancel_at_mb} MiB: job-done after {:?}: {done}", tc.elapsed());
-        // (a job cancelled after its last block may also finish normally)
         assert!(done["error"].is_null() || done["error"]["code"] == "cancelled", "{done}");
         let names: Vec<String> = st.fs_list(&id, ROOT).unwrap().into_iter().map(|n| n.name).collect();
         if done["error"].is_null() {

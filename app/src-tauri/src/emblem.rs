@@ -1,29 +1,18 @@
-//! Volume emblem: the big mark on the volume's "security document". Stored privately inside
-//! the encrypted volume (`meta` key [`META_KEY`], with `show_when_locked` = the volume's
-//! appearance visibility). When visible, a copy goes to the header's plaintext appearance
-//! section (appearance.rs) so the locked screens can show it.
-
 use crate::error::{ApiError, ApiResult};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use serde::{Deserialize, Serialize};
 
 pub const META_KEY: &str = "nicevault.emblem";
-/// Frames drawn round the emblem (ids in app/ui/src/ornament/frames.ts). First = default, the
-/// guilloché rosette every volume had before frames could be chosen.
 pub const FRAMES: [&str; 6] = ["guilloche", "laurel", "rope", "meander", "starburst", "hairline"];
-/// Decoded size limit of a custom image (the UI makes a 256x256 WebP/PNG well under this).
 pub const MAX_IMAGE_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Emblem {
-    /// The volume's initial letter (monogram).
     #[default]
     Initial,
-    /// One of the UI's curated icons (ids in app/ui/src/lib/emblem.ts).
     Icon { id: String },
-    /// A square PNG or WebP image, base64 (standard alphabet, padded).
     Image { data_base64: String },
 }
 
@@ -31,8 +20,6 @@ pub enum Emblem {
 pub struct EmblemState {
     pub emblem: Emblem,
     pub show_when_locked: bool,
-    /// The frame round the emblem (one of [`FRAMES`], or a newer build's id: kept as it is, drawn
-    /// as the default). Absent in records written before frames: the guilloché rosette.
     #[serde(default = "default_frame")]
     pub emblem_frame: String,
 }
@@ -47,8 +34,6 @@ impl Default for EmblemState {
     }
 }
 
-/// Checks a frame id coming from the UI: `[a-z0-9-]`, 1..=32 bytes (a newer build's frame is
-/// stored as it is; this build draws an id it does not know as the default rosette).
 pub fn validate_frame(id: &str) -> ApiResult<String> {
     let ok = !id.is_empty() && id.len() <= 32 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     if ok { Ok(id.to_owned()) } else { Err(bad("Invalid frame.")) }
@@ -58,7 +43,6 @@ fn bad(msg: &str) -> ApiError {
     ApiError::new("invalid_emblem", msg)
 }
 
-/// Checks and canonicalizes an emblem coming from the UI.
 pub fn validate(e: Emblem) -> ApiResult<Emblem> {
     match e {
         Emblem::Initial => Ok(Emblem::Initial),
@@ -82,11 +66,6 @@ pub fn validate(e: Emblem) -> ApiResult<Emblem> {
     }
 }
 
-/// What the volume holds: `None` when the record exists but this build cannot read it (written
-/// by a newer build with an emblem kind or shape it does not know, or unreadable). Such a record
-/// is never rewritten implicitly and the header section is left as it is (see
-/// `appearance::sync_header`); only an explicit new emblem from the user replaces it.
-/// An absent record is the default (initial, visible): volumes made before emblems existed.
 pub fn stored(v: &nv_core::Vault) -> Option<EmblemState> {
     match v.meta_get(META_KEY) {
         Ok(None) => Some(EmblemState::default()),
@@ -95,15 +74,10 @@ pub fn stored(v: &nv_core::Vault) -> Option<EmblemState> {
     }
 }
 
-/// The state to show: an unknown record ([`stored`] = `None`) shows as the neutral look
-/// (initial, encrypted) — never as "visible".
 pub fn load(v: &nv_core::Vault) -> EmblemState {
     stored(v).unwrap_or(EmblemState { emblem: Emblem::Initial, show_when_locked: false, emblem_frame: default_frame() })
 }
 
-/// Patches the stored record: only the given parts are replaced, every other key (a newer
-/// build's) is kept. Refused (`unsupported_version`) when the result would not be a complete
-/// record this build can read, i.e. changing only the visibility of an unknown emblem.
 pub fn save(v: &nv_core::Vault, emblem: Option<&Emblem>, show_when_locked: Option<bool>, frame: Option<&str>) -> ApiResult<()> {
     use serde_json::Value;
     let err = |e: serde_json::Error| ApiError::new("error", e.to_string());
@@ -151,8 +125,6 @@ mod tests {
         assert_eq!(j, r#"{"kind":"icon","id":"key"}"#);
     }
 
-    /// The frame is additive: a record written before it reads the default rosette; ids are
-    /// checked for their charset only (a newer build's frame survives).
     #[test]
     fn frames() {
         let old: EmblemState = serde_json::from_str(r#"{"emblem":{"kind":"initial"},"show_when_locked":true}"#).unwrap();

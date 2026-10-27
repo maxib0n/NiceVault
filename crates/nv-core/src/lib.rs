@@ -1,6 +1,3 @@
-//! NiceVault core: volume format, keyslots and the encrypted SQLCipher store.
-//! The on-disk format is described in `header.rs`. `Vault` implements [`nv_fs::Fs`].
-
 mod appearance;
 mod duress;
 mod fresh;
@@ -45,58 +42,24 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use zeroize::Zeroizing;
 
-/// Layout of the volumes this build creates (existing volumes keep theirs, see [`Layout`]).
-/// Measured with scripts/bench-io.sh: 64 KiB pages / 1 MiB chunks save <10% CPU on a fast disk
-/// and nothing on a USB stick (the device is the limit), cost 4x read amplification for
-/// 256 KiB reads, and would lock older builds out of new volumes — so new volumes keep the
-/// v1 store. Builds from this one on open v2 (stored-layout) volumes too.
 pub const DEFAULT_LAYOUT: Layout = Layout::LEGACY;
-/// Chunk size of v1 volumes (= [`Layout::LEGACY`]); a v2 volume stores its own.
 pub const CHUNK: usize = Layout::LEGACY.chunk_size as usize;
-/// Move buffered file data into the open transaction once this much is buffered (bounds memory
-/// and, more to the point, how long one spill holds the store lock: encrypting and handing
-/// 4 MiB to the OS takes ~10-30 ms; 64 MiB took 0.3-0.5 s, during which a listing waited).
 const MAX_BUFFERED: usize = 4 << 20;
-/// Before a spill, a bulk writer waits (outside the store lock) while more than this much of what
-/// it handed to the OS is not written back to the device yet (see [`Writeback`]): a sync SQLite
-/// makes during the spill (the journal's, when the transaction journaled a page since the last
-/// one) then waits for at most this much (~100 ms on a 20 MB/s stick), while the device still has
-/// work queued while the next spill is encrypted.
 const WRITEBACK_AT: u64 = 2 << 20;
-/// Durability point once the oldest non-durable change is this old (part of the contract:
-/// a crash loses at most about this much work)...
 pub const DURABLE_INTERVAL: Duration = Duration::from_secs(3);
-/// ...or once this much file data went into the open transaction.
 const DURABLE_BYTES: u64 = 256 << 20;
-/// [`Vault::discard`] cuts a file by this much per durability point (bounds how long one step
-/// holds the store lock: reading that much of the file's pages).
 pub const DISCARD_STEP: u64 = 32 << 20;
 
-/// How SQLite keeps commits atomic.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(not(test), allow(dead_code))]
 enum Journal {
-    /// Rollback journal kept between commits (PERSIST), synchronous=FULL: appended pages are
-    /// written once, straight into the database; every COMMIT is durable.
     Persist,
-    /// Write-ahead log, synchronous=NORMAL (what volumes were opened with before): every page
-    /// is written twice (WAL, then checkpoint); durable after a checkpoint.
     Wal,
 }
-/// Whether [`Vault::create`] makes single-file volumes (format v2, journal inside the file).
-/// Builds before this one cannot open them (`unsupported_version`). Existing
-/// ). Builds before this one cannot open them (`unsupported_version`). Existing
-/// (v1) volumes are unchanged and become single-file only with [`Vault::upgrade_format`]
-/// ("Aggiorna formato"). Fixed-size volumes too ([`Vault::create_fixed`], the region inside the
-/// preallocated file).
 const NEW_VOLUMES_SINGLE_FILE: bool = true;
 
-/// [`Vault::upgrade_format`] on a fixed-size volume without room for the journal region (the app
-/// answers `volume_full`: extend it first).
 pub const UPGRADE_NO_ROOM: &str = "the fixed-size volume is too full for the single-file format: extend it first";
 
-/// The journal mode this build opens every volume with. `Wal` is what builds before group
-/// commit used; tests still make volumes with it to stand in for those builds.
 const JOURNAL: Journal = Journal::Persist;
 
 #[derive(Debug, thiserror::Error, Serialize, PartialEq, Eq)]
@@ -110,18 +73,12 @@ pub enum OpenError {
     Corrupt(String),
     #[error("io: {0}")]
     Io(String),
-    /// Written by a newer NiceVault in a form this build does not understand (header version,
-    /// unknown slot / emblem kind, unknown header fields). Nothing was written to the file.
     #[error("volume made by a newer NiceVault: {0}")]
     UnsupportedVersion(String),
-    /// The header is older than the database last saw (an old copy of the header was written
-    /// back: it may revive a changed or removed password). Nothing was written to the file.
     #[error("the volume's header was rolled back to an older copy")]
     RolledBack,
 }
 
-/// Why a keyslot operation was refused. Kept apart from [`nv_fs::Error`] so callers can
-/// match on the rule that was broken instead of parsing messages.
 #[derive(Debug, thiserror::Error)]
 pub enum SlotError {
     #[error("no such key slot")]
@@ -134,7 +91,6 @@ pub enum SlotError {
     Full,
     #[error("slot label is longer than {MAX_LABEL} bytes")]
     LabelTooLong,
-    /// The duress password would equal another password of the volume (or vice versa).
     #[error("the duress password must differ from every other password of the volume")]
     DuressConflict,
     #[error("wrong password")]
@@ -146,19 +102,13 @@ pub enum SlotError {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct SlotInfo {
     pub index: usize,
-    /// "password" | "recipient" | "fido2" | "duress" (a password that destroys the keys, see duress.rs)
     pub kind: &'static str,
-    /// User label (stored sealed in the header).
     pub label: Option<String>,
-    /// Argon2id parameters (password and duress slots).
     pub kdf: Option<KdfParams>,
-    /// Hex of the recipient's 16-byte fingerprint (recipient slots only).
     pub fingerprint: Option<String>,
-    /// This slot unlocked the current session.
     pub in_use: bool,
 }
 
-/// Empty / whitespace-only label = no label.
 fn norm_label(l: Option<&str>) -> std::result::Result<Option<&str>, SlotError> {
     match l.map(str::trim).filter(|l| !l.is_empty()) {
         Some(l) if l.len() > MAX_LABEL => Err(SlotError::LabelTooLong),
@@ -166,24 +116,17 @@ fn norm_label(l: Option<&str>) -> std::result::Result<Option<&str>, SlotError> {
     }
 }
 
-/// An unlocked volume. All methods take `&self` and are thread-safe.
 pub struct Vault {
     path: PathBuf,
     shared: Arc<Shared>,
     flusher: Mutex<Option<JoinHandle<()>>>,
-    /// Serializes keyslot changes so the (slow) KDF can run without holding the store lock.
     slot_lock: Mutex<()>,
 }
 
 struct Shared {
-    // global lock — one Mutex around the connection and all write buffers.
-    // Every Fs op is serialized; the ceiling is one core's worth of SQLCipher + memcpy
-    // (fine for a single-user drive; per-node locks + a read-only connection pool if it ever matters).
-    inner: Mutex<Option<Inner>>, // None once closed
+    inner: Mutex<Option<Inner>>,
     stop: Mutex<bool>,
     wake: Condvar,
-    /// One durability point at a time ([`durable_point`]); bulk writers wait for a running one,
-    /// so what its COMMIT syncs under the lock is what was there when it started, written back.
     commit: Mutex<()>,
     committing: std::sync::atomic::AtomicBool,
 }
@@ -197,25 +140,18 @@ impl Shared {
         Ok(g)
     }
 
-    /// A bulk writer: waits for a durability point in progress (without the store lock).
     fn yield_to_commit(&self) {
         if self.committing.load(std::sync::atomic::Ordering::Relaxed) {
             drop(self.commit.lock().unwrap_or_else(|e| e.into_inner()));
         }
     }
 
-    /// Durability point (see [`Inner::durable`]) with the slow part outside the store lock: the
-    /// data goes to the OS under the lock (CPU only), is written back to the device without it,
-    /// and the COMMIT under the lock then syncs what little is left. `due`: only if the oldest
-    /// change is [`DURABLE_INTERVAL`] old (the background thread).
     fn durable_point(&self, due: bool) -> Result<()> {
         let is_due = |i: &Inner| i.dirty_since.is_some_and(|t| !due || t.elapsed() >= DURABLE_INTERVAL);
         if due && !is_due(self.lock()?.as_ref().unwrap()) {
             return Ok(());
         }
         let _c = self.commit.lock().unwrap_or_else(|e| e.into_inner());
-        // (cleared on every way out, a panic included: bulk writers must not wait for a
-        // durability point that is not running)
         struct Committing<'a>(&'a std::sync::atomic::AtomicBool);
         impl Drop for Committing<'_> {
             fn drop(&mut self) {
@@ -229,14 +165,12 @@ impl Shared {
                 let mut g = self.lock()?;
                 let i = g.as_mut().unwrap();
                 if due && !is_due(i) {
-                    return Ok(()); // made durable meanwhile
+                    return Ok(());
                 }
                 i.wb.clone()
             };
             wb.wait_below(WRITEBACK_AT);
             self.lock()?.as_mut().unwrap().spill()?;
-            // (a writer already past `yield_to_commit` may spill once more meanwhile: written
-            // back too before the COMMIT, a few rounds at most)
             for round in 0.. {
                 wb.wait();
                 let mut g = self.lock()?;
@@ -254,44 +188,25 @@ impl Shared {
 }
 
 struct Inner {
-    // Field order matters for Drop: the connection must close before `hfile`
-    // (on Unix closing any fd of the file drops SQLite's POSIX locks).
     conn: Connection,
     bufs: HashMap<NodeId, FileBuf>,
     buffered: usize,
-    /// When the oldest change that is not durable yet was made (None = everything durable).
     dirty_since: Option<Instant>,
-    /// Group commit: changes accumulate in one open transaction, COMMITted at the next
-    /// durability point (see [`Inner::durable`]).
     in_tx: bool,
-    /// File data moved into the open transaction so far.
     tx_bytes: u64,
     chunk: usize,
     journal: Journal,
     master: Key32,
     header: Header,
-    /// Index of the slot that unlocked this session (None once that slot is removed).
     unlocked: Option<usize>,
-    /// seq of copy A / copy B as found on disk (0 = invalid copy).
     copy_seq: [u64; 2],
-    /// The header's appearance section failed its MAC at unlock (it was dropped and the header repaired).
     appearance_tampered: bool,
-    /// In-memory search index of this session (search.rs), refreshed from the tables.
     search: search::Cache,
-    /// Writeback of this store's data outside the lock (shared with the [`Vault`] methods).
     wb: Arc<Writeback>,
     hfile: File,
 }
 
-/// Keeps the store lock free of slow device I/O (the import lag on USB sticks): every sync made under the lock (SQLite's journal syncs, the COMMIT) waits for
-/// everything dirty in the page cache to reach the device: on a 15 MB/s stick, seconds while
-/// listings, thumbnails and stats queue behind it. So the data the store hands to the OS is
-/// written back *outside* the lock, by the thread that wrote it (bulk writers wait there once
-/// [`WRITEBACK_AT`] is pending) and before each durability point, and the syncs under the lock find
-/// little left to do.
 struct Writeback {
-    /// A second handle on the volume file (None: could not be duplicated; then only the syncs
-    /// under the lock write data back, as before).
     file: Option<File>,
     st: Mutex<WbState>,
     cv: Condvar,
@@ -299,18 +214,12 @@ struct Writeback {
 
 #[derive(Default)]
 struct WbState {
-    /// Bytes handed to the OS and not written back yet (approximate: spilled file data)...
     pending: u64,
-    /// ...and those being written back right now.
     inflight: u64,
-    /// [`slowio::written`] when last counted into `pending` ([`Writeback::account`]).
     mark: u64,
 }
 
 impl Writeback {
-    /// For the volume file `f`, with its writeback thread (`nv-writeback`, ends once the store
-    /// is gone): it keeps the device busy with what the store wrote, so that bulk writers seldom
-    /// wait and the syncs under the lock find little to do.
     fn for_file(f: &File) -> Arc<Writeback> {
         let wb = Arc::new(Writeback {
             file: f.try_clone().ok(),
@@ -329,7 +238,6 @@ impl Writeback {
             let Some(wb) = weak.upgrade() else { return };
             let mut g = wb.st.lock().unwrap_or_else(|e| e.into_inner());
             if g.pending == 0 {
-                // (wakes now and then to notice the store went away)
                 let _ = wb.cv.wait_timeout(g, Duration::from_millis(500)).unwrap_or_else(|e| e.into_inner());
                 continue;
             }
@@ -344,12 +252,6 @@ impl Writeback {
         }
     }
 
-    /// Counts what the store handed to the OS since the last call (every write of the VFS shims:
-    /// file data, the journal, the pages a secure delete overwrites) as pending writeback. Called
-    /// after every operation under the store lock, so that a durability point writes it back
-    /// before its COMMIT, outside the lock — deleting a big file wrote GBs that were then synced
-    /// under the lock (cancel-hang). (Writes of other volumes of the process may be counted too:
-    /// one more writeback of this file, which finds little to do.)
     fn account(&self) {
         if self.file.is_none() {
             return;
@@ -365,7 +267,6 @@ impl Writeback {
         }
     }
 
-    /// Waits (without the store lock) while more than `limit` bytes are not written back yet.
     fn wait_below(&self, limit: u64) {
         let mut g = self.st.lock().unwrap_or_else(|e| e.into_inner());
         while g.pending + g.inflight > limit {
@@ -378,12 +279,10 @@ impl Writeback {
         g.pending + g.inflight
     }
 
-    /// The durability point's: what the store handed to the OS so far is written back.
     fn wait(&self) {
         self.wait_below(0);
     }
 
-    /// After a COMMIT: its sync wrote everything back.
     fn clear(&self) {
         let mut g = self.st.lock().unwrap_or_else(|e| e.into_inner());
         g.pending = 0;
@@ -393,14 +292,10 @@ impl Writeback {
     }
 }
 
-/// Starts writeback of the file's dirty pages and waits for it (Linux: sync_file_range, which
-/// neither flushes the device cache nor touches metadata; elsewhere fdatasync — Android too:
-/// the libc crate has no sync_file_range for Bionic).
 fn write_back(f: &File) {
     #[cfg(target_os = "linux")]
     {
         use std::os::fd::AsRawFd;
-        // SAFETY: a valid fd for the life of `f`; offset 0 / length 0 = the whole file.
         let rc = unsafe {
             libc::sync_file_range(
                 f.as_raw_fd(),
@@ -416,13 +311,10 @@ fn write_back(f: &File) {
     let _ = f.sync_data();
 }
 
-/// Uncommitted state of one file.
 struct FileBuf {
     size: u64,
     mtime: i64,
-    /// Full images of dirty chunks (each at most `min(chunk, size - idx*chunk)` long).
     chunks: BTreeMap<u64, Vec<u8>>,
-    /// Stored chunks with idx >= this are logically gone (pending truncate).
     trunc_from: Option<u64>,
 }
 
@@ -436,7 +328,6 @@ fn dberr(e: rusqlite::Error) -> Error {
         rusqlite::Error::QueryReturnedNoRows => Error::NotFound,
         rusqlite::Error::SqliteFailure(f, _) => match f.code {
             ConstraintViolation => Error::Exists,
-            // NOMEM: what SQLCipher's pager answers for good once a page failed its HMAC.
             DatabaseCorrupt | NotADatabase | OutOfMemory => Error::Corrupt(e.to_string()),
             _ => Error::Io(e.to_string()),
         },
@@ -478,10 +369,6 @@ pub(crate) fn read_at(f: &File, off: u64, buf: &mut [u8]) -> std::io::Result<usi
     Ok(done)
 }
 
-// Deviation from the usual layout: `chunks` is a rowid table, not WITHOUT ROWID. In a WITHOUT ROWID
-// table the 256 KiB blob lives inside the primary-key b-tree, and SQLite loads the whole
-// overflowing record for every key comparison during a lookup — ~10x more page
-// decrypt+HMAC work. With a rowid table the (node, idx) index holds only the keys.
 const SCHEMA: &str = "
 CREATE TABLE nodes (
   id     INTEGER PRIMARY KEY,
@@ -498,11 +385,6 @@ CREATE TABLE chunks (node INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCAD
 CREATE TABLE meta (k TEXT PRIMARY KEY, v BLOB);
 ";
 
-/// SQLCipher settings of every volume database, exactly what the first volumes were written
-/// with (SQLCipher 4.x bundled by libsqlite3-sys 0.38.2: 4.x defaults except page size and HMAC). The
-/// key is raw (`x'..'`), so `kdf_iter` is unused for the key itself; the HMAC key is still
-/// derived with `cipher_kdf_algorithm`, which is why that one is pinned too. The page size here
-/// is the v1 one ([`Layout::LEGACY`]); a v2 volume's stored page size is applied right after.
 pub(crate) const CIPHER_PRAGMAS: &str = "
 PRAGMA cipher_compatibility = 4;
 PRAGMA cipher_page_size = 16384;
@@ -512,10 +394,6 @@ PRAGMA kdf_iter = 256000;
 PRAGMA cipher_plaintext_header_size = 0;
 ";
 
-/// `fixed`: a preallocated volume (header `fixed` section): opened through the shim's fixed
-/// mode, which keeps the database inside the file's capacity (vfs.rs).
-/// `single`: a single-file volume (header `journal` section, fixed-size or not): opened through
-/// the `nvsingle` shim, which keeps the rollback journal inside the file (single.rs).
 fn open_db(
     path: &Path,
     master: &Key32,
@@ -539,37 +417,20 @@ fn open_db(
     let k = master.derive(b"nv sqlcipher");
     let sql = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", pq::hex(k.bytes())));
     conn.execute_batch(&sql).map_err(open_err)?;
-    // Every cipher parameter is pinned (SQLCipher applies them after the key, before the first
-    // page is read): a SQLCipher upgrade that changes its defaults must not change how existing
-    // volumes are read. `cipher_compatibility = 4` resets to the SQLCipher 4 defaults first,
-    // then each one this format depends on is set explicitly.
     conn.execute_batch(CIPHER_PRAGMAS).map_err(open_err)?;
     if layout.page_size != Layout::LEGACY.page_size {
         conn.execute_batch(&format!("PRAGMA cipher_page_size = {};", layout.page_size)).map_err(open_err)?;
     }
-    // locking_mode=EXCLUSIVE: one process per volume, no -shm file, and (on Windows) our
-    // handle holds an exclusive byte-range lock so writes near SQLite's lock bytes,
-    // which sit 128 KiB earlier in db coordinates, are never blocked.
     conn.execute_batch("PRAGMA locking_mode = EXCLUSIVE; PRAGMA foreign_keys = ON; PRAGMA cache_size = -16384;").map_err(open_err)?;
-    // Take the exclusive lock now and keep it: with a rollback journal a session that only
-    // read would otherwise hold just a shared lock, and a second open of the volume would get in.
     conn.execute_batch("BEGIN EXCLUSIVE; COMMIT;").map_err(open_err)?;
     if create {
         start_journal(&conn, journal, single)?;
         conn.execute_batch(SCHEMA).map_err(open_err)?;
     }
-    // The password-manager migration runs in the callers, only once the database is known to
-    // belong to this header (volume_id check), so nothing is written to a foreign database.
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0)).map_err(open_err)?;
     Ok(conn)
 }
 
-/// Puts the database in this build's journal mode. Called once the database is known to be
-/// the header's (it may write: a volume last closed or crashed in WAL mode by an older build is
-/// recovered from its WAL and switched; the journal mode is not part of the format, any build
-/// opens either).
-/// A single-file volume's journal is cut back to its in-file area after every commit (the
-/// tail past the database is given back); a side-file journal is kept up to 8 MiB.
 fn start_journal(conn: &Connection, journal: Journal, single: Option<single::Map>) -> std::result::Result<(), OpenError> {
     let (want, sync) = match (journal, single) {
         (Journal::Wal, Some(_)) => return Err(OpenError::Io("a single-file volume has no WAL".into())),
@@ -593,9 +454,6 @@ fn open_err(e: rusqlite::Error) -> OpenError {
     }
 }
 
-/// Reads both header copies; returns the newest valid one, the per-copy seqs, and whether
-/// the copies disagree (one torn/corrupt, or a crash between the two copy writes left the
-/// older copy with stale slots — e.g. a password that was since changed).
 fn read_headers(f: &File) -> std::result::Result<(Header, [u64; 2], bool), OpenError> {
     let mut buf = vec![0u8; 2 * COPY_LEN];
     let n = read_at(f, 0, &mut buf).map_err(|e| OpenError::Io(e.to_string()))?;
@@ -612,8 +470,6 @@ fn read_headers(f: &File) -> std::result::Result<(Header, [u64; 2], bool), OpenE
     let seq = |r: &std::result::Result<Header, header::CopyError>| r.as_ref().map(|h| h.body.seq).unwrap_or(0);
     let seqs = [seq(&a), seq(&b)];
     match (a, b) {
-        // A copy from a newer build wins over everything: falling back to the other (older)
-        // copy and "repairing" would overwrite the newer data.
         (Err(Unsupported(m)), _) | (_, Err(Unsupported(m))) => Err(OpenError::UnsupportedVersion(m)),
         (Ok(a), Ok(b)) => {
             let same =
@@ -627,10 +483,6 @@ fn read_headers(f: &File) -> std::result::Result<(Header, [u64; 2], bool), OpenE
     }
 }
 
-/// `meta` key: the lowest header seq the database accepts. A header older than it is a rollback
-/// attack: an old copy written back would revive the passwords and slots it had. Copies
-/// are written in pairs (seq s-1, then s, same content), so the floor is the newest seq - 1:
-/// either copy of the latest pair opens, any earlier header does not.
 const HEADER_SEQ: &str = "nv.header_seq";
 
 fn db_header_seq(conn: &Connection) -> rusqlite::Result<Option<u64>> {
@@ -649,7 +501,6 @@ fn side_path(path: &Path, suffix: &str) -> PathBuf {
     p.into()
 }
 
-/// Where [`Vault::rotate_master`] builds the re-keyed volume.
 fn rekey_path(path: &Path) -> PathBuf {
     side_path(path, "-rekey")
 }
@@ -663,14 +514,12 @@ fn sync_dir(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Copy `which` (0, 1) if it decodes (checksum and format), else None.
 fn read_copy(f: &File, which: usize) -> Option<Header> {
     let mut buf = vec![0u8; COPY_LEN];
     (read_at(f, (which * COPY_LEN) as u64, &mut buf).ok()? == COPY_LEN).then_some(())?;
     header::decode_copy(&buf).ok()
 }
 
-/// Writes the header (`base` + `appearance`) to both copies: the older copy first, fsync, then the other.
 #[allow(clippy::too_many_arguments)]
 fn write_headers(
     f: &File,
@@ -711,9 +560,6 @@ fn write_headers(
     Ok(last.unwrap())
 }
 
-/// Lays out a new (or rebuilt) volume's store area once its header copies are written: a fixed
-/// size is allocated, then its footer (side-file journal) or the journal region (single-file)
-/// is written, synced.
 fn init_store(f: &File, fixed: Option<Fixed>, single: Option<JournalRegion>) -> std::io::Result<()> {
     match (fixed, single) {
         (Some(fx), None) => vfs::init_fixed(f, fx.capacity),
@@ -727,24 +573,14 @@ fn init_store(f: &File, fixed: Option<Fixed>, single: Option<JournalRegion>) -> 
 }
 
 impl Vault {
-    /// Creates a new volume with one password slot and [`DEFAULT_LAYOUT`], single-file (format v2,
-    /// see [`NEW_VOLUMES_SINGLE_FILE`]). Fails if `path` exists.
     pub fn create(path: &Path, password: &SecretString, kdf: KdfPreset) -> Result<Vault> {
         Self::create_full(path, password, kdf, Some(DEFAULT_LAYOUT), None, JOURNAL, NEW_VOLUMES_SINGLE_FILE.then_some(single::DEFAULT_REGION))
     }
 
-    /// Creates a **fixed-size** volume: the file is preallocated to `capacity` bytes (rounded
-    /// down to 4 KiB) and never grows or shrinks; writes past it fail with "disk full". Its
-    /// header is format v2 with a `fixed` section, so builds before this one refuse it
-    /// (`unsupported_version`) instead of growing it.
-    /// Single-file like [`Self::create`] ([`NEW_VOLUMES_SINGLE_FILE`]): the journal region is
-    /// inside the capacity ([`single::region_for`]).
     pub fn create_fixed(path: &Path, password: &SecretString, kdf: KdfPreset, capacity: u64) -> Result<Vault> {
         Self::create_fixed_as(path, password, kdf, capacity, NEW_VOLUMES_SINGLE_FILE)
     }
 
-    /// [`Self::create_fixed`] with the side-file journal (`single = false`): what builds before
-    /// fixed-size single-file volumes made. For compat fixtures, benches and tests only.
     #[doc(hidden)]
     pub fn create_fixed_as(path: &Path, password: &SecretString, kdf: KdfPreset, capacity: u64, single: bool) -> Result<Vault> {
         let fixed = Fixed { capacity: capacity - capacity % 4096 };
@@ -754,9 +590,6 @@ impl Vault {
         Self::create_full(path, password, kdf, Some(DEFAULT_LAYOUT), Some(fixed), JOURNAL, single.then(|| single::region_for(fixed.capacity)))
     }
 
-    /// `layout: None` = a format v1 volume ([`Layout::LEGACY`], no layout section), exactly
-    /// what builds before stored layouts made; tests use it with `Journal::Wal`. A fixed
-    /// volume always has a layout section (the `fixed` section trails it).
     #[cfg(test)]
     fn create_with(
         path: &Path,
@@ -769,8 +602,6 @@ impl Vault {
         Self::create_full(path, password, kdf, layout, fixed, journal, None)
     }
 
-    /// [`Self::create_with`], plus `single`: a single-file volume with this journal region
-    /// (format v2 with a `journal` section).
     #[allow(clippy::too_many_arguments)]
     fn create_full(
         path: &Path,
@@ -783,7 +614,7 @@ impl Vault {
     ) -> Result<Vault> {
         let single = single.map(|r| if fixed.is_some() { JournalRegion::fresh_fixed(r) } else { JournalRegion::fresh(r) });
         let layout = match (fixed, single) {
-            (None, None) => layout.filter(|l| *l != Layout::LEGACY), // same store as v1: stay readable by older builds
+            (None, None) => layout.filter(|l| *l != Layout::LEGACY),
             _ => Some(layout.unwrap_or(Layout::LEGACY)),
         };
         let hfile = std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(path).map_err(|e| {
@@ -860,13 +691,10 @@ impl Vault {
                     if let Some(m) = header::unwrap(&kek, nonce, wrapped, id, i, 0) {
                         return Ok((m, i));
                     }
-                    // Always tried (same cost for every attempt); the loop goes on either way,
-                    // so a duress attempt runs every slot's Argon2id like a wrong password.
                     duress |= header::unwrap(&kek, nonce, wrapped, id, i, duress::KIND).is_some();
                 }
             }
             if duress {
-                // Best effort: whatever happens, the answer is the wrong-password one.
                 let _ = duress::destroy(f, h, copy_seq, 2);
             }
             Err(OpenError::WrongPassword)
@@ -903,14 +731,11 @@ impl Vault {
         };
         let mut tried = unlock(&header, &hfile, copy_seq);
         if tried.is_ok() && !authentic(&tried, &header) {
-            // The checksum is unkeyed: anyone can write a "newest" copy. When the password opens it
-            // but it does not authenticate, the other copy still may. Never after a
-            // failed unlock: the other copy may be a stale, authentic one with an old password.
             let picked = if copy_seq[1] > copy_seq[0] { 1 } else { 0 };
             if let Some(other) = read_copy(&hfile, 1 - picked) {
                 let r = unlock(&other, &hfile, copy_seq);
                 if authentic(&r, &other) {
-                    copy_seq[picked] = 0; // the forged copy is rewritten first by the repair below
+                    copy_seq[picked] = 0;
                     header = other;
                     tried = r;
                 }
@@ -923,9 +748,6 @@ impl Vault {
         let layout = header.layout.unwrap_or(Layout::LEGACY);
         let journal = JOURNAL;
         if let Some(f) = header.fixed {
-            // The footer the shim keeps must have a record of this capacity (a single-file one's
-            // records are checked by its shim), and the file must be at least that long (longer:
-            // a resize was interrupted, see resize.rs; settled below).
             let len = hfile.metadata().map_err(|e| OpenError::Io(e.to_string()))?.len();
             if len < f.capacity || (header.journal.is_none() && vfs::read_footer_for(&hfile, f.capacity).is_none()) {
                 return Err(OpenError::Corrupt("fixed-size volume: the file does not have its size or footer".into()));
@@ -943,19 +765,14 @@ impl Vault {
         if vid.as_deref() != Some(&header.body.volume_id[..]) {
             return Err(OpenError::Corrupt("database does not belong to this header".into()));
         }
-        // Headers are written before the database records their seq, so a crash in between leaves
-        // the header newer, never older. Volumes from before this check have no record yet.
         let seen = db_header_seq(&conn).map_err(open_err)?;
         if seen.is_some_and(|s| header.body.seq < s) {
             return Err(OpenError::RolledBack);
         }
         start_journal(&conn, journal, map)?;
         if let Some(f) = header.fixed {
-            // Under the exclusive lock now: an interrupted grow is undone / shrink finished.
             resize::settle(&hfile, f.capacity).map_err(|e| OpenError::Io(e.to_string()))?;
         }
-        // A key rotation that crashed before its rename: this (old) volume is intact. Removed only
-        // now that the exclusive lock is held, so never under a rotation in progress.
         for t in [rekey_path(path), side_path(&rekey_path(path), "-journal"), resize::side(path), side_path(&resize::side(path), "-journal")] {
             let _ = std::fs::remove_file(t);
         }
@@ -963,10 +780,6 @@ impl Vault {
         passwords::repair_once(&conn);
         props::migrate(&conn).map_err(open_err)?;
         search::migrate(&conn).map_err(open_err)?;
-        // The appearance has its own MAC: a forged one is dropped (and the header repaired
-        // without it) instead of refusing the volume. The app rewrites it from the volume.
-        // An authentic but older one (or one stripped) under this header is caught by the
-        // database's record of what this header carried.
         let replayed = fresh::appearance_replayed(&conn, &header).map_err(open_err)?;
         let appearance_tampered = replayed || header.appearance.as_ref().is_some_and(|a| !header::appearance_ok(&master, &header.body.volume_id, a));
         if appearance_tampered {
@@ -974,7 +787,6 @@ impl Vault {
             needs_repair = true;
         }
         if needs_repair {
-            // Rewrite both copies from the newest one, now that we know it is authentic.
             let a = header.appearance.as_ref().map(|a| &a.appearance);
             header = write_headers(&hfile, &master, &header.body, a, header.layout, header.fixed, header.journal, &mut copy_seq)
                 .map_err(|e| OpenError::Io(e.to_string()))?;
@@ -1015,7 +827,6 @@ impl Vault {
             committing: Default::default(),
         });
         let weak = Arc::downgrade(&shared);
-        // Background durability: a durability point once the oldest change is DURABLE_INTERVAL old.
         let flusher = std::thread::Builder::new()
             .name("nv-commit".into())
             .spawn(move || {
@@ -1028,7 +839,7 @@ impl Vault {
                             return;
                         }
                     }
-                    let _ = s.durable_point(true); // retried on the next tick / op on failure
+                    let _ = s.durable_point(true);
                 }
             })
             .expect("spawn commit thread");
@@ -1039,7 +850,6 @@ impl Vault {
         &self.path
     }
 
-    /// The volume's random id (header, plaintext): what its document number is made from.
     pub fn volume_id(&self) -> Option<[u8; 16]> {
         let g = self.lock().ok()?;
         g.as_ref().map(|i| i.header.body.volume_id)
@@ -1058,15 +868,6 @@ impl Vault {
         r
     }
 
-    /// Removes a file nobody asked to keep (a cancelled or failed import) without holding up the
-    /// volume (cancel-hang): it is cut from its end, [`DISCARD_STEP`] at a time, each step a
-    /// durability point (whose slow part runs outside the store lock), then removed. One DELETE of
-    /// a 2 GB file held the store lock for minutes: SQLCipher's `secure_delete` journals and
-    /// overwrites every freed page. Here the freed pages are left as they are
-    /// (`secure_delete = FAST`, for these statements only): what they hold is ciphertext of a
-    /// file that is still on the host, as the pages a crash in the middle of the import leaves
-    /// behind; they are reused by the next writes. Already gone: Ok. A crash in the middle leaves
-    /// a shorter file (each step is committed).
     pub fn discard(&self, id: NodeId) -> Result<()> {
         loop {
             let size = match self.getattr(id) {
@@ -1080,7 +881,6 @@ impl Vault {
                 let was: i64 = i.conn.query_row("PRAGMA secure_delete", [], |r| r.get(0)).map_err(dberr)?;
                 i.conn.query_row("PRAGMA secure_delete = FAST", [], |_| Ok(())).map_err(dberr)?;
                 let r = if last { i.remove(id) } else { i.set_size(id, (size - 1) / DISCARD_STEP * DISCARD_STEP) }.and_then(|_| i.spill());
-                // (restored on every way out)
                 let back = i.conn.query_row(&format!("PRAGMA secure_delete = {was}"), [], |_| Ok(())).map_err(dberr);
                 r.and(back)
             })?;
@@ -1091,7 +891,6 @@ impl Vault {
         }
     }
 
-    /// Durability point, then close the database (no side file is left behind) and wipe keys.
     pub fn close(self) -> Result<()> {
         self.shutdown()
     }
@@ -1106,16 +905,14 @@ impl Vault {
         let r1 = inner.durable();
         let r2 = match inner.journal {
             Journal::Wal => inner.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").map_err(dberr),
-            // Leaving PERSIST deletes the journal file (nothing to roll back once durable).
             Journal::Persist if r1.is_ok() => inner.conn.query_row("PRAGMA journal_mode = DELETE", [], |_| Ok(())).map_err(dberr),
             Journal::Persist => Ok(()),
         };
         let Inner { conn, master, hfile, .. } = inner;
         let r3 = conn.close().map_err(|(_, e)| dberr(e));
-        drop(master); // zeroized
+        drop(master);
         drop(hfile);
         if r1.is_ok() && r2.is_ok() && r3.is_ok() {
-            // SQLite removes the WAL after a clean last close; tidy anything empty left behind.
             for suffix in ["-wal", "-shm", "-journal"] {
                 let mut p = self.path.as_os_str().to_owned();
                 p.push(suffix);
@@ -1126,8 +923,6 @@ impl Vault {
         }
         r1.and(r2).and(r3)
     }
-
-    // ---------------- keyslots ----------------
 
     pub fn slots(&self) -> Vec<SlotInfo> {
         let Ok(g) = self.lock() else { return vec![] };
@@ -1152,13 +947,10 @@ impl Vault {
             .collect()
     }
 
-    /// The slot that unlocked this session (`None` if it has since been removed, or locked).
     pub fn unlocked_slot(&self) -> Option<usize> {
         self.lock().ok()?.as_ref()?.unlocked
     }
 
-    /// Whether `pw` opens password slot `slot`. Runs the slot's Argon2id, then the AEAD unwrap
-    /// (whose tag check is constant-time); false for a missing or non-password slot.
     pub fn verify_password(&self, slot: usize, pw: &SecretString) -> bool {
         let Ok(Some((argon2, salt, nonce, wrapped, vid))) = self.with(|i| {
             Ok(match i.header.body.slots.get(slot) {
@@ -1170,13 +962,11 @@ impl Vault {
         }) else {
             return false;
         };
-        // Slow KDF without the store lock held.
         header::argon2_kek(pw.expose_secret().as_bytes(), argon2, &salt)
             .and_then(|kek| header::unwrap(&kek, &nonce, &wrapped, &vid, slot, 0))
             .is_some()
     }
 
-    /// (free index, volume_id, master copy) — read under the store lock.
     fn slot_ctx(&self, want: Option<usize>) -> std::result::Result<(usize, [u8; 16], Key32), SlotError> {
         self.with(|i| {
             let slots = &i.header.body.slots;
@@ -1189,7 +979,6 @@ impl Vault {
         .ok_or(SlotError::Full)
     }
 
-    /// Writes `slot` at `idx` (None = remove). `label`: `Some(x)` sets (None inside = clear), `None` keeps.
     fn put_slot(&self, idx: usize, slot: Option<Slot>, label: Option<Option<&str>>) -> std::result::Result<(), SlotError> {
         self.with(|i| {
             let mut body = i.header.body.clone();
@@ -1225,12 +1014,10 @@ impl Vault {
         Slot::Password { argon2, salt, nonce, wrapped }
     }
 
-    /// The slot at `idx` (cloned), or `NotFound`.
     fn slot_at(&self, idx: usize) -> std::result::Result<Slot, SlotError> {
         self.with(|i| Ok(i.header.body.slots.get(idx).cloned().flatten()))?.map(|e| e.slot).ok_or(SlotError::NotFound)
     }
 
-    /// Adds a password slot (optionally labelled) in the first free position; returns its index.
     pub fn add_password(&self, pw: &SecretString, kdf: KdfPreset, label: Option<&str>) -> std::result::Result<usize, SlotError> {
         let label = norm_label(label)?;
         let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -1238,13 +1025,11 @@ impl Vault {
             return Err(SlotError::DuressConflict);
         }
         let (idx, vid, master) = self.slot_ctx(None)?;
-        let slot = Self::password_slot(pw, kdf, &master, &vid, idx); // slow KDF, store unlocked
+        let slot = Self::password_slot(pw, kdf, &master, &vid, idx);
         self.put_slot(idx, Some(slot), Some(label))?;
         Ok(idx)
     }
 
-    /// Whether `pw` opens one of the password-shaped slots `pick(is_duress)` selects (a duress
-    /// slot "opens" when its duress wrap authenticates). Runs those slots' Argon2id.
     fn pw_matches(&self, pw: &SecretString, pick: impl Fn(bool) -> bool) -> Result<bool> {
         type Cand = (usize, KdfParams, [u8; 32], [u8; 24], Vec<u8>, bool);
         let (vid, cands): ([u8; 16], Vec<Cand>) = self.with(|i| {
@@ -1271,11 +1056,6 @@ impl Vault {
         })
     }
 
-    /// Adds a duress ("autodistruzione") slot: entering `pw` at unlock destroys every key of the
-    /// volume, then fails like a wrong password. Its Argon2id
-    /// parameters are copied from the first password slot so it looks like one; `kdf` is used
-    /// only when the volume has no password slot. Refused (`DuressConflict`) when `pw` opens
-    /// another slot. Returns its index.
     pub fn add_duress(&self, pw: &SecretString, kdf: KdfPreset, label: Option<&str>) -> std::result::Result<usize, SlotError> {
         let label = norm_label(label)?;
         let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -1302,8 +1082,6 @@ impl Vault {
         Ok(idx)
     }
 
-    /// Re-keys password slot `slot` with `new`. `label`: `Some` replaces it (empty clears),
-    /// `None` keeps the current one. Does not check the old password: see [`Self::verify_password`].
     pub fn change_password(
         &self,
         slot: usize,
@@ -1324,7 +1102,6 @@ impl Vault {
         self.put_slot(idx, Some(s), label)
     }
 
-    /// Adds a recipient (public-key) slot; returns its index.
     pub fn add_recipient(&self, r: &Recipient, label: Option<&str>) -> std::result::Result<usize, SlotError> {
         let label = norm_label(label)?;
         let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -1336,7 +1113,6 @@ impl Vault {
         Ok(idx)
     }
 
-    /// Sets (or with `None` / empty, clears) the label of any slot.
     pub fn set_slot_label(&self, slot: usize, label: Option<&str>) -> std::result::Result<(), SlotError> {
         let label = norm_label(label)?;
         let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -1344,8 +1120,6 @@ impl Vault {
         self.put_slot(slot, Some(s), Some(label))
     }
 
-    /// Removes a keyslot. Refuses to remove the last one that opens the volume (a duress slot
-    /// never counts: it cannot be the only one left).
     pub fn remove_slot(&self, slot: usize) -> std::result::Result<(), SlotError> {
         let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
         self.slot_at(slot)?;
@@ -1361,16 +1135,6 @@ impl Vault {
         self.put_slot(slot, None, None)
     }
 
-    /// Re-encrypts the whole volume under a NEW master key: afterwards no old copy
-    /// of the header, whatever password it holds, opens what is written from now on. Keeps only
-    /// password slot `slot` (re-wrapped with `pw`, which must open it; label kept) and returns the
-    /// indices of every other slot, which are dropped: their keys cannot be re-wrapped without
-    /// their passwords (recipients: without their public keys). Duress slots go too.
-    ///
-    /// Crash-safe by construction: the new volume is written next to this one
-    /// (`<vol>-rekey`, needs as much free space as the volume) and renamed over it only once
-    /// complete and synced. A crash before the rename leaves the old volume as it was (the
-    /// leftover is removed at the next open), after it the new one.
     pub fn rotate_master(&self, slot: usize, pw: &SecretString) -> std::result::Result<Vec<usize>, SlotError> {
         let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
         if !matches!(self.slot_at(slot)?, Slot::Password { .. }) || self.is_duress_slot(slot)? {
@@ -1399,15 +1163,11 @@ impl Vault {
             let body = HeaderBody { slots, seq: 0, ..i.header.body.clone() };
             let f = std::fs::OpenOptions::new().read(true).write(true).create_new(true).open(&tmp).map_err(ioerr)?;
             let appearance = i.header.appearance.as_ref().map(|a| a.appearance.clone());
-            // A single-file volume's copy is single-file too (made in one piece: no moved bytes);
-            // a fixed-size one's is as large as the volume (and attached through the same mode).
             let fixed = i.header.fixed;
             let single = i.header.journal.map(|j| if fixed.is_some() { JournalRegion::fresh_fixed(j.region) } else { JournalRegion::fresh(j.region) });
             let h = write_headers(&f, &m2, &body, appearance.as_ref(), i.header.layout, fixed, single, &mut [0, 0])?;
             init_store(&f, fixed, single).map_err(ioerr)?;
             drop(f);
-            // The export goes through the same offset VFS (an attached database uses the
-            // connection's VFS) and gets exactly the cipher settings `open_db` pins.
             let name = tmp.to_str().ok_or(Error::InvalidName)?.replace('\'', "''");
             let key = m2.derive(b"nv sqlcipher");
             let page = i.header.layout.unwrap_or(Layout::LEGACY).page_size;
@@ -1445,7 +1205,6 @@ impl Vault {
                 return Err(e.into());
             }
         };
-        // Swap: close this one (no journal left behind), rename the new one over it, reopen.
         let old = g.take().unwrap();
         let m1 = old.master.clone();
         let _ = old.conn.query_row("PRAGMA journal_mode = DELETE", [], |_| Ok(()));
@@ -1466,27 +1225,14 @@ impl Vault {
         r
     }
 
-    // ---------------- format ----------------
-
-    /// The volume is single-file (format v2: its rollback journal lives inside the `.nvault`).
     pub fn is_single_file(&self) -> bool {
         self.with(|i| Ok(i.header.journal.is_some())).unwrap_or(false)
     }
 
-    /// [`Self::upgrade_format`] can make this volume single-file (it is not yet; growable or
-    /// fixed-size alike — a fixed-size one needs room for the region inside it, see
-    /// [`single::region_to_upgrade`]; a nearly full one must be extended first).
     pub fn can_upgrade_format(&self) -> bool {
         self.with(|i| Ok(i.header.journal.is_none() && i.upgrade_region(single::DEFAULT_REGION)?.is_some())).unwrap_or(false)
     }
 
-    /// "Aggiorna formato": makes this volume single-file, in place,
-    /// in about the time it takes to copy 4 MiB. Crash-safe at every step: the database's first
-    /// region-sized bytes are copied past its end and synced (old format untouched), then the
-    /// header is rewritten as v2 with a `journal` section (the switch: two-copy seq protocol), then
-    /// the region where those bytes were becomes the journal's records and area. Afterwards builds
-    /// before this one refuse the volume (`unsupported_version`); it is never converted back.
-    /// Returns `false` if the volume already was single-file. The session goes on (reopened).
     pub fn upgrade_format(&self) -> Result<bool> {
         self.upgrade_format_with(single::DEFAULT_REGION)
     }
@@ -1502,14 +1248,12 @@ impl Vault {
         let fixed = i.header.fixed;
         let region = i.upgrade_region(region)?.ok_or_else(|| Error::Io(UPGRADE_NO_ROOM.into()))?;
         let Inner { conn, master, header, mut copy_seq, hfile, unlocked, .. } = g.take().unwrap();
-        // Leaving PERSIST deletes the side journal (nothing to roll back once durable).
         let r = conn
             .query_row("PRAGMA journal_mode = DELETE", [], |_| Ok(()))
             .map_err(dberr)
             .and(conn.close().map_err(|(_, e)| dberr(e)))
             .and_then(|_| {
                 let layout = header.layout.unwrap_or(Layout::LEGACY);
-                // a fixed-size volume's database size is in its footer (the file is the capacity)
                 let fx = match fixed {
                     Some(f) => Some((
                         f.capacity,
@@ -1524,7 +1268,6 @@ impl Vault {
                 single::init_region(&hfile, map.region, db, true, fixed.map_or(0, |f| f.capacity)).map_err(ioerr)
             });
         drop(hfile);
-        // Reopen in whichever format the file is now (the old one if this failed before the switch).
         let v = Self::open_with(&self.path, |_, _, _| Ok((master.clone(), unlocked.unwrap_or(0))))
             .map_err(|e| Error::Io(format!("reopen after format upgrade: {e}")))?;
         *g = v.shared.inner.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -1535,21 +1278,14 @@ impl Vault {
         r.map(|_| true)
     }
 
-    // ---------------- appearance ----------------
-
-    /// `Some(bytes)` for a fixed-size (preallocated) volume: the file's constant size.
     pub fn capacity(&self) -> Option<u64> {
         self.with(|i| Ok(i.header.fixed.map(|f| f.capacity))).ok().flatten()
     }
 
-    /// The header's plaintext appearance section (`None` = absent: neutral locked screens).
     pub fn appearance(&self) -> Option<Appearance> {
         self.with(|i| Ok(i.header.appearance.as_ref().map(|a| a.appearance.clone()))).ok().flatten()
     }
 
-    /// Writes (or with `None` clears) the header's plaintext appearance section, both copies
-    /// (two-copy seq protocol). Refuses anything over the caps in [`Appearance::validate`].
-    /// A no-op when nothing changes.
     pub fn set_appearance(&self, appearance: Option<&Appearance>) -> std::result::Result<(), AppearanceError> {
         if let Some(a) = appearance {
             a.validate()?;
@@ -1567,23 +1303,14 @@ impl Vault {
         .map_err(AppearanceError::Fs)
     }
 
-    /// How many durability points this volume has recorded (`meta nv.commit_seq`).
-    /// Only grows while this build writes; an older copy of the file has a smaller number. Kept
-    /// OUTSIDE the file (the app's per-volume anchor) it shows that a volume was replaced by an
-    /// older copy of itself — a rollback the file alone can never reveal.
     pub fn commit_seq(&self) -> Result<u64> {
         self.with(|i| fresh::commit_seq(&i.conn).map_err(dberr))
     }
 
-    /// The appearance section found at unlock did not authenticate (someone edited it while
-    /// locked). It has been dropped; the app should warn and rewrite it from the volume.
     pub fn appearance_tampered(&self) -> bool {
         self.with(|i| Ok(i.appearance_tampered)).unwrap_or(false)
     }
 
-    // ---------------- extras for the app ----------------
-
-    /// Deletes a file or a whole directory tree.
     pub fn remove_recursive(&self, id: NodeId) -> Result<()> {
         if id == ROOT {
             return Err(Error::InvalidName);
@@ -1602,7 +1329,6 @@ impl Vault {
             };
             i.op(|c| {
                 let mut del = c.prepare_cached("DELETE FROM nodes WHERE id = ?").map_err(dberr)?;
-                // Children first so the parent foreign key never dangles.
                 for n in ids.iter().rev() {
                     del.execute([*n as i64]).map_err(dberr)?;
                 }
@@ -1617,7 +1343,6 @@ impl Vault {
         })
     }
 
-    /// Runs SQLite's integrity check over the whole store.
     pub fn check_integrity(&self) -> Result<()> {
         self.with(|i| {
             i.spill()?;
@@ -1626,17 +1351,12 @@ impl Vault {
         })
     }
 
-    // ---------------- app metadata ----------------
-
-    /// Reads an app-defined value from the encrypted `meta` table (`None` = not set).
     pub fn meta_get(&self, key: &str) -> Result<Option<Vec<u8>>> {
         self.with(|i| {
             i.conn.query_row("SELECT v FROM meta WHERE k = ?", [key], |r| r.get(0)).optional().map_err(dberr)
         })
     }
 
-    /// Stores (or with `None` removes) an app-defined value in the encrypted `meta` table.
-    /// Durable on return. Reserved keys (`volume_id`) and values over [`MAX_META`] are refused.
     pub fn meta_set(&self, key: &str, value: Option<&[u8]>) -> Result<()> {
         if key.is_empty() || key == "volume_id" || value.is_some_and(|v| v.len() > MAX_META) {
             return Err(Error::InvalidName);
@@ -1654,27 +1374,16 @@ impl Vault {
     }
 }
 
-// ---------------- peek (no password) ----------------
-
-/// What a locked volume tells without a password: read from the header only.
 #[derive(Clone, Debug, Serialize)]
 pub struct Peek {
-    /// The plaintext appearance section (`None` = absent). Display-only: it cannot be
-    /// authenticated before unlock; `Vault::open` checks its MAC.
     pub appearance: Option<Appearance>,
-    /// Argon2id parameters of each password slot, in slot order.
     pub password_kdf: Vec<KdfParams>,
     pub recipient_slots: usize,
-    /// Every occupied key slot (passwords, recipients, any other kind).
     pub slots: usize,
-    /// The volume's random id (plaintext in the header).
     pub volume_id: [u8; 16],
-    /// Estimated unlock time with the first password slot on this machine, ms.
     pub unlock_ms: Option<u64>,
 }
 
-/// Reads the newest valid header copy of `path` (read-only, no key). Works while the volume
-/// is open elsewhere in this process.
 pub fn peek(path: &Path) -> std::result::Result<Peek, OpenError> {
     let f = File::open(path).map_err(|e| OpenError::Io(e.to_string()))?;
     let (h, _, _) = read_headers(&f)?;
@@ -1699,14 +1408,10 @@ pub fn peek(path: &Path) -> std::result::Result<Peek, OpenError> {
     })
 }
 
-/// [`peek`], appearance only.
 pub fn peek_appearance(path: &Path) -> std::result::Result<Option<Appearance>, OpenError> {
     Ok(peek(path)?.appearance)
 }
 
-/// Rough Argon2id time for `k` on this machine: one 32 MiB, t=1 calibration pass (cached
-/// for the process) scaled by memory x passes. The argon2 crate fills lanes on one thread,
-/// so `p` does not divide the cost. Good to ~2x; used only to pace the unlock animation.
 pub fn estimate_unlock_ms(k: KdfParams) -> u64 {
     static MS_PER_KIB_PASS: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
     let rate = *MS_PER_KIB_PASS.get_or_init(|| {
@@ -1718,16 +1423,13 @@ pub fn estimate_unlock_ms(k: KdfParams) -> u64 {
     (rate * k.m_kib as f64 * k.t.max(1) as f64).round().max(1.0) as u64
 }
 
-/// Largest value [`Vault::meta_set`] accepts.
 pub const MAX_META: usize = 1024 * 1024;
 
 impl Drop for Vault {
     fn drop(&mut self) {
-        let _ = self.shutdown(); // best effort: flush + zeroize
+        let _ = self.shutdown();
     }
 }
-
-// ---------------- store ----------------
 
 fn row_node(r: &rusqlite::Row<'_>) -> rusqlite::Result<Node> {
     Ok(Node {
@@ -1742,7 +1444,6 @@ fn row_node(r: &rusqlite::Row<'_>) -> rusqlite::Result<Node> {
 
 const NODE_COLS: &str = "id, parent, name, kind, size, mtime";
 
-/// Runs `f` inside a savepoint of `conn` (released on success, rolled back on error).
 fn savepoint<T>(conn: &mut Connection, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
     let sp = conn.savepoint().map_err(dberr)?;
     let v = f(&sp)?;
@@ -1757,10 +1458,6 @@ fn load_chunk(conn: &Connection, id: NodeId, idx: u64) -> Result<Vec<u8>> {
     Ok(data)
 }
 
-/// A page that fails its HMAC is zero-filled by SQLCipher and handed back as data; only the
-/// NEXT statement fails (the pager is then in a permanent error state). So after anything that
-/// read pages, one cheap statement: an error here means what was just read cannot be trusted.
-/// (The last overflow page of a chunk otherwise read back as zeros, silently.)
 fn probe(conn: &Connection) -> Result<()> {
     let mut st = conn.prepare_cached("SELECT 1 FROM meta WHERE k = 'volume_id'").map_err(corrupt_page)?;
     st.query_row([], |_| Ok(())).map_err(corrupt_page)
@@ -1804,7 +1501,6 @@ impl Inner {
         st.query_row([id as i64], |r| r.get(0)).map_err(dberr)
     }
 
-    /// The write buffer for file `id`, creating it from the stored node if needed.
     fn buf(&mut self, id: NodeId) -> Result<&mut FileBuf> {
         if !self.bufs.contains_key(&id) {
             let n = self.node(id)?;
@@ -1821,7 +1517,6 @@ impl Inner {
         self.dirty_since.get_or_insert_with(Instant::now);
     }
 
-    /// Opens the group-commit transaction if none is open.
     fn begin(&mut self) -> Result<()> {
         if !self.in_tx {
             self.conn.execute_batch("BEGIN IMMEDIATE").map_err(dberr)?;
@@ -1831,8 +1526,6 @@ impl Inner {
         Ok(())
     }
 
-    /// Runs `f` as one atomic step of the open transaction (a savepoint: a failing step leaves
-    /// no trace). It becomes durable at the next durability point, together with the rest.
     fn op<T>(&mut self, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
         self.begin()?;
         let r = savepoint(&mut self.conn, f);
@@ -1842,9 +1535,6 @@ impl Inner {
         r
     }
 
-    /// After a failed statement: on disk full / I/O errors SQLite may roll the whole
-    /// transaction back by itself — everything since the last durability point is then gone,
-    /// as after a crash.
     fn check_tx(&mut self) {
         if self.in_tx && self.conn.is_autocommit() {
             self.in_tx = false;
@@ -1859,8 +1549,6 @@ impl Inner {
         }
     }
 
-    /// Moves all buffered file data into the open transaction (atomic per call; durable at
-    /// the next durability point).
     fn spill(&mut self) -> Result<()> {
         if self.bufs.is_empty() {
             return Ok(());
@@ -1872,7 +1560,6 @@ impl Inner {
             let mut put = c.prepare_cached("INSERT OR REPLACE INTO chunks(node, idx, data) VALUES (?, ?, ?)").map_err(dberr)?;
             let mut meta = c.prepare_cached("UPDATE nodes SET size = ?, mtime = ? WHERE id = ?").map_err(dberr)?;
             for (id, b) in bufs.iter() {
-                // 0 rows: the node went with a transaction SQLite rolled back (see check_tx).
                 if meta.execute(params![b.size as i64, b.mtime, *id as i64]).map_err(dberr)? == 0 {
                     continue;
                 }
@@ -1885,13 +1572,8 @@ impl Inner {
             }
             Ok(())
         });
-        // the pages to the OS now (not at the COMMIT, under the lock, all at once): the writer
-        // writes them back outside the lock (Writeback)
         let r = r.and_then(|_| {
             self.conn.cache_flush().map_err(|e| {
-                // a failed write-out (disk full, I/O) leaves the pager in its error state, which
-                // only a rollback ends (a failing statement would make SQLite roll back by itself):
-                // the same loss as SQLite aborting the transaction, see check_tx
                 if !self.conn.is_autocommit() {
                     let _ = self.conn.execute_batch("ROLLBACK");
                 }
@@ -1910,19 +1592,16 @@ impl Inner {
         Ok(())
     }
 
-    /// Durability point: everything done so far survives a crash or power loss once this
-    /// returns (one COMMIT; with the WAL also a checkpoint).
     fn durable(&mut self) -> Result<()> {
         self.spill()?;
         if self.in_tx {
-            // one more durability point (what a host-side anchor compares against)
             if let Err(e) = fresh::bump_commit(&self.conn).and_then(|_| self.conn.execute_batch("COMMIT")) {
                 self.check_tx();
                 return Err(dberr(e));
             }
             self.in_tx = false;
             self.tx_bytes = 0;
-            self.wb.clear(); // synced
+            self.wb.clear();
         }
         if self.journal == Journal::Wal {
             self.conn.query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |_| Ok(())).map_err(dberr)?;
@@ -1931,17 +1610,13 @@ impl Inner {
         Ok(())
     }
 
-    /// The journal region [`Vault::upgrade_format`] gives this volume (`want`, or less for a small
-    /// fixed-size one); None: a fixed-size volume without room for one.
     fn upgrade_region(&self, want: u64) -> Result<Option<u64>> {
         let Some(f) = self.header.fixed else { return Ok(Some(want)) };
         let page = self.header.layout.unwrap_or(Layout::LEGACY).page_size;
         let pages: i64 = self.conn.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(dberr)?;
-        // (at most what a new volume of this size gets)
         Ok(single::region_to_upgrade(f.capacity, pages.max(0) as u64 * page as u64, page, want.min(single::region_for(f.capacity))))
     }
 
-    /// Largest database a fixed-size volume holds (None: a growable one).
     fn db_room(&self) -> Option<u64> {
         let f = self.header.fixed?;
         Some(match self.header.journal {
@@ -1950,7 +1625,6 @@ impl Inner {
         })
     }
 
-    /// After a header write: the database learns the new seq (durable on return).
     fn record_header_seq(&mut self) -> Result<()> {
         let seq = self.header.body.seq;
         let h = self.header.clone();
@@ -2008,14 +1682,10 @@ impl Inner {
         Ok(())
     }
 
-    /// After buffering file data: whether a spill is due ([`MAX_BUFFERED`]), which the caller
-    /// makes once the device caught up, see [`WRITEBACK_AT`].
     fn spill_due(&self) -> bool {
         self.buffered >= MAX_BUFFERED
     }
 
-    /// After a spill: whether a durability point is due ([`DURABLE_BYTES`]), which the caller
-    /// makes without the lock held.
     fn commit_due(&self) -> bool {
         self.tx_bytes >= DURABLE_BYTES
     }
@@ -2097,7 +1767,7 @@ impl Fs for Vault {
                 if avail > 0 {
                     out[..avail].copy_from_slice(&data[within..within + avail]);
                 }
-                out[avail..].fill(0); // sparse / short chunk
+                out[avail..].fill(0);
                 done += take;
             }
             Ok(len)
@@ -2141,7 +1811,6 @@ impl Fs for Vault {
             b.mtime = now_ns();
             Ok((i.spill_due(), i.wb.clone()))
         })?;
-        // the slow part of writing, without the lock: the device catches up with this writer
         if due {
             wb.wait_below(WRITEBACK_AT);
             if self.with(|i| if i.spill_due() { i.spill().map(|_| i.commit_due()) } else { Ok(false) })? {
@@ -2179,7 +1848,6 @@ impl Fs for Vault {
             let src = i.node(id)?;
             i.dir(new_parent)?;
             if src.kind == Kind::Dir {
-                // Refuse moving a directory into itself or its own subtree.
                 let mut p = new_parent;
                 loop {
                     if p == id {
@@ -2226,7 +1894,6 @@ impl Fs for Vault {
         self.with(|i| i.remove(id))
     }
 
-    /// Durability point: everything written so far survives a crash once this returns.
     fn flush(&self) -> Result<()> {
         self.shared.durable_point(false)
     }
@@ -2244,11 +1911,8 @@ impl Fs for Vault {
             Ok((used.max(0) as u64, files as u64))
         })?;
         if let Some(cap) = self.capacity() {
-            // A fixed volume: its own capacity, not the drive's. Free = never-used room left in
-            // the file + pages the store freed (reused before the store grows again).
             let (pages, freelist, page) = self.with(|i| {
                 let q = |p: &str| i.conn.query_row(p, [], |r| r.get::<_, i64>(0)).map_err(dberr);
-                // (SQLCipher answers page_size as text: the stored layout is the page size)
                 let page = i.header.layout.unwrap_or(Layout::LEGACY).page_size as i64;
                 Ok((q("PRAGMA page_count")?, q("PRAGMA freelist_count")?, page))
             })?;
@@ -2275,8 +1939,6 @@ mod tests {
         assert::<super::Vault>();
     }
 
-    /// The cipher settings in force are exactly the pinned ones (and the bundled SQLCipher is a
-    /// 4.x); the compat fixtures prove they are what existing volumes were written with.
     #[test]
     fn sqlcipher_settings_are_pinned() {
         let t = tempfile::tempdir().unwrap();
@@ -2299,8 +1961,6 @@ mod tests {
         v.close().unwrap();
     }
 
-    /// The password-manager migration only runs once the database is known to be this
-    /// header's: a database with another volume_id is refused and left byte-identical.
     #[test]
     fn no_migration_on_a_foreign_database() {
         let t = tempfile::tempdir().unwrap();
@@ -2339,7 +1999,6 @@ mod tests {
         out
     }
 
-    /// (header copies' (version, layout), SQLite page size, largest stored chunk).
     fn on_disk(path: &Path, v: &Vault) -> ([(u16, Option<Layout>); 2], i64, i64) {
         let raw = std::fs::read(path).unwrap();
         let h = |i: usize| {
@@ -2349,8 +2008,6 @@ mod tests {
         let (page, chunk) = v
             .with(|i| {
                 i.spill()?;
-                // SQLCipher answers page_size with cipher_page_size (as text); the store only
-                // decrypts (per-page HMAC) with the right one, so this is the real page size.
                 let page: String = i.conn.query_row("PRAGMA page_size", [], |r| r.get(0)).map_err(dberr)?;
                 let page: i64 = page.parse().unwrap();
                 let chunk = i.conn.query_row("SELECT COALESCE(MAX(length(data)), 0) FROM chunks", [], |r| r.get(0)).map_err(dberr)?;
@@ -2360,9 +2017,6 @@ mod tests {
         ([h(0), h(1)], page, chunk)
     }
 
-    /// A volume made with the constants of the builds before stored layouts (format v1,
-    /// 16 KiB pages, 256 KiB chunks, WAL) opens, reads and writes unchanged with this build,
-    /// and is never re-laid-out: its header stays v1 and its store keeps 16 KiB / 256 KiB.
     #[test]
     fn old_default_volume_opens_unchanged() {
         let dir = tempfile::tempdir().unwrap();
@@ -2379,7 +2033,6 @@ mod tests {
 
         let v = Vault::open(&path, &pw()).unwrap();
         assert_eq!(read_file(&v, f.id), a);
-        // Writes with this build (group commit, rollback journal) keep the old layout.
         let b = pat(2, 2_000_000);
         let g = v.create(ROOT, "b.bin", Kind::File).unwrap();
         v.write(g.id, 0, &b).unwrap();
@@ -2400,7 +2053,6 @@ mod tests {
         }
     }
 
-    /// New volumes store their layout (v2 header) and use it.
     #[test]
     fn new_volume_stores_its_layout() {
         let dir = tempfile::tempdir().unwrap();
@@ -2416,30 +2068,26 @@ mod tests {
         assert_eq!(read_file(&v, f.id), a);
         assert_eq!(on_disk(&path, &v).1, 65536);
         v.close().unwrap();
-        // The legacy layout itself is written as v1, so older builds can still open it.
         let p2 = dir.path().join("legacy-values.nvault");
         let v = Vault::create_with(&p2, &pw(), KdfPreset::Fast, Some(Layout::LEGACY), None, Journal::Persist).unwrap();
         assert_eq!(on_disk(&p2, &v).0, [(VERSION, None); 2]);
         v.close().unwrap();
     }
 
-    /// Child of `old_build_crash_leftovers_are_recovered`: leaves committed data only in the WAL.
     #[test]
     fn legacy_wal_child() {
         let Ok(path) = std::env::var("NV_LEGACY_CHILD") else { return };
         let v = Vault::create_with(Path::new(&path), &pw(), KdfPreset::Fast, None, None, Journal::Wal).unwrap();
         let f = v.create(ROOT, "in-wal", Kind::File).unwrap();
-        v.write(f.id, 0, &pat(4, 3_000_000)).unwrap(); // < wal_autocheckpoint (1000 pages)
+        v.write(f.id, 0, &pat(4, 3_000_000)).unwrap();
         v.with(|i| {
             i.spill()?;
-            i.conn.execute_batch("COMMIT").map_err(dberr) // committed, not checkpointed
+            i.conn.execute_batch("COMMIT").map_err(dberr)
         })
         .unwrap();
-        std::process::exit(134); // simulated crash: no core dump, so no DrKonqi/abrt popup on the desktop
+        std::process::exit(134);
     }
 
-    /// An old build that crashed leaves a WAL with committed transactions: this build replays
-    /// it, then switches the volume to its own journal mode.
     #[test]
     fn old_build_crash_leftovers_are_recovered() {
         let dir = tempfile::tempdir().unwrap();
@@ -2464,9 +2112,6 @@ mod tests {
 
     const FIXED_CAP: u64 = 24 << 20;
 
-    /// A fixed-size volume (single-file, and with the side-file journal of earlier builds):
-    /// preallocated to its capacity, never grows or shrinks, refuses writes past it, keeps
-    /// working after reopen, key rotation and deletes.
     #[test]
     fn fixed_volume_keeps_its_size() {
         for single in [true, false] {
@@ -2503,7 +2148,6 @@ mod tests {
 
         let v = Vault::open(&path, &pw()).unwrap();
         assert_eq!(read_file(&v, f.id), a);
-        // More than fits: refused as disk full, the file stays as it was.
         let g = v.create(ROOT, "big.bin", Kind::File).unwrap();
         let big = pat(6, 1 << 20);
         let mut err = None;
@@ -2522,7 +2166,6 @@ mod tests {
         let v = Vault::open(&path, &pw()).unwrap();
         assert_eq!(read_file(&v, f.id), a);
         v.check_integrity().unwrap();
-        // Deleting frees room inside the file (reused), the file keeps its size.
         v.remove(f.id).unwrap();
         v.flush().unwrap();
         assert!(v.stats().unwrap().free_bytes > free_after + (5 << 20));
@@ -2541,10 +2184,6 @@ mod tests {
         assert!(Vault::create_fixed_as(&dir.path().join("tiny.nvault"), &pw(), KdfPreset::Fast, 1 << 20, single).is_err());
     }
 
-    /// A fixed volume whose file was cut (or whose footer / journal records name another size,
-    /// or are gone) is not opened: SQLite must never write past (or trust) a capacity that is not
-    /// there. A longer file is a resize that stopped between its steps (resize.rs): the bytes past
-    /// the capacity are cut at the open.
     #[test]
     fn fixed_volume_refuses_a_changed_file() {
         for single in [true, false] {
@@ -2552,7 +2191,7 @@ mod tests {
             let path = dir.path().join("fixed.nvault");
             let v = Vault::create_fixed_as(&path, &pw(), KdfPreset::Fast, FIXED_CAP, single).unwrap();
             let g = v.create(ROOT, "g", Kind::File).unwrap();
-            v.write(g.id, 0, &pat(3, 3 << 20)).unwrap(); // more than the region displaced
+            v.write(g.id, 0, &pat(3, 3 << 20)).unwrap();
             v.close().unwrap();
             let f = std::fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
             f.set_len(FIXED_CAP - 4096).unwrap();
@@ -2561,7 +2200,6 @@ mod tests {
             Vault::open(&path, &pw()).unwrap().close().unwrap();
             assert_eq!(std::fs::metadata(&path).unwrap().len(), FIXED_CAP);
             if single {
-                // records of another capacity only: refused (a resize writes the new one next to the current)
                 let mut rec = single::read_record(&f).unwrap();
                 rec.cap = FIXED_CAP * 2;
                 for slot in 0..2 {
@@ -2574,8 +2212,6 @@ mod tests {
         }
     }
 
-    /// Child of `fixed_volume_crash_rolls_back`: committed data, then a big uncommitted
-    /// transaction written into the file, then a crash.
     #[test]
     fn fixed_crash_child() {
         let Ok(path) = std::env::var("NV_FIXED_CHILD") else { return };
@@ -2586,8 +2222,8 @@ mod tests {
         v.flush().unwrap();
         let g = v.create(ROOT, "lost", Kind::File).unwrap();
         v.write(g.id, 0, &pat(8, 8 << 20)).unwrap();
-        v.with(|i| i.spill().map(|_| ())).unwrap(); // pages in the file, transaction open
-        std::process::exit(134); // simulated crash: no core dump, so no DrKonqi/abrt popup on the desktop
+        v.with(|i| i.spill().map(|_| ())).unwrap();
+        std::process::exit(134);
     }
 
     #[test]
@@ -2619,7 +2255,6 @@ mod tests {
         }
     }
 
-    /// `discard` turns secure delete down for its own statements only (cancel-hang).
     #[test]
     fn discard_restores_secure_delete() {
         let dir = tempfile::tempdir().unwrap();
@@ -2630,7 +2265,6 @@ mod tests {
         v.write(f.id, 0, &vec![1u8; (DISCARD_STEP + (3 << 20)) as usize]).unwrap();
         v.discard(f.id).unwrap();
         assert_eq!(mode(&v), 1);
-        // also after a step failed (the volume locked under it)
         let g = v.create(ROOT, "g", Kind::File).unwrap();
         v.write(g.id, 0, &[2u8; 1000]).unwrap();
         let d = v.create(ROOT, "d", Kind::Dir).unwrap();

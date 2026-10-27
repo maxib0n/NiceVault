@@ -1,6 +1,3 @@
-//! Phones' "Salva foto e video nella Galleria" (global setting `gallery_save`): not asked yet
-//! (null) until set, then kept in settings.json across starts; an older file without it reads null.
-
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, NoEvents};
 

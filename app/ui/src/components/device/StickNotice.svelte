@@ -1,12 +1,3 @@
-<!--
-  A quiet slip when a NiceVault device's programs are older than this app or one is missing:
-  on Benvenuto (on="paper": every connected device) and on the cover after unlock (on="cloth":
-  the device of the active volume). "Aggiorna i programmi sulla chiavetta" starts the update
-  right there (progress, then done / error, shared with Dettagli through the stick store);
-  "Non ora" puts it away for this session. Never shown for a stick that is not mounted
-  (Dettagli says so) or while nothing is to be done. Same look as UpdateNotice.
-  Hook: [data-testid=stick-notice][data-phase].
--->
 <script lang="ts">
   import { Usb } from '@lucide/svelte';
   import { fraction, needsUpdate, OS_NAMES, stale, type Stick } from '../../lib/stick';
@@ -16,14 +7,12 @@
 
   let { on = 'paper' }: { on?: 'paper' | 'cloth' } = $props();
 
-  /** the cover: the active volume's device; the board: any connected one */
   const path = $derived(on === 'cloth' ? (vaults.active?.path ?? null) : null);
   $effect(() => {
     if (on === 'paper' || path) void sticks.load(path);
   });
 
   const candidates = $derived<Stick[]>(on === 'cloth' ? (path ? [sticks.forPath(path)].filter((s): s is Stick => !!s) : []) : sticks.all());
-  /** the device shown: one being updated (or just done), else the first that needs it */
   const stick = $derived(
     candidates.find((s) => sticks.runs[s.disk_id] && !sticks.dismissed[s.disk_id]) ?? candidates.find((s) => needsUpdate(s) && !sticks.dismissed[s.disk_id]) ?? null,
   );
@@ -41,7 +30,6 @@
     const first = s.slice(0, shown).map((p) => `${OS_NAMES[p.os]} ${p.present ? (p.version ?? m.stk_unknown()) : m.stk_missing()} → ${p.target ?? m.stk_latest()}`);
     return s.length > shown ? `${first.join(' · ')} ${m.stk_notice_more({ n: String(s.length - shown) })}` : first.join(' · ');
   });
-  // read the device once: putting it away makes `stick` null at once
   function start(s: Stick) {
     sticks.clear(s.disk_id);
     void sticks.update(s);

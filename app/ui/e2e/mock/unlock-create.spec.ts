@@ -11,7 +11,7 @@ test.describe('Benvenuto / Sblocca', () => {
     const pw = page.getByLabel('Password', { exact: true });
     const submit = page.getByRole('button', { name: 'Sblocca' });
     await expect(pw).toBeFocused();
-    await expect(submit).toBeDisabled(); // empty password
+    await expect(submit).toBeDisabled();
 
     await pw.fill('sbagliata');
     await expect(submit).toBeEnabled();
@@ -25,7 +25,6 @@ test.describe('Benvenuto / Sblocca', () => {
     await expect(pw).toBeFocused();
     await expect(pw).toHaveAttribute('aria-invalid', 'true');
 
-    // second wrong attempt bumps the shake counter
     await pw.fill('ancora no');
     await page.keyboard.press('Enter');
     await expect(form).toHaveAttribute('data-error-seq', '2');
@@ -85,17 +84,14 @@ test.describe('Create wizard', () => {
     await expect(page.getByText(/Il nome non può contenere/)).toBeVisible();
     await expect(next).toBeDisabled();
 
-    // a volume that already exists in that folder
     await name.fill('Documenti');
     await expect(page.getByText('Esiste già un volume con questo nome qui.')).toBeVisible();
     await expect(next).toBeDisabled();
 
-    // ".nvault" typed by the user is not doubled
     await name.fill('Ricevute.nvault');
     await expect(page.getByText('/run/media/utente/CHIAVETTA/Ricevute.nvault', { exact: true })).toBeVisible();
     await expect(next).toBeEnabled();
 
-    // Esc on step 1 = Annulla
     await page.keyboard.press('Escape');
     await expectScreen(page, 'welcome');
   });
@@ -116,7 +112,6 @@ test.describe('Create wizard', () => {
     await expect(pw).toBeFocused();
     await expect(meter).toHaveAttribute('aria-valuetext', 'Nessuna password');
 
-    // weak
     await pw.fill('ciao');
     await confirm.fill('ciao');
     await expect(meter).not.toHaveAttribute('aria-valuetext', 'Nessuna password');
@@ -126,11 +121,9 @@ test.describe('Create wizard', () => {
     await confirm.fill('password1');
     await expect(meter).toHaveAttribute('aria-valuenow', /^[0-2]$/);
     await expect(create).toBeDisabled();
-    // Enter must not submit a weak password
     await page.keyboard.press('Enter');
     await expect(wizard).toHaveAttribute('data-step', '2');
 
-    // strong but mismatching
     const strong = 'cavallo batteria graffetta corretta';
     await pw.fill(strong);
     await confirm.fill(strong + 'x');
@@ -139,7 +132,6 @@ test.describe('Create wizard', () => {
     await expect(confirm).toHaveAttribute('aria-invalid', 'true');
     await expect(create).toBeDisabled();
 
-    // Indietro keeps the name, Avanti returns
     await page.getByRole('button', { name: 'Indietro' }).click();
     await expect(wizard).toHaveAttribute('data-step', '1');
     await expect(page.getByLabel('Nome')).toHaveValue('Ricevute');

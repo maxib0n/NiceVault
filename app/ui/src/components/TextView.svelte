@@ -30,7 +30,6 @@
   {#if error}
     <p class="hint state">{m.text_error()}</p>
   {:else if text === null}
-    <!-- still decrypting: the sheet shows a field of glyphs (only after a blink) -->
     <div class="sheet loading nv-enter" data-state="loading">
       <span class="visually-hidden">{m.fv_reading()}</span>
       <span class="skeleton" aria-hidden="true" use:skeleton={{ lines: 9, seed: 5, widths: ['64%', '92%', '100%', '86%', '40%', '96%', '100%', '78%', '52%'] }}></span>
@@ -54,7 +53,6 @@
     user-select: text;
     -webkit-user-select: text;
   }
-  /* the text on a sheet, set in the mono at a reading measure */
   .sheet {
     max-width: 820px;
     min-height: 100%;

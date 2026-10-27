@@ -1,6 +1,3 @@
-// Search, filters and tags of the open volume: Ctrl/Cmd+F, results
-// across folders with the matched parts marked, a hit's place, Esc back to the folder, the
-// filter chips, and tags created / given / filtered by / renamed / deleted.
 import type { Page } from '@playwright/test';
 import { boot, expect, expectFolder, fileList, item, listed, modKey, names, test } from './helpers';
 
@@ -12,7 +9,6 @@ const hitNames = async (page: Page) => (await hits(page).getByTestId('item-name'
 
 async function search(page: Page, q: string) {
   await field(page).fill(q);
-  // the title names the query once its results are shown
   await expect(page.getByTestId('search-title')).toContainText(`«${q}»`);
   await expect(results(page)).toHaveAttribute('aria-busy', 'false');
 }
@@ -42,14 +38,12 @@ test.describe('search', () => {
     expect(await hitNames(page)).toEqual(['Lago di Braies.jpg']);
     await expect(hit(page, 'Lago di Braies.jpg').locator('mark')).toHaveText('Braies');
     await expect(page.getByTestId('search-title')).toHaveText('1 risultato per «braies»');
-    // results are a list whatever the view, each with where it is
     const place = hit(page, 'Lago di Braies.jpg').getByTestId('hit-path');
     await expect(place).toContainText('Vacanze 2024');
     await place.click();
     await expectFolder(page, 'Vacanze 2024');
     await expect(page.getByTestId('search-close')).toHaveCount(0);
     await expect(item(page, 'Lago di Braies.jpg')).toHaveAttribute('aria-selected', 'true');
-    // back: the folder the search started from
     await page.keyboard.press('Alt+ArrowLeft');
     await expectFolder(page, 'Documenti');
   });
@@ -88,7 +82,6 @@ test.describe('search', () => {
     await search(page, 'jpg');
     const all = await hits(page).count();
     expect(all).toBeGreaterThan(10);
-    // in a folder: only its subtree
     await field(page).fill('');
     await page.keyboard.press('Escape');
     await item(page, 'Foto').dblclick();
@@ -134,7 +127,6 @@ test.describe('tags', () => {
     await item(page, 'Budget 2025.xlsx').click();
     await item(page, 'Contratto affitto.pdf').click({ modifiers: [MOD] });
 
-    // the selection's tags: Lavoro is on one of the two (mixed)
     await page.getByTestId('tag-selection').click();
     const picker = page.getByTestId('tag-picker');
     await expect(picker).toBeVisible();
@@ -151,14 +143,12 @@ test.describe('tags', () => {
     await expect(chip('Contratto affitto.pdf')).toBeVisible();
     await expect(item(page, 'Note riunione.md').getByTestId('tag-chip').filter({ hasText: 'Urgente' })).toHaveCount(0);
 
-    // filter the folder by it
     await field(page).click();
     await page.getByTestId('filter-chip-tags').click();
     await page.getByTestId('filter-menu').getByRole('checkbox', { name: /Urgente/ }).click();
     await expect.poll(() => names(page)).toEqual(['Budget 2025.xlsx', 'Contratto affitto.pdf']);
     await page.keyboard.press('Escape');
 
-    // rename it in the manager: the chips follow
     await page.getByTestId('tags-manage').click();
     const manager = page.getByTestId('tag-manager');
     const name = manager.getByRole('textbox', { name: 'Rinomina Urgente' });
@@ -167,14 +157,12 @@ test.describe('tags', () => {
     await expect(item(page, 'Budget 2025.xlsx').getByTestId('tag-chip').filter({ hasText: 'Urgentissimo' })).toBeVisible();
     await expect(page.getByTestId('filter-chip-tags')).toContainText('Urgentissimo');
 
-    // recolour it
     const tagId = await manager.getByTestId('tag-row').filter({ has: page.locator('[aria-label="Colore di Urgentissimo"]') }).getAttribute('data-tag');
     const renamed = manager.locator(`[data-testid=tag-row][data-tag="${tagId}"]`);
     await renamed.getByTestId('tag-ink').click();
     await renamed.locator('[data-testid=tag-swatch][data-color="prussia"]').click();
     await expect(item(page, 'Budget 2025.xlsx').getByTestId('tag-chip').filter({ hasText: 'Urgentissimo' })).toHaveAttribute('data-accent', 'prussia');
 
-    // delete it (confirmed): the chips go, the filter drops it, the folder is whole again
     await renamed.getByTestId('tag-delete').click();
     await expect(renamed).toContainText('Lo perderanno 2 elementi.');
     await manager.getByTestId('tag-delete-confirm').click();

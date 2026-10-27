@@ -1,7 +1,3 @@
-// Drag & drop: OS files onto the window / onto a folder, internal moves onto
-// folders and breadcrumb crumbs, refusals, non-file data, and drags while a
-// modal is open. OS drags are synthesized with a real DataTransfer holding real
-// File objects and dispatched at the hit-tested element (see helpers.ts).
 import {
   boot,
   breadcrumb,
@@ -34,10 +30,8 @@ test.describe('OS files → window', () => {
     expect(r[1].accepted, 'dragover with Files must be accepted (preventDefault)').toBe(true);
     await expect(dropOverlay(page)).toBeVisible();
     await expect(dropOverlay(page)).toContainText('Rilascia per importare in Documenti');
-    // more dragover events keep it
     await dragSequence(item(page, 'Leggimi.txt'), { files: [{ name: 'Nota.txt' }] }, ['dragover']);
     await expect(dropOverlay(page)).toBeVisible();
-    // leaving the window (relatedTarget = null)
     await dragSequence(fileList(page), { files: [{ name: 'Nota.txt' }] }, ['dragleave']);
     await expect(dropOverlay(page)).toHaveCount(0);
   });
@@ -53,13 +47,11 @@ test.describe('OS files → window', () => {
     expect(r[0].accepted).toBe(true);
     await expect(dropOverlay(page)).toHaveCount(0);
     await expect(jobTray(page)).toBeVisible();
-    // the tray reports live progress while the job runs
     await expect(jobTray(page).getByRole('status')).toHaveText(/Importazione · \d+%|Operazioni completate/);
     await expect(item(page, 'Nota.txt')).toBeVisible({ timeout: 8000 });
     await expect(item(page, 'Scontrino.pdf')).toBeVisible();
     await expect(toasts(page).getByText('Importato: 2 elementi.')).toBeVisible();
     await expect(jobTray(page).getByRole('status')).toHaveText('Operazioni completate');
-    // the imported text file is previewable from the dropped bytes
     await item(page, 'Nota.txt').dblclick();
     await expect(page.getByRole('dialog', { name: 'Anteprima di Nota.txt' })).toContainText('ciao');
   });
@@ -72,12 +64,10 @@ test.describe('OS files → window', () => {
 
   test('drop onto a folder tile imports into that folder (not the current one)', async ({ page }) => {
     const r = await dropFiles(item(page, 'Lavoro'), [{ name: 'Busta paga.pdf', content: '%PDF' }]);
-    // (dragenter needs no preventDefault in browsers; dragover and drop must accept)
     expect(r.slice(1).every((e) => e.accepted)).toBe(true);
     await expect(dropOverlay(page)).toHaveCount(0);
     await expect(toasts(page).getByText('Importato: Busta paga.pdf.')).toBeVisible({ timeout: 8000 });
     expect(await names(page)).not.toContain('Busta paga.pdf');
-    // the job names the folder it went into
     await jobTray(page).getByRole('button', { expanded: false }).click();
     await expect(jobTray(page).getByRole('listitem').first()).toContainText('→ Lavoro');
     await item(page, 'Lavoro').dblclick();
@@ -169,7 +159,6 @@ test.describe('internal moves', () => {
   test('a move that collides reports the error and keeps both items', async ({ page }) => {
     await item(page, 'Foto').dblclick();
     await expectFolder(page, 'Foto');
-    // root already has "Foto profilo.jpg"; make a same-named file here first
     await item(page, 'Micio.jpg').click();
     await page.keyboard.press('F2');
     await page.getByRole('textbox', { name: 'Nuovo nome' }).fill('Foto profilo.jpg');
@@ -183,7 +172,6 @@ test.describe('internal moves', () => {
     await item(page, 'Foto').dragTo(item(page, 'Foto'));
     await expect(item(page, 'Foto')).toBeVisible();
     await expect(toasts(page).getByText(/Esiste|non valido|stessa/)).toHaveCount(0);
-    // synthesized: the tile does not accept a drag of itself
     const id = await nodeId(page, 'Foto');
     await item(page, 'Foto').click();
     const r = await dragSequence(item(page, 'Foto'), { data: { [DRAG_MIME]: JSON.stringify([id]) } }, ['dragover', 'drop']);
@@ -198,14 +186,12 @@ test.describe('internal moves', () => {
     await item(page, 'Foto').dblclick();
     await expectFolder(page, 'Foto');
     const before = await names(page);
-    // a stale/foreign drag payload carrying the ancestor "Foto" onto its child "Vacanze 2024"
     await dragSequence(item(page, 'Vacanze 2024'), { data: { [DRAG_MIME]: JSON.stringify([foto]) } }, ['dragenter', 'dragover', 'drop']);
     await page.waitForTimeout(300);
     expect(await names(page)).toEqual(before);
     await breadcrumb(page).getByRole('button', { name: 'Documenti' }).click();
     await expectFolder(page, 'Documenti');
     await expect(item(page, 'Foto')).toBeVisible();
-    // and the backend refuses it too, whatever the UI sends
     const err = await page.evaluate(async (foto) => {
       const nv = (window as unknown as { __nv: { mock: { invoke: (c: string, a: unknown) => Promise<unknown> } } }).__nv.mock;
       const vault = 'v1';
@@ -259,9 +245,6 @@ test.describe('drags while a modal is open', () => {
   });
 });
 
-// The Tauri webview delivers OS file drops as Tauri events (host paths + a
-// position), not as DOM drop events. The mock replays that event stream into
-// the very same handler (api.onOsDragDrop), so this logic is covered here too.
 test.describe('Tauri-style OS drag events (replayed by the mock)', () => {
   type Ev = { type: 'enter' | 'over' | 'drop' | 'leave'; paths?: string[]; position?: { x: number; y: number } };
   const os = (page: import('@playwright/test').Page, e: Ev) =>

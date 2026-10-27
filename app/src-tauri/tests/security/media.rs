@@ -1,6 +1,3 @@
-//! Tests of the loopback media stream (src/viewers.rs), "Apri con app esterna" and the
-//! Markdown link opener. Each test failed before the fixes and passes now.
-
 use super::open_vault;
 use nicevault_app::AppState;
 use nicevault_app::viewers::{self, MediaServer};
@@ -10,7 +7,6 @@ use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// A volume with `name` holding `size` bytes of a known pattern.
 fn with_file(dir: &std::path::Path, name: &str, size: usize) -> (Arc<AppState>, String, NodeId) {
     let (st, id) = open_vault(dir);
     let v = st.vault(&id).unwrap();
@@ -21,7 +17,6 @@ fn with_file(dir: &std::path::Path, name: &str, size: usize) -> (Arc<AppState>, 
     (st, id, n)
 }
 
-/// (port, "/m/<ticket>") of a ticket URL.
 fn split(url: &str) -> (u16, String) {
     let rest = url.strip_prefix("http://127.0.0.1:").unwrap();
     let (port, path) = rest.split_once('/').unwrap();
@@ -37,7 +32,6 @@ fn request(port: u16, raw: &str) -> String {
     String::from_utf8_lossy(&all[..all.len().min(512)]).into_owned()
 }
 
-/// Releasing the ticket (closing the viewer) stops a stream that is already flowing.
 #[test]
 #[cfg(target_os = "linux")]
 fn media_stream_stops_after_release() {
@@ -66,8 +60,6 @@ fn media_stream_stops_after_release() {
     assert!(got < size / 2, "the stream went on after release: {got} of {size} bytes");
 }
 
-/// A client that drips its request one byte at a time is cut off by a total deadline
-/// (a per-read timeout let it hold a thread forever).
 #[test]
 #[cfg(target_os = "linux")]
 fn media_header_deadline() {
@@ -94,7 +86,6 @@ fn media_header_deadline() {
     assert!(closed_after < Duration::from_secs(8), "a dripping client held the connection for {closed_after:?}");
 }
 
-/// Idle connections are capped (each one used to get a thread of its own, unbounded).
 #[test]
 #[cfg(target_os = "linux")]
 fn media_connection_cap() {
@@ -115,7 +106,6 @@ fn media_connection_cap() {
     assert!(dropped >= 20, "only {dropped} of 40 idle connections were refused");
 }
 
-/// With no ticket left the port is closed (nothing listens while no media plays).
 #[test]
 #[cfg(target_os = "linux")]
 fn media_listener_closes_without_tickets() {
@@ -130,7 +120,6 @@ fn media_listener_closes_without_tickets() {
         std::thread::sleep(Duration::from_millis(100));
     }
     let closed = TcpStream::connect(("127.0.0.1", port)).is_err();
-    // and a new ticket opens a working listener again
     let url2 = ms.issue(&st, &id, n).unwrap();
     let (port2, path2) = split(&url2);
     let ok = request(port2, &format!("GET {path2} HTTP/1.1\r\nHost: 127.0.0.1:{port2}\r\n\r\n"));
@@ -139,9 +128,6 @@ fn media_listener_closes_without_tickets() {
     assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
 }
 
-/// A request a web page made (it carries an Origin, or a Referer that is not the app)
-/// is refused before the ticket is even looked up. WebKitGTK's own media requests send
-/// neither (checked in the real app: e2e/real/media-disk.mjs).
 #[test]
 #[cfg(target_os = "linux")]
 fn media_refuses_foreign_origin() {
@@ -162,7 +148,6 @@ fn media_refuses_foreign_origin() {
     assert!(plain.starts_with("HTTP/1.1 200"), "{plain}");
 }
 
-/// A ticket only for audio / video (the stream is the media player's, nothing else).
 #[test]
 fn media_url_only_for_media() {
     let tmp = tempfile::tempdir().unwrap();
@@ -173,9 +158,6 @@ fn media_url_only_for_media() {
     assert_eq!(e.code, "not_media");
 }
 
-/// Programs, scripts and launchers that Linux (Wine, Java, .desktop), macOS
-/// (.command, .terminal, .webloc, .app) or any OS would run are refused on every OS, by
-/// name and by their first bytes; for "Apri con app esterna" (mounted) and the temp copy.
 #[test]
 fn open_refuses_unix_runners() {
     use nicevault_app::state::runs_code;
@@ -199,15 +181,12 @@ fn open_refuses_unix_runners() {
     }
     drop(v);
     for (name, n) in nodes {
-        // refused before the mount is even looked at, and before any temp copy is made
         assert_eq!(viewers::mounted_path(&st, &id, n).unwrap_err().code, "unsafe_type", "{name} (mounted)");
         assert_eq!(st.fs_open_external(&id, n).unwrap_err().code, "unsafe_type", "{name} (external)");
     }
     st.lock_all("user");
 }
 
-/// Links are re-serialised; mailto keeps the address and subject/body/cc/bcc only;
-/// a backtick or `$` (shell metacharacters for a handler's command line) is refused.
 #[test]
 fn open_link_is_normalised() {
     let ok = |u: &str| viewers::checked_link(u).map(|s| s.to_string());

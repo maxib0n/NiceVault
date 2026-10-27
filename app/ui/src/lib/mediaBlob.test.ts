@@ -3,7 +3,6 @@ import { fetchAsBlob } from './mediaBlob';
 
 const MB = 1024 * 1024;
 
-/** A fake nvault:// endpoint over `size` bytes honouring Range like preview.rs. */
 function server(size: number, wholeLimit = 8 * MB) {
   const ranges: string[] = [];
   vi.stubGlobal('fetch', async (_url: string, init?: { headers?: Record<string, string> }) => {

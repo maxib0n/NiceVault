@@ -1,9 +1,3 @@
-<!--
-  An ink, shown as what it makes: a swatch of cover material dyed in it (suede on anthracite,
-  book cloth on paper), its own metal's rosette stamped in the middle, saddle-stitched round its
-  edge where the theme stitches. Put it inside an element carrying data-accent=<ink> (the swatch
-  button): every colour here is that ink's.
--->
 <script lang="ts">
   import Rosette from '../ornament/Rosette.svelte';
   import Stitch from '../ornament/Stitch.svelte';

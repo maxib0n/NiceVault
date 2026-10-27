@@ -1,9 +1,3 @@
-<!--
-  A tag as it is printed on an item: a small inked pill (its name), or only its dot. The colour
-  is one of the volume inks ([data-accent] re-inks --accent for this element, in either theme);
-  neutral (and a colour this build does not know) is drawn in the page's own grey ink.
-  Hook: [data-testid=tag-chip][data-tag=<id>].
--->
 <script lang="ts">
   import { tagColor } from '../lib/search';
   import type { Tag } from '../lib/types';
@@ -54,7 +48,6 @@
     --tag-wash: color-mix(in oklab, var(--ink) 7%, transparent);
     --tag-edge: var(--paper-rule-2);
   }
-  /* the ink itself: a small engraved bead */
   .ink {
     flex: none;
     width: 6px;

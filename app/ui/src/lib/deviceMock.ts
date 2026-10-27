@@ -1,15 +1,3 @@
-// In-browser mock of the device_* commands ("Crea dispositivo"), plugged into MockBackend.invoke.
-// Same names, argument shapes, errors and events as app/src-tauri/src/device/cmd.rs (whose fake
-// backend, NICEVAULT_FAKE_DISKS, the Rust e2e uses). Nothing is erased anywhere.
-//
-// URL switches (switches.ts): device=empty (no drive) · device=incomplete (the SD card is an
-// interrupted device: "Completa") · device_fail=<code>[@step] (the job fails, e.g.
-// elevation_denied, device_gone@copy) · device_offline (the builds cannot be downloaded; the first
-// "Scarica ora" fails too, the second finds the network back) ·
-// device_slow=candidates|options|plan|create (that command never answers: the busy states) or
-// =auth (the job waits at "unmount" as if the system's password window were open) ·
-// device_volumes (the SanDisk holds NiceVault volumes: the erase warning).
-
 import type {
   DataFsId,
   DeviceOptions,
@@ -32,20 +20,17 @@ export interface DeviceMockHost {
 
 export interface DeviceMockOptions {
   scenario: 'empty' | 'incomplete' | null;
-  /** error code, optionally `code@step` */
   fail: string | null;
   offline: boolean;
   slow?: 'candidates' | 'options' | 'plan' | 'create' | 'auth' | null;
   volumes?: boolean;
 }
 
-/** The SanDisk's volumes with ?device_volumes (as the backend's volumes_on finds them). */
 export const MOCK_VOLUMES = [
   { name: 'Archivio.nvault', path: '/run/media/utente/CHIAVETTA/Lavoro/Archivio.nvault', open: false },
   { name: 'SH2RE.nvault', path: '/run/media/utente/CHIAVETTA/SH2RE.nvault', open: false },
 ];
 
-/** the mock computer's user name (README screenshots: ?demo=1) */
 const USER = switches.demo ? 'alex' : 'utente';
 
 const err = (code: string, message: string): ApiError => ({ code, message });
@@ -122,7 +107,6 @@ export class DeviceMock {
     return d;
   }
 
-  /** Tests / devtools: plug in or pull out a drive. */
   plug(d: DiskCandidate) {
     this.disks = [...this.disks.filter((x) => x.id !== d.id), d];
   }
@@ -172,7 +156,6 @@ export class DeviceMock {
       `${call('$partition', 'Filesystem.Mount', `"{${ia}}"`)} ($client, $data)`,
     ];
     const steps = STEPS.filter((s) => (s !== 'download' || o.download) && (s !== 'volume' || o.first_volume));
-    // the backend's plan carries a bare Disk: no name, no serial_tail (device.ts normalizePlan)
     const { name: _n, serial_tail: _s, ...bare } = structuredClone(d);
     const p = {
       id: `plan${++this.seq}`,
@@ -210,7 +193,7 @@ export class DeviceMock {
     void (async () => {
       const d = this.disks.find((x) => x.id === p.disk.id);
       for (const s of steps.filter((x) => x !== 'volume')) {
-        if (this.cancelled.has(job)) return; // job_cancel already emitted job-done "cancelled"
+        if (this.cancelled.has(job)) return;
         const bytes = s === 'download' || s === 'copy';
         const total = s === 'download' ? (this.opts.offline ? 0 : 58 * MIB) : s === 'copy' ? 62 * MIB : 0;
         this.host.emit('job-progress', { job, step: s, done_bytes: 0, total_bytes: total, current: s } as EventMap['job-progress']);
@@ -254,7 +237,6 @@ export class DeviceMock {
 
   async invoke(cmd: string, a: Record<string, unknown>): Promise<unknown> {
     const slow = { device_candidates: 'candidates', device_options: 'options', device_plan: 'plan', device_create: 'create' }[cmd];
-    // a call that never answers (the busy state stays on screen)
     if (slow && this.opts.slow === slow) await new Promise(() => {});
     switch (cmd) {
       case 'device_candidates':

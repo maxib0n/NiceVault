@@ -1,11 +1,3 @@
-<!--
-  Folder picker of the password manager: a search box over the existing folders (with their
-  parents), "Nessuna cartella", and "Nuova cartella «…»" for a name that does not exist yet.
-  ARIA combobox + listbox; ↑ ↓ Home End move, Enter chooses, Esc closes (popup) / cancels.
-  inline: the list is always shown and choosing calls onchoose (the "Sposta in cartella" dialog).
-  popup: an editor field; `value` is the folder (typed text counts too), the list opens on focus.
-  Hooks: [data-testid=pm-folder-picker], options [data-folder] ("" = none), [data-new].
--->
 <script lang="ts">
   import { Folder, FolderPlus, FolderX } from '@lucide/svelte';
   import { tick } from 'svelte';
@@ -24,7 +16,6 @@
     folders: readonly string[];
     value?: string;
     inline?: boolean;
-    /** the folder the entries are in now (marked, inline mode) */
     current?: string | null;
     label: string;
     id?: string;
@@ -35,13 +26,11 @@
   type Opt = { folder: string; kind: 'none' | 'folder' | 'new' };
 
   const clean = (f: string) => f.split(/[/\\]/).map((x) => x.trim()).filter(Boolean).join('/');
-  // inline starts empty (a search); popup shows the entry's folder
   // svelte-ignore state_referenced_locally
   let text = $state(inline ? '' : value);
   // svelte-ignore state_referenced_locally
   let open = $state(inline);
   let active = $state(0);
-  /** the person typed since the list opened (popup: the list first shows every folder) */
   let typed = $state(false);
   let inputEl: HTMLInputElement | undefined = $state();
   let listEl: HTMLUListElement | undefined = $state();
@@ -61,7 +50,6 @@
   });
 
   $effect(() => {
-    // keep the highlight on something that exists; prefer an exact match while typing
     const want = clean(text).toLowerCase();
     const exact = want ? options.findIndex((o) => o.kind !== 'new' && o.folder.toLowerCase() === want) : -1;
     active = exact >= 0 ? exact : Math.min(active, Math.max(0, options.length - 1));
@@ -144,7 +132,6 @@
   {#if open}
     <ul bind:this={listEl} id="{id}-list" class="list" role="listbox" aria-label={label}>
       {#each options as o, i (o.kind + o.folder)}
-        <!-- the input keeps focus (aria-activedescendant); mousedown would steal it -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <li
           id={optId(i)}
@@ -180,7 +167,6 @@
   .picker .input {
     width: 100%;
   }
-  /* the inline list (Sposta in cartella): a register pressed into the page */
   .list {
     list-style: none;
     margin: 6px 0 0;
@@ -193,7 +179,6 @@
       inset 0 1px 2px var(--field-shade),
       0 1px 0 var(--paper-hi);
   }
-  /* the editor's list: a card lifted off the dialog, under its field */
   .picker:not(.inline) .list {
     position: absolute;
     z-index: 30;
@@ -230,7 +215,6 @@
   .opt[aria-selected='true'] :global(svg) {
     color: var(--accent);
   }
-  /* where the entries are now: named in full weight, a dot of the ink after it */
   .opt[data-current='true'] .o-name {
     font-weight: 600;
   }

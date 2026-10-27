@@ -1,22 +1,3 @@
-//! Benvenuto's volume list. Nothing is written on the stick: the list is a scan of
-//!   (a) the executable's folder (plus one level of subfolders) and
-//!   (b) the root of every mounted removable drive,
-//! each `*.nvault` enriched from its header (`nv_core::peek`: appearance when visible, KDF
-//! cost -> unlock estimate). Only when running installed (the executable is not on a writable
-//! removable drive) a known-volumes list in the OS config dir remembers volumes opened
-//! elsewhere (`known.json`: path, last opened, measured unlock time — no names, no emblems).
-//! Volumes opened during this session are listed until the app quits either way.
-//!
-//! Test / e2e overrides (environment):
-//!   NICEVAULT_EXE_DIR          folder scanned as (a) instead of the executable's
-//!   NICEVAULT_REMOVABLE_ROOTS  drive roots scanned as (b), joined like PATH (empty = none)
-//!   NICEVAULT_CONFIG_DIR       folder of known.json instead of the OS config dir
-//!   NICEVAULT_PORTABLE         1 = portable (no known list), 0 = installed
-//!
-//! Global (not per-volume) settings — the UI language, the app's own appearance (theme, ink,
-//! interface size) and the defaults for NEW volumes — follow the same rule: installed mode keeps them in `settings.json` in the OS config dir;
-//! portable mode keeps them in memory for this session only (nothing on the stick).
-
 pub use crate::appearance::{ACCENTS, Settings, SettingsPatch};
 use crate::emblem::Emblem;
 use serde::{Deserialize, Serialize};
@@ -24,20 +5,13 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 const KNOWN_FILE: &str = "known.json";
-/// Installed mode only: `{ language, defaults }` (global settings, see app::global).
 const GLOBAL_FILE: &str = "settings.json";
-/// UI languages: "system" follows the OS locale.
 pub const LANGUAGES: [&str; 3] = ["system", "it", "en"];
-/// Interface sizes (percent of the webview's natural zoom), Impostazioni > Aspetto dell'app.
 pub const UI_SCALES: [u32; 5] = [90, 100, 110, 125, 150];
-/// What ←/→ do in a full-screen video: seek inside it (default) or step to the previous / next file.
 pub const VIDEO_ARROWS: [&str; 2] = ["seek", "step"];
-/// The old per-stick file (recents + settings next to the exe). Imported once, then deleted.
 pub const LEGACY_FILE: &str = "NiceVault.json";
 const MAX_KNOWN: usize = 50;
-/// Freshness anchors kept (one per volume id; the oldest ids go first beyond it).
 const MAX_ANCHORS: usize = 256;
-/// Directory entries looked at per folder (a folder full of photos must not stall Benvenuto).
 const MAX_DIR_ENTRIES: usize = 4096;
 
 #[derive(Clone, Debug, Serialize)]
@@ -45,31 +19,20 @@ pub struct RecentEntry {
     pub path: String,
     pub name: String,
     pub size_bytes: u64,
-    /// Unix ms: when this app last opened it (session / known list), else the file's mtime.
     pub last_opened: u64,
     pub exists: bool,
-    /// Measured at the last unlock here, else estimated from the header's KDF parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unlock_ms: Option<u64>,
-    /// From the header's appearance section; `None` = not known (show the initial) or hidden.
     pub emblem: Option<Emblem>,
-    /// `false` = the volume keeps its look encrypted: neutral rosette, default accent.
     pub show_when_locked: bool,
-    /// Accent preset id from the header (visible volumes only).
     pub accent: Option<String>,
-    /// "here" (next to the app) | "removable" (root of a removable drive) | "known" (installed-mode list) | "session".
     pub source: &'static str,
-    /// The document number: 9 characters from the header's volume id ([`volume_tag`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volume_tag: Option<String>,
-    /// Occupied key slots (header, plaintext).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_slots: Option<u32>,
-    /// Argon2id parameters of the first password slot (header, plaintext).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kdf: Option<nv_core::KdfParams>,
-    /// The emblem's frame as this computer last saw it unlocked (the frame lives inside the
-    /// volume): only for a visible look; `None` = not known here (the default rosette).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emblem_frame: Option<String>,
 }
@@ -78,15 +41,13 @@ fn hex_id(id: &[u8; 16]) -> String {
     id.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// A volume's document number: the first 45 bits of its header id in Crockford's base32
-/// (0-9, A-Z without I L O U), 9 characters, the alphabet an MRZ can print.
 pub fn volume_tag(id: &[u8; 16]) -> String {
     const A: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     let mut v: u64 = 0;
     for b in &id[..6] {
         v = (v << 8) | u64::from(*b);
     }
-    let v = v >> 3; // 48 -> 45 bits
+    let v = v >> 3;
     (0..9).rev().map(|i| A[((v >> (i * 5)) & 31) as usize] as char).collect()
 }
 
@@ -96,10 +57,8 @@ struct KnownRec {
     last_opened: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     unlock_ms: Option<u64>,
-    /// The emblem's frame, recorded when the volume was open here (a visible look only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     frame: Option<String>,
-    /// Keys of a newer build, kept when the list is rewritten.
     #[serde(flatten)]
     extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -108,26 +67,20 @@ struct KnownRec {
 struct KnownFile {
     #[serde(default)]
     volumes: Vec<KnownRec>,
-    /// Freshness anchors: hex volume id -> the highest commit counter
-    /// (`Vault::commit_seq`) seen here. A volume that opens with a smaller one was replaced by
-    /// an older copy of itself. Kept in memory only in portable mode (this session).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     anchors: BTreeMap<String, u64>,
     #[serde(flatten)]
     extra: serde_json::Map<String, serde_json::Value>,
 }
 
-/// Where to look. `removable: None` = detect the mounted removable drives at every scan.
 #[derive(Clone, Debug, Default)]
 pub struct Locations {
     pub exe_dir: Option<PathBuf>,
     pub removable: Option<Vec<PathBuf>>,
-    /// Folder of known.json; `None` = portable (no list persisted anywhere).
     pub config_dir: Option<PathBuf>,
 }
 
 impl Locations {
-    /// The real machine (with the env overrides above).
     pub fn detect() -> Locations {
         let env = |k: &str| std::env::var_os(k);
         let exe_dir = env("NICEVAULT_EXE_DIR").map(PathBuf::from).or_else(exe_dir);
@@ -140,7 +93,6 @@ impl Locations {
                 on_removable(d, &roots) && dir_writable(d)
             }),
         };
-        // No config dir: portable (never a shared, predictable temp folder).
         let config_dir = (!portable)
             .then(|| env("NICEVAULT_CONFIG_DIR").map(PathBuf::from).or_else(|| dirs::config_dir().map(|d| d.join("NiceVault"))))
             .flatten();
@@ -151,62 +103,34 @@ impl Locations {
 pub struct Store {
     loc: Locations,
     known: KnownFile,
-    /// Opened in this session: (path, unix ms, unlock ms).
     session: Vec<KnownRec>,
-    /// `recent_forget` of a scanned volume: hidden until the app quits (or it is opened again).
     hidden: HashSet<PathBuf>,
-    /// Defaults for new volumes (and the settings used while no volume is open).
     defaults: Settings,
-    /// UI language: one of [`LANGUAGES`].
     language: String,
-    /// Password manager: fetch site icons from the entries' websites (default on).
     site_icons: bool,
-    /// Subtle UI sounds (default on; played by the webview, nothing is written for them).
     sounds: bool,
-    /// ←/→ in a full-screen video: "seek" | "step".
     video_arrows: String,
-    /// The volume's sidebar folded to a slim rail (default off).
     sidebar_collapsed: bool,
-    /// The app's own look, worn wherever no volume's look applies (Benvenuto, Impostazioni, the
-    /// wizard, Sblocca of a volume whose look is encrypted): one of `THEMES`, one of [`ACCENTS`].
     app_theme: String,
     app_accent: String,
-    /// One of [`UI_SCALES`].
     ui_scale: u32,
-    /// New volumes start with the app's theme and ink (instead of `defaults.theme / accent`).
     new_like_app: bool,
-    /// settings.json as read (installed mode): written back with only the known keys patched,
-    /// so keys a newer build added survive.
     global_raw: serde_json::Map<String, serde_json::Value>,
-    /// settings.json exists but could not be read as an object (newer or damaged): never overwritten.
     global_unreadable: bool,
-    /// "Avvia all'accesso" / "Avvia ridotto" (installed mode only; portable: always off).
     start_at_login: bool,
     start_minimized: bool,
-    /// "Resta nel vassoio": closing the window hides it (tray icon) instead of quitting.
-    /// Installed: default on; portable: always off.
     close_to_tray: bool,
-    /// Phones: "Salva foto e video nella Galleria" for Esporta (None = not asked yet: the UI asks once).
     gallery_save: Option<bool>,
-    /// Where the start-at-login entry goes: the real one from `open_default`, a temp one in
-    /// tests (`with_autostart`), none = the setting is kept but no entry is written.
     autostart: Option<crate::autostart::Autostart>,
-    /// More folders scanned like the executable's (`NICEVAULT_SCAN_DIRS`, joined like PATH; mobile:
-    /// the app's Volumes and Documents folders, so a volume there is listed even when the known
-    /// list lost track of it).
     scan_dirs: Vec<PathBuf>,
 }
 
-/// `unsupported_version`: settings.json is there but this build cannot read it, so it is left alone.
 pub const GLOBAL_UNREADABLE: &str = "unsupported_version";
 
 pub fn exe_dir() -> Option<PathBuf> {
-    // AppImage: the folder of the .AppImage (a stick), not the read-only mount it runs from
     crate::updater::app_exe()?.parent().map(Path::to_path_buf)
 }
 
-/// Atomic, private write of a config file: dir 0700, a fresh randomly named 0600 temp file,
-/// fsync, rename over `file`, fsync the dir.
 pub fn write_private(file: &Path, data: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let dir = file.parent().ok_or_else(|| std::io::Error::other("no parent"))?;
@@ -251,14 +175,12 @@ pub fn dir_writable(dir: &Path) -> bool {
 }
 
 impl Store {
-    /// The real machine; imports and deletes a legacy NiceVault.json once.
     pub fn open_default() -> Store {
         let loc = Locations::detect();
         let autostart = loc.config_dir.is_some().then(crate::autostart::Autostart::detect).flatten();
         let scan = std::env::var_os("NICEVAULT_SCAN_DIRS").map(|v| std::env::split_paths(&v).filter(|p| !p.as_os_str().is_empty()).collect()).unwrap_or_default();
         let mut s = Store::new(loc).with_autostart(autostart).with_scan_dirs(scan);
         s.migrate_legacy();
-        // iOS: an update moves the app's container; volumes recorded under the old one follow
         #[cfg(target_os = "ios")]
         if let Some(home) = std::env::var_os("HOME") {
             s.relocate_known(|p| crate::mobile_paths::rebase_container(p, Path::new(&home)));
@@ -292,7 +214,6 @@ impl Store {
         if let Some(bytes) = loc.config_dir.as_ref().and_then(|d| std::fs::read(d.join(GLOBAL_FILE)).ok()) {
             match serde_json::from_slice::<serde_json::Value>(&bytes) {
                 Ok(serde_json::Value::Object(map)) => {
-                    // field by field, through apply: unknown values from a newer / edited file are ignored
                     if let Some(d) = map.get("defaults").cloned().and_then(|v| serde_json::from_value::<SettingsPatch>(v).ok()) {
                         defaults.apply(d);
                     }
@@ -365,22 +286,16 @@ impl Store {
         }
     }
 
-    /// Where "Avvia all'accesso" writes its entry (see `autostart.rs`).
     pub fn with_autostart(mut self, a: Option<crate::autostart::Autostart>) -> Store {
         self.autostart = a;
         self
     }
 
-    /// Installed mode: writes `settings.json` (language + new-volume defaults), patching only the
-    /// keys this build knows. Portable: nothing. An unreadable file is never overwritten.
     pub fn with_scan_dirs(mut self, dirs: Vec<PathBuf>) -> Store {
         self.scan_dirs = dirs;
         self
     }
 
-    /// Known volumes whose file is gone but which `to` maps to a file that exists (iOS: the same
-    /// file in the app's new container) are recorded under the new path, keeping their history.
-    /// Only the list changes (written atomically); no volume file is moved or deleted.
     pub fn relocate_known(&mut self, to: impl Fn(&Path) -> Option<PathBuf>) {
         let mut changed = false;
         let mut moved: Vec<KnownRec> = Vec::new();
@@ -450,7 +365,6 @@ impl Store {
         self.language.clone()
     }
 
-    /// Password manager: fetch site icons (global setting, default on).
     pub fn site_icons(&self) -> bool {
         self.site_icons
     }
@@ -462,7 +376,6 @@ impl Store {
         }
     }
 
-    /// Subtle UI sounds (global setting, default on).
     pub fn sounds(&self) -> bool {
         self.sounds
     }
@@ -474,7 +387,6 @@ impl Store {
         }
     }
 
-    /// ←/→ in a full-screen video: "seek" (default) or "step" (global setting).
     pub fn video_arrows(&self) -> &str {
         &self.video_arrows
     }
@@ -486,7 +398,6 @@ impl Store {
         }
     }
 
-    /// The volume's sidebar folded to a slim rail (global setting, default off).
     pub fn sidebar_collapsed(&self) -> bool {
         self.sidebar_collapsed
     }
@@ -498,12 +409,10 @@ impl Store {
         }
     }
 
-    /// settings.json exists but cannot be read by this build (it is left untouched).
     pub fn global_unreadable(&self) -> bool {
         self.global_unreadable
     }
 
-    /// Unknown values are ignored.
     pub fn set_language(&mut self, l: &str) -> String {
         if LANGUAGES.contains(&l) && l != self.language {
             self.language = l.to_owned();
@@ -512,12 +421,10 @@ impl Store {
         self.language()
     }
 
-    /// The app's own theme / ink / interface size, and whether new volumes start with that look.
     pub fn app_look(&self) -> (String, String, u32, bool) {
         (self.app_theme.clone(), self.app_accent.clone(), self.ui_scale, self.new_like_app)
     }
 
-    /// Unknown values are ignored (the current one stays).
     pub fn set_app_look(&mut self, theme: Option<&str>, accent: Option<&str>, scale: Option<u32>, new_like_app: Option<bool>) {
         if let Some(t) = theme.filter(|t| crate::appearance::THEMES.contains(t)) {
             self.app_theme = t.to_owned();
@@ -534,13 +441,10 @@ impl Store {
         self.save_global();
     }
 
-    /// "Avvia all'accesso", "Avvia ridotto". Portable: both off.
     pub fn startup(&self) -> (bool, bool) {
         (self.start_at_login, self.start_minimized)
     }
 
-    /// Changes them; the start-at-login entry is written (or removed) first, so a failure
-    /// leaves both the entry and the setting as they were. Portable: ignored.
     pub fn set_startup(&mut self, at_login: Option<bool>, minimized: Option<bool>) -> std::io::Result<()> {
         if !self.installed() {
             return Ok(());
@@ -559,8 +463,6 @@ impl Store {
         Ok(())
     }
 
-    /// "Resta nel vassoio quando chiudi la finestra" (installed; portable: always off).
-    /// Phones: exported photos / videos go to the gallery (None = ask once).
     pub fn gallery_save(&self) -> Option<bool> {
         self.gallery_save
     }
@@ -576,7 +478,6 @@ impl Store {
         self.installed() && self.close_to_tray
     }
 
-    /// Changes it (installed only; portable: ignored).
     pub fn set_close_to_tray(&mut self, on: bool) {
         if !self.installed() || on == self.close_to_tray {
             return;
@@ -585,9 +486,6 @@ impl Store {
         self.save_global();
     }
 
-    /// At start: "Avvia all'accesso" on and its entry still there -> rewritten (the binary may
-    /// have moved, the flag follows "Avvia ridotto"); the entry removed outside the app (the OS's
-    /// startup settings) -> the setting follows and turns off.
     pub fn startup_check(&mut self) {
         let Some(t) = self.autostart.clone() else { return };
         if !self.start_at_login || self.global_unreadable {
@@ -601,8 +499,6 @@ impl Store {
         }
     }
 
-    /// What a volume created now starts with: the defaults, wearing the app's theme and ink
-    /// when "Come l'app" is on.
     pub fn new_volume_settings(&self) -> Settings {
         let mut s = self.defaults();
         if self.new_like_app {
@@ -612,7 +508,6 @@ impl Store {
         s
     }
 
-    /// Installed mode: the known-volumes list is kept in the OS config dir.
     pub fn installed(&self) -> bool {
         self.loc.config_dir.is_some()
     }
@@ -624,7 +519,6 @@ impl Store {
     fn save_known(&self) {
         let Some(dir) = &self.loc.config_dir else { return };
         let file = dir.join(KNOWN_FILE);
-        // A list this build cannot read (a newer build's, or damaged) is not replaced by ours.
         if std::fs::read(&file).is_ok_and(|b| serde_json::from_slice::<KnownFile>(&b).is_err()) {
             return;
         }
@@ -632,9 +526,6 @@ impl Store {
         let _ = write_private(&file, &json);
     }
 
-    /// Imports the useful part of an old NiceVault.json (next to the exe, or in the config
-    /// dir where it went when the exe's folder was read-only): volume paths (installed: into the known list; portable: for
-    /// this session) and the settings (session defaults). Then deletes it.
     pub fn migrate_legacy(&mut self) {
         #[derive(Deserialize)]
         struct OldRec {
@@ -700,7 +591,6 @@ impl Store {
         self.defaults()
     }
 
-    /// A volume was opened or created here.
     pub fn touch(&mut self, abs: &Path, unlock_ms: Option<u64>) {
         let rec = KnownRec { path: abs.to_string_lossy().into_owned(), last_opened: now_ms(), unlock_ms, frame: None, extra: Default::default() };
         self.hidden.remove(abs);
@@ -722,8 +612,6 @@ impl Store {
         }
     }
 
-    /// Records the emblem's frame of a volume opened here (`None`: its look is encrypted, or the
-    /// default): what the locked screens of this computer show until it is opened again.
     pub fn set_frame(&mut self, abs: &Path, frame: Option<String>) {
         let key = abs.to_string_lossy();
         let frame = frame.filter(|f| f != crate::emblem::FRAMES[0]);
@@ -742,13 +630,10 @@ impl Store {
         }
     }
 
-    /// The freshness anchor of a volume: the highest commit counter seen here.
     pub fn anchor(&self, id: &[u8; 16]) -> Option<u64> {
         self.known.anchors.get(&hex_id(id)).copied()
     }
 
-    /// Raises the anchor to `seq` (never lowers it), or with `reset` sets it to `seq` (the user
-    /// said the older copy is the one to keep). Saved at once in installed mode.
     pub fn set_anchor(&mut self, id: &[u8; 16], seq: u64, reset: bool) {
         let k = hex_id(id);
         let old = self.known.anchors.get(&k).copied();
@@ -757,7 +642,6 @@ impl Store {
             return;
         }
         self.known.anchors.insert(k.clone(), new);
-        // over the cap: drop some other id (a rare case: hundreds of volumes opened here)
         while self.known.anchors.len() > MAX_ANCHORS {
             let Some(drop) = self.known.anchors.keys().find(|x| **x != k).cloned() else { break };
             self.known.anchors.remove(&drop);
@@ -767,7 +651,6 @@ impl Store {
         }
     }
 
-    /// Drops `abs` from the known list and hides it for the rest of the session.
     pub fn forget(&mut self, abs: &Path) {
         let key = abs.to_string_lossy();
         self.session.retain(|r| r.path != key);
@@ -783,7 +666,6 @@ impl Store {
         self.loc.removable.clone().unwrap_or_else(removable_roots)
     }
 
-    /// Scan + known list + session, newest first. Never writes anything.
     pub fn recent(&self) -> Vec<RecentEntry> {
         let mut seen: HashSet<PathBuf> = HashSet::new();
         let mut out: Vec<RecentEntry> = vec![];
@@ -835,8 +717,6 @@ fn is_nvault(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("nvault"))
 }
 
-/// `*.nvault` files in `dir` and, with `depth` 1, in its direct subfolders (no symlinked
-/// folders, no hidden ones).
 fn scan(dir: &Path, depth: u32) -> Vec<PathBuf> {
     let mut out = vec![];
     let Ok(rd) = std::fs::read_dir(dir) else { return out };
@@ -857,8 +737,6 @@ fn mtime_ms(m: &std::fs::Metadata) -> u64 {
     m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64)
 }
 
-/// One list entry. A reachable file that is not a NiceVault volume is skipped; a missing
-/// file (other stick, moved) is listed with `exists = false` and no look.
 fn entry(p: &Path, source: &'static str, last: Option<u64>, measured: Option<u64>, frame: Option<String>) -> Option<RecentEntry> {
     let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Volume".into());
     let md = std::fs::metadata(p).ok().filter(|m| m.is_file());
@@ -895,23 +773,19 @@ fn entry(p: &Path, source: &'static str, last: Option<u64>, measured: Option<u64
             }
         }
         Err(nv_core::OpenError::NotAVault) => return None,
-        Err(_) => {} // unreadable / damaged: still listed, Sblocca reports the problem
+        Err(_) => {}
     }
     Some(e)
 }
 
-/// Roots of the mounted removable drives on this machine: the removable / external entries of
-/// the drive list (drives.rs), so Benvenuto scans exactly the drives "Nuovo volume" offers.
 pub fn removable_roots() -> Vec<PathBuf> {
     crate::drives::removable_roots()
 }
 
-/// `dir` sits on one of the removable drive `roots`.
 pub fn on_removable(dir: &Path, roots: &[PathBuf]) -> bool {
     roots.iter().any(|r| dir.starts_with(r))
 }
 
-/// Lexically drops `.` and resolves `..` (no filesystem access, symlinks untouched).
 pub fn normalize(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
@@ -954,8 +828,6 @@ mod tests {
         assert_eq!(normalize(Path::new("/a/./b/../c")), Path::new("/a/c"));
     }
 
-    /// An old settings.json without `video_arrows` loads with "seek"; junk values are ignored;
-    /// a chosen value persists.
     #[test]
     fn video_arrows_default_seek_and_round_trip() {
         let t = tempfile::tempdir().unwrap();
@@ -971,8 +843,6 @@ mod tests {
         assert_eq!(Store::new(loc()).video_arrows(), "seek");
     }
 
-    /// known.json from a newer build: unknown keys survive a rewrite; a file this build cannot
-    /// read is not replaced.
     #[test]
     fn known_list_round_trips_unknown_keys() {
         let t = tempfile::tempdir().unwrap();
@@ -989,9 +859,6 @@ mod tests {
         assert_eq!(std::fs::read(&file).unwrap(), b"[not the list]");
     }
 
-    /// iOS update: the container moved. The volume recorded under the old container shows up
-    /// again under the new one (history kept, list rewritten), a volume only in the app's
-    /// Volumes folder is listed by the scan, and nothing is deleted.
     #[test]
     fn known_volumes_follow_a_moved_container() {
         let t = tempfile::tempdir().unwrap();
@@ -1016,14 +883,11 @@ mod tests {
         assert!(mio.exists);
         assert_eq!(mio.unlock_ms, Some(900));
         assert!(r.iter().any(|e| e.path == new.join("Altro.nvault").to_string_lossy()), "scanned");
-        // the unrelated missing one is still listed (as missing), not dropped
         assert!(r.iter().any(|e| e.path == gone.to_string_lossy() && !e.exists));
         assert!(!r.iter().any(|e| e.path == old.join("Mio.nvault").to_string_lossy()));
-        // persisted: a fresh start sees the new path without relocating again
         let j: serde_json::Value = serde_json::from_slice(&std::fs::read(config.join(KNOWN_FILE)).unwrap()).unwrap();
         assert!(j["volumes"].as_array().unwrap().iter().any(|v| v["path"] == serde_json::json!(new.join("Mio.nvault").to_string_lossy())));
         assert!(new.join("Mio.nvault").is_file() && new.join("Altro.nvault").is_file());
-        // idempotent
         let mut s2 = Store::new(loc());
         s2.relocate_known(|p| crate::mobile_paths::rebase_container(p, &home));
         assert_eq!(s2.recent().iter().filter(|e| e.name == "Mio").count(), 1);

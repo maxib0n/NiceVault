@@ -1,4 +1,3 @@
-// Dettagli: auto-lock options per volume and the self-destruct password.
 import { boot, expect, test } from './helpers';
 
 test('auto-lock: minutes incl. Mai, sleep and screen switches, scope', async ({ page }) => {
@@ -7,13 +6,12 @@ test('auto-lock: minutes incl. Mai, sleep and screen switches, scope', async ({ 
   await expect(page.getByText(/Blocco automatico tra/)).toBeVisible();
   await box.getByTestId('autolock-minutes').getByRole('radio', { name: 'Mai' }).click();
   await expect(box.getByTestId('autolock-minutes').getByRole('radio', { name: 'Mai' })).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByText(/Blocco automatico tra/)).toHaveCount(0); // sidebar countdown hidden
+  await expect(page.getByText(/Blocco automatico tra/)).toHaveCount(0);
   await box.getByTestId('lock-on-sleep').click();
   await expect(box.getByTestId('lock-on-sleep')).toHaveAttribute('aria-checked', 'false');
   await box.getByTestId('lock-on-screen').click();
   await expect(box.getByTestId('lock-on-screen')).toHaveAttribute('aria-checked', 'false');
   await box.getByTestId('lock-scope').getByRole('radio', { name: 'Tutti i volumi' }).click();
-  // stored in the volume: back again after leaving the page
   await page.getByTestId('nav-files').click();
   await page.getByTestId('nav-details').click();
   await expect(box.getByTestId('lock-on-sleep')).toHaveAttribute('aria-checked', 'false');
@@ -35,7 +33,6 @@ test('self-destruct password: warning, confirm, conflict, added as its own kind,
   await page.getByTestId('duress-understood').check();
   await go.click();
   await expect(form).toHaveAttribute('data-step', '2');
-  // the volume's own password is refused (duress_conflict)
   await form.getByLabel('Password', { exact: true }).fill('demo');
   await form.getByLabel('Ripeti').fill('demo');
   await page.getByRole('button', { name: 'Aggiungi', exact: true }).click();
@@ -47,7 +44,6 @@ test('self-destruct password: warning, confirm, conflict, added as its own kind,
   const duress = slots.locator('[data-kind="duress"]');
   await expect(duress).toHaveCount(1);
   await expect(duress).toContainText('Distrugge il volume se usata');
-  // the only real key still cannot go; the self-destruct one can
   await expect(slots.locator('[data-kind="password"]').getByRole('button', { name: 'Rimuovi' })).toBeDisabled();
   await duress.getByRole('button', { name: 'Rimuovi' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Rimuovi' }).click();
@@ -70,7 +66,6 @@ test('rotate the volume key: what it needs, which password stays, wrong password
   await confirm.click();
   await expect(page.getByTestId('rotate-done')).toBeVisible({ timeout: 10000 });
   await page.getByRole('button', { name: 'Chiudi' }).click();
-  // only the kept password is left
   await expect(page.getByTestId('slots').locator('[data-kind="password"]')).toHaveCount(1);
 });
 

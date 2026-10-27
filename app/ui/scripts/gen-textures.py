@@ -19,8 +19,9 @@ tiles repeat without a seam and rebuild identically.
                    into the board it lies on.
   board-grain.webp the board in the light theme: the cotton paper's grain alone, finer (1-2 px)
                    and without its long fibres; the sheets keep paper-grain.webp.
-  *-aNN.webp       the phone's copies (styles/mobile.css): the same tile with the desktop's
-                   opacity (NN %) baked into its alpha, painted with background-blend-mode.
+  *-aNN.webp       the printing copies (styles/tokens.css --*-print): the same tile with its
+                   strength (NN %, times --tex-k per resolution) baked into its alpha, painted as
+                   the surface's own top background layer with background-blend-mode (base.css).
 
   dither.png       64 px blue noise (void-and-cluster), mid-grey, soft-light blended
                    under the light pools (board, card, cover): a dark gradient's 8-bit
@@ -47,12 +48,10 @@ def spectrum_noise(rng, n, band_lo, band_hi, aniso=1.0, angle_deg=0.0):
     fy = np.fft.fftfreq(n)[:, None]
     fx = np.fft.fftfreq(n)[None, :]
     a = np.deg2rad(angle_deg)
-    # rotate the frequency plane; compress along the fibre direction (long grain = low freq along it)
     u = fx * np.cos(a) + fy * np.sin(a)
     v = -fx * np.sin(a) + fy * np.cos(a)
     r = np.sqrt((u * aniso) ** 2 + (v / aniso) ** 2)
     lo, hi = 1.0 / band_lo, 1.0 / band_hi  # cycles per px
-    # smooth band-pass: raised-cosine edges (no ringing)
     def edge(x, a0, a1):
         t = np.clip((x - a0) / (a1 - a0), 0, 1)
         return 0.5 - 0.5 * np.cos(np.pi * t)
@@ -78,7 +77,6 @@ def periodic_strokes(rng, n, count, length, width, tone_sd):
             px = (x0 + np.cos(a2) * L * t) % n
             py = (y0 + np.sin(a2) * L * t) % n
             ix, iy = int(px), int(py)
-            # 3x3 splat, wrapped
             for dy in (-1, 0, 1):
                 for dx in (-1, 0, 1):
                     w = np.exp(-((ix + dx - px) ** 2 + (iy + dy - py) ** 2) / (2 * width ** 2))
@@ -105,14 +103,10 @@ def save(name, field, sd):
 
 def suede():
     rng = np.random.default_rng(20261024)
-    # the nap: fine fibre tips (1-3 px) leaning at -35 deg, plus a slightly larger
-    # tuft scale (3-6 px) that gives the velvet its softness
     fine = spectrum_noise(rng, N, 3.0, 1.15, aniso=2.4, angle_deg=-35)
     tuft = spectrum_noise(rng, N, 5.0, 2.4, aniso=1.6, angle_deg=-35)
     nap = 0.8 * fine + 0.2 * tuft
-    # a soft shoulder: suede scatters light, its darks are never inky
     nap = np.tanh(nap * 0.9) / 0.9
-    # fibre tips catching the light: sparse, single-pixel, only ever lighter
     tips = (rng.random((N, N)) < 0.006) * rng.uniform(0.8, 2.2, (N, N))
     nap = nap + tips
     nap = highpass(nap, 14)
@@ -147,7 +141,6 @@ def felt():
                 a2 = ang + bend * t
                 pts.append((x0 + np.cos(a2) * L * t, y0 + np.sin(a2) * L * t))
             w = max(1, int(round(rng.uniform(0.35, 0.6) * S)))
-            # wrapped on the torus: drawn again wherever it crosses an edge
             for ox in (-big, 0, big):
                 for oy in (-big, 0, big):
                     q = [(x + ox, y + oy) for x, y in pts]
@@ -161,7 +154,6 @@ def felt():
     f = np.tanh(f * 0.8) / 0.8
     f = highpass(f, 5)
     save('felt-board.webp', f / f.std(), 12)
-    bake('felt-board.webp', 0.62)
 
 
 def board_paper():
@@ -170,17 +162,28 @@ def board_paper():
     g = np.tanh(g * 0.8) / 0.8
     g = highpass(g, 6)
     save('board-grain.webp', g / g.std(), 14)
-    bake('board-grain.webp', 0.2)
 
 
 def bake(name, alpha):
-    """The phone's copy: the tile with the desktop's opacity as its alpha (mobile.css)."""
+    """A printing copy: the tile with its strength (an opacity) as its alpha."""
     im = Image.open(os.path.join(OUT, name)).convert('RGBA')
     a = np.asarray(im).copy()
     a[..., 3] = round(alpha * 255)
     out = name.replace('.webp', f'-a{round(alpha * 100)}.webp')
     Image.fromarray(a, 'RGBA').save(os.path.join(OUT, out), 'WEBP', lossless=True)
     print(out)
+
+
+PRINTS = (('felt-board.webp', 0.62), ('board-grain.webp', 0.2), ('paper-grain.webp', 0.26), ('suede-nap.webp', 0.16), ('suede-nap.webp', 1))
+TEX_K = (0.6, 0.7, 0.8, 1)
+
+
+def baked():
+    for name, alpha in PRINTS:
+        for k in TEX_K:
+            if alpha * k < 1:
+                bake(name, alpha * k)
+    bake('cloth-weave.webp', 0.42)
 
 
 def blue_noise(n=64, sigma=1.9, seed=7):
@@ -191,7 +194,6 @@ def blue_noise(n=64, sigma=1.9, seed=7):
     kern = np.exp(-(d(x) ** 2 + d(y) ** 2) / (2 * sigma ** 2))
     energy = lambda m: np.real(np.fft.ifft2(np.fft.fft2(m) * np.fft.fft2(kern)))
     shift = lambda i: np.roll(np.roll(kern, i // n, 0), i % n, 1)
-    # initial binary pattern: ~10% minority pixels, relaxed until no cluster/void swap helps
     pat = np.zeros(n * n, bool)
     pat[rng.choice(n * n, n * n // 10, replace=False)] = True
     e = energy(pat.reshape(n, n).astype(float)).ravel()
@@ -206,14 +208,12 @@ def blue_noise(n=64, sigma=1.9, seed=7):
             break
     rank = np.zeros(n * n, int)
     ones = int(pat.sum())
-    # phase 1: remove the tightest clusters, ranking downwards
     p1, e1 = pat.copy(), e.copy()
     for r in range(ones - 1, -1, -1):
         c = np.argmax(np.where(p1, e1, -np.inf))
         p1[c] = False
         e1 -= shift(c).ravel()
         rank[c] = r
-    # phase 2+3: fill the largest voids, ranking upwards
     for r in range(ones, n * n):
         v = np.argmin(np.where(pat, np.inf, e))
         pat[v] = True
@@ -225,10 +225,6 @@ def blue_noise(n=64, sigma=1.9, seed=7):
 def dither():
     n = 64
     d = (blue_noise(n) + 0.5) / (n * n) - 0.5  # -0.5..0.5, uniform, blue
-    # opaque mid-grey, soft-light blended (background-blend-mode) under the translucent light
-    # pools: on a dark board soft-light lifts about twice as hard as it darkens, so the dark
-    # half is cut deeper; each pixel moves by about +-2/255 (less on paper). Opaque on purpose:
-    # an alpha of 1/255 is lost to premultiplied 8-bit compositing (WebKit draws nothing)
     g = np.rint(128 + np.where(d > 0, d * 18, d * 38)).astype(np.uint8)  # 109..137
     Image.fromarray(g, 'L').save(os.path.join(OUT, 'dither.png'), optimize=True)
 
@@ -236,6 +232,6 @@ def dither():
 if __name__ == '__main__':
     import sys
     only = set(sys.argv[1:])
-    for name, fn in (('suede', suede), ('paper', paper), ('felt', felt), ('board', board_paper), ('dither', dither)):
+    for name, fn in (('suede', suede), ('paper', paper), ('felt', felt), ('board', board_paper), ('dither', dither), ('baked', baked)):
         if not only or name in only:
             fn()

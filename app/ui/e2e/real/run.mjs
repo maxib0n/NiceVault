@@ -1,11 +1,3 @@
-// Real-app suite: the Tauri shell + real nv-core/nv-mount, driven through the
-// real WebKitGTK webview (tauri-driver + WebKitWebDriver) on an X server
-// (Xvfb), with real GTK file dialogs and real XDND drags (xdotool + a GTK
-// drag source). Started by e2e-real.sh, which provides the environment:
-//   NV_E2E_APP   app binary (copied into a fresh "stick" folder)
-//   NV_E2E_WORK  scratch dir (stick/, host/, export/)
-//   NV_E2E_OUT   screenshot dir
-//   NV_E2E_XDO   xdotool binary (LD_LIBRARY_PATH set by the caller)
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, writeFileSync } from 'node:fs';
@@ -31,9 +23,6 @@ let wd;
 let shotN = 0;
 const results = [];
 const screenshots = [];
-
-// ---------------------------------------------------------------------------
-// page helpers: semantic lookups only (roles, accessible names, text, testids)
 
 const LIB = `
   const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
@@ -73,7 +62,6 @@ async function click(desc, body, ...args) {
 const clickButton = (name) => click(`button "${name}"`, 'return btn(arguments[0])', name);
 const clickOption = (name) => click(`item "${name}"`, 'return option(arguments[0])', name);
 
-/** Type text into the focused element through real key events. */
 async function typeText(text) {
   const actions = [];
   for (const ch of text) actions.push({ type: 'keyDown', value: ch }, { type: 'keyUp', value: ch });
@@ -81,7 +69,6 @@ async function typeText(text) {
   await wd.cmd('DELETE', '/actions');
 }
 
-/** Wait until finite animations (the lid ceremony between screens) are over. */
 async function settled() {
   await sleep(100);
   await waitFor('transition over', 'return !document.getAnimations().some((a) => a.playState === "running" && Number.isFinite(a.effect?.getComputedTiming().endTime))', { timeout: 5000 }).catch(() => undefined);
@@ -93,7 +80,6 @@ async function shot(name) {
   screenshots.push(file);
   return file;
 }
-/** The whole X screen (shows GTK dialogs, the drag source, the drag in flight). */
 function rootShot(name) {
   const file = join(OUT, `${String(++shotN).padStart(2, '0')}-${name}.png`);
   execFileSync('import', ['-window', 'root', file]);
@@ -113,7 +99,6 @@ async function step(name, fn) {
     try {
       await shot(`FAIL-${name.replace(/[^a-z0-9]+/gi, '-').slice(0, 40)}`);
     } catch {
-      /* session gone */
     }
   }
 }
@@ -122,7 +107,6 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
-/** fds of our WebKitWebProcess (its HOME is the suite's) open on a WebKit-Media temp file */
 function webMediaFds() {
   const hits = [];
   for (const p of readdirSync('/proc').filter((x) => /^\d+$/.test(x))) {
@@ -134,18 +118,13 @@ function webMediaFds() {
           const l = readlinkSync(`/proc/${p}/fd/${fd}`);
           if (l.includes('WebKit-Media')) hits.push(`${p}/fd/${fd} -> ${l}`);
         } catch {
-          /* closed meanwhile */
         }
       }
     } catch {
-      /* gone, or not ours */
     }
   }
   return hits;
 }
-
-// ---------------------------------------------------------------------------
-// X11 helpers
 
 function appWindow() {
   const ids = xdo('search', '--class', '^nicevault$').split('\n').filter(Boolean);
@@ -164,7 +143,6 @@ async function waitWindow(name, timeout = 10000) {
       const id = xdo('search', '--onlyvisible', '--name', `^${name}$`).split('\n')[0];
       if (id) return id;
     } catch {
-      /* not yet */
     }
     await sleep(150);
   }
@@ -184,24 +162,20 @@ async function waitWindowGone(name, timeout = 10000) {
   throw new Error(`window "${name}" still open`);
 }
 
-/** Answer a real GTK file chooser: focus it, Ctrl+L, type the path, Enter (+ extra keys). */
 async function answerFileChooser(title, path, extraKeys = []) {
   const id = await waitWindow(title);
   await sleep(400);
   xdo('windowfocus', '--sync', id);
-  // leave the "Recent" view first (there a typed folder can't be accepted): Alt+Home
   xdo('key', '--clearmodifiers', 'alt+Home');
   await sleep(300);
   xdo('key', '--clearmodifiers', 'ctrl+l');
   await sleep(250);
   xdo('type', '--delay', '15', path);
   await sleep(500);
-  xdo('key', 'Delete'); // drop GTK's inline completion ("/") if it selected one
+  xdo('key', 'Delete');
   rootShot(`gtk-dialog-${title.replace(/[^a-z]+/gi, '-').toLowerCase()}`);
   xdo('key', 'Return');
   for (const k of extraKeys) {
-    // only if the chooser is still up after a generous wait: a stray key would
-    // land on the app and could re-trigger the button that opened the dialog
     try {
       await waitWindowGone(title, 2500);
       break;
@@ -218,7 +192,6 @@ async function answerFileChooser(title, path, extraKeys = []) {
   }
 }
 
-/** Start the GTK drag source offering `files` (text/uri-list) at screen (x, y). */
 async function dragSource(x, y, files) {
   const p = spawn('python3', ['-I', join(HERE, 'drag-source.py'), String(x), String(y), ...files], { stdio: ['ignore', 'pipe', 'inherit'] });
   let out = '';
@@ -232,7 +205,6 @@ async function dragSource(x, y, files) {
   return { proc: p, ended: () => out.includes('drag-end'), kill: () => p.kill() };
 }
 
-/** Real pointer drag from screen point a to b (XTEST events -> XDND between X clients). */
 async function pointerDrag(a, b, { midway } = {}) {
   xdo('mousemove', a.x, a.y);
   await sleep(150);
@@ -243,7 +215,6 @@ async function pointerDrag(a, b, { midway } = {}) {
     xdo('mousemove', Math.round(a.x + ((b.x - a.x) * i) / steps), Math.round(a.y + ((b.y - a.y) * i) / steps));
     await sleep(30);
   }
-  // a couple of small moves on the target so the drop site gets drag-motion
   for (const d of [3, -3, 2]) {
     xdo('mousemove', b.x + d, b.y + d);
     await sleep(120);
@@ -253,13 +224,10 @@ async function pointerDrag(a, b, { midway } = {}) {
   await sleep(400);
 }
 
-/** Viewport point (CSS px, DPR 1) -> screen point. */
 function toScreen(p) {
   const w = appWindow();
   return { x: Math.round(w.x + p.x), y: Math.round(w.y + p.y) };
 }
-
-// ---------------------------------------------------------------------------
 
 async function startApp() {
   wd = new WebDriver(DRIVER);
@@ -271,7 +239,6 @@ async function quitApp() {
   try {
     await wd?.quit();
   } catch {
-    /* already gone */
   }
   wd = null;
   await sleep(1500);
@@ -294,7 +261,6 @@ async function main() {
   await step('launch: Benvenuto with no volumes', async () => {
     await startApp();
     await waitFor('welcome', 'return screen() === "welcome"');
-    // tauri.conf.json app.security.freezePrototype: on in the real webview
     assert((await wd.exec('return Object.isFrozen(Object.prototype)')) === true, 'Object.prototype is not frozen');
     await shot('welcome-empty');
   });
@@ -353,7 +319,7 @@ async function main() {
   await step('import through the real GTK file dialog (Importa)', async () => {
     for (const f of [files.photo, files.pdf]) {
       const b = await waitFor('Importa', 'return btn("Importa")');
-      void wd.click(b).catch(() => undefined); // the native dialog blocks the click's reply
+      void wd.click(b).catch(() => undefined);
       await answerFileChooser('Importa nel volume', f);
       const base = f.split('/').pop();
       await waitFor(`${base} listed`, 'return names().includes(arguments[0])', { args: [base], timeout: 20000 });
@@ -376,7 +342,6 @@ async function main() {
   });
 
   await step('delete a few hundred files as a job (delete.rs): confirm, toast, gone, the rest untouched', async () => {
-    // 300 photos of 64 KB in a folder, imported through the drop handler
     const pile = join(WORK, 'Mucchio');
     mkdirSync(pile, { recursive: true });
     const blob = Buffer.alloc(64 * 1024, 7);
@@ -470,14 +435,12 @@ async function main() {
        return imgs.length >= 2 && ok.length === imgs.length && imgs.map((i) => i.getAttribute('src'));`,
       { timeout: 15000 },
     );
-    // pictures come from the backend (nvault://); a video's frame is drawn in the page (blob:, videoThumb.ts)
     assert(r.every((s) => s.startsWith('nvault://') || s.startsWith('blob:')), `thumbnail src not nvault/blob: ${r}`);
     assert(r.some((s) => s.startsWith('nvault://')), `no backend thumbnail: ${r}`);
     await shot('grid-thumbnails');
   });
 
   await step('folder envelopes: no-photo folders (files only, folders only, mixed) stay tidy in WebKitGTK', async () => {
-    // host folders shaped like a game's folders: no images at all
     const B = join(HOST, 'Buste');
     const put = (dir, files, dirs = []) => {
       mkdirSync(join(B, dir), { recursive: true });
@@ -497,7 +460,6 @@ async function main() {
     await clickOption('Buste');
     await wd.keys(KEY.Enter);
     await waitFor('in Buste', 'return document.querySelector("nav[aria-label=Percorso] [aria-current=page]")?.textContent.trim() === "Buste"');
-    // pieces expected per folder (sheets for files, small envelopes for folders, at most 3)
     const want = { data: 3, sh2e: 3, 'solo file': 3, 'una cartella': 1, 'un file e cartelle': 3, vuota: 0 };
     const bad = await waitFor(
       'envelopes laid out',
@@ -545,7 +507,6 @@ async function main() {
       await shot(shotName);
       if (after) await after();
     } finally {
-      // never leave the modal open for the next step
       if (await q('return !!dialog("Anteprima di")')) {
         await wd.keys(KEY.Escape);
         await waitFor('quick look closed', 'return !dialog("Anteprima di")');
@@ -588,15 +549,12 @@ async function main() {
            .then(async (r) => done({ ...info, fetch: [r.status, r.headers.get('content-type'), r.headers.get('content-range'), r.headers.get('accept-ranges'), (await r.arrayBuffer()).byteLength] }))
            .catch((e) => done({ ...info, fetch: String(e) }));
        } catch (e) { done({ diagError: String(e) }); }`,
-      // GStreamer's download buffer would be an unlinked /var/tmp/WebKit-Media-* in the web process
       async () => {
         const v = 'dialog("Anteprima di")?.querySelector("video")';
         await q(`void ${v}?.play()`);
-        // the stream loops (never disk-buffered): MediaViewer stops it just before the end ...
         const end = await waitFor('stopped at the end', `const e = ${v}; return e && e.paused && e.currentTime > e.duration - 0.5 && { at: e.currentTime, duration: e.duration }`, { timeout: 10000 });
         let fds = webMediaFds();
         assert(fds.length === 0, `decrypted media on disk: ${fds.join(', ')}`);
-        // ... and the next play starts over from 0, still without a disk buffer
         await q(`void ${v}?.play()`);
         await waitFor('replays from 0', `const e = ${v}; return e && !e.paused && e.currentTime > 0.2 && e.currentTime < 2.5`, { timeout: 10000 });
         fds = webMediaFds();
@@ -609,7 +567,7 @@ async function main() {
   await step('Proprietà (Alt+Enter): sniffed type, pixels, original path, SHA-256 equal to the host file', async () => {
     await clickOption('photo.jpg');
     await wd.exec('document.querySelector("[role=listbox]").focus()');
-    await wd.chord(['\uE00A'], '\uE007'); // Alt+Enter (WebDriver Alt, Enter)
+    await wd.chord(['\uE00A'], '\uE007');
     await waitFor('props card', 'return document.querySelector("[data-testid=props][data-kind=file]") && document.querySelector("[data-testid=props-dimensions]")');
     const facts = await q('return { dims: norm(document.querySelector("[data-testid=props-dimensions]").textContent), origin: norm(document.querySelector("[data-testid=props-origin]").textContent), text: norm(document.querySelector("[data-testid=props]").textContent) }');
     assert(facts.dims === '960 × 659 px', `dimensions ${facts.dims}`);
@@ -648,7 +606,7 @@ async function main() {
     await waitFor('2 selected', 'return document.querySelectorAll("[role=option][aria-selected=true]").length === 2');
     const b = await waitFor('Esporta', 'return btn("Esporta")');
     void wd.click(b).catch(() => undefined);
-    await answerFileChooser('Esporta in…', EXPORT); // folder view + typed folder: Return accepts it
+    await answerFileChooser('Esporta in…', EXPORT);
     await waitFor('export toast', 'return toastTexts().some((t) => t.startsWith("Esportato in"))', { timeout: 20000 });
     const out = readdirSync(EXPORT);
     assert(out.includes('photo.jpg') && out.includes('document.pdf'), `export dir has ${out}`);
@@ -675,8 +633,6 @@ async function main() {
     assert(ls.includes('photo.jpg') && ls.includes('Cartella'), `mount lists ${ls}`);
     assert(sha(join(mountpoint, 'photo.jpg')) === sha(files.photo), 'photo.jpg differs through FUSE');
     writeFileSync(join(mountpoint, 'via-fuse.txt'), 'scritto dal disco montato\n');
-    // live refresh: what a file manager copies onto the drive shows up in the open folder
-    // with no user action (fs-changed from fs_events.rs)
     execFileSync('cp', [files.pdf, join(mountpoint, 'copiato-col-cp.pdf')]);
     await waitFor('cp copy listed without user action', 'return names().includes("copiato-col-cp.pdf")', { timeout: 3000 });
     await waitFor('via-fuse.txt listed without user action', 'return names().includes("via-fuse.txt")', { timeout: 3000 });
@@ -685,9 +641,7 @@ async function main() {
     await waitFor('unmounted', 'return document.querySelector("[role=switch]").getAttribute("aria-checked") === "false"', { timeout: 20000 });
     await sleep(500);
     assert(!readFileSync('/proc/mounts', 'utf8').includes(mountpoint.replace(/ /g, '\\040')), 'still mounted after toggle off');
-    // the file written through the drive is in the volume
     await clickButton('Elenco');
-    // reload the listing by stepping into a folder and back
     await clickOption('Cartella');
     await wd.keys(KEY.Enter);
     await waitFor('in Cartella', 'return document.querySelector("nav[aria-label=Percorso] [aria-current=page]")?.textContent.trim() === "Cartella"');
@@ -699,14 +653,14 @@ async function main() {
   await step('drive removal: the volume file vanishes -> locked with "Unità scollegata"', async () => {
     const vol = join(WORK, 'stick', 'E2E.nvault');
     const away = join(WORK, 'E2E.nvault.away');
-    renameSync(vol, away); // what the watcher sees when the stick is pulled
+    renameSync(vol, away);
     try {
       const reason = await waitFor('locked (removed)', 'return screen() === "unlock" && document.querySelector("[data-reason=removed]")?.textContent.trim()', { timeout: 10000 });
       assert(reason === 'Unità scollegata', `reason: ${reason}`);
       await settled();
       await shot('removed-locked');
     } finally {
-      renameSync(away, vol); // stick back in
+      renameSync(away, vol);
     }
     const pw = await waitFor('password', 'return byLabel("Password")');
     await wd.sendKeys(pw, PASSWORD + KEY.Enter);
@@ -754,7 +708,6 @@ async function main() {
     assert(!/AUTOFILLURLS|CREATETIME|MODIFYTIME/i.test(d), 'raw export fields still shown as custom fields');
     const dates = await waitFor('dates', 'return document.querySelector("[data-testid=pm-dates]")?.textContent');
     assert(/30 mar 2026/.test(dates) && /28 set 2026/.test(dates.replace(/\s+/g, ' ')), `dates: ${dates}`);
-    // nothing raw left: the repair finds nothing (it ran once at open, and the import mapped everything)
     await click('Importa', 'return document.querySelector("[data-testid=pm-open-import]")');
     await click('Ripara', 'return document.querySelector("[data-testid=pm-repair]")');
     await waitFor('repair toast', 'return toastTexts().some((t) => t.startsWith("Nessuna voce da riparare"))');
@@ -767,8 +720,6 @@ async function main() {
   await step('Impostazioni (Ctrl+,): language it -> en -> it in place, kept in settings.json (installed)', async () => {
     await wd.chord([KEY.Control], ',');
     await waitFor('settings', 'return screen() === "settings" && document.querySelector("[data-testid=app-version]")?.textContent.trim() !== "—"');
-    // installed (a folder on the computer, like ~/.local/bin): the Avvio card with its three switches,
-    // "Resta nel vassoio" on by default
     const startup = await waitFor('Avvio card', 'const c = document.querySelector("[data-testid=settings-startup]"); return c && [...c.querySelectorAll("[role=switch]")].map((s) => s.dataset.testid + "=" + s.getAttribute("aria-checked")).join(" ")');
     assert(startup === 'start-at-login=false start-minimized=false close-to-tray=true', `Avvio switches: ${startup}`);
     await q('document.querySelector("[data-testid=settings-startup]").scrollIntoView({ block: "center" })');
@@ -801,7 +752,6 @@ async function main() {
     await wd.sendKeys(pw, PASSWORD + KEY.Enter);
     await waitFor('vault', 'return screen() === "vault"', { timeout: 20000 });
     await waitFor('persisted', 'const n = names(); return ["photo.jpg", "document.pdf", "clip.webm", "readme.txt", "photo 2.jpg", "Cartella", "via-fuse.txt"].every((x) => n.includes(x)) && n', { timeout: 10000 });
-    // the view size is the volume's own (Settings.grid_size): still Grandi after a restart
     await waitFor('view size kept', 'return document.querySelector(".file-view-wrap")?.dataset.gridSize === "l"');
     await settled();
     await shot('reopened-vault');
@@ -810,7 +760,6 @@ async function main() {
   });
 
   await step('live drives (fake source): plug a stick -> Benvenuto + Nuovo volume show it; pull -> gone', async () => {
-    // e2e-real.sh points NICEVAULT_FAKE_DRIVES at this file; the app re-reads it like an OS signal
     const file = join(WORK, 'drives.json');
     const usb = join(WORK, 'usb', 'FAKE STICK');
     mkdirSync(usb, { recursive: true });

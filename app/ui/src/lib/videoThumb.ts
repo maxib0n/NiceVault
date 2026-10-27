@@ -1,21 +1,10 @@
-// Video thumbnails, made by the webview itself: the first megabytes of the decrypted file are
-// fetched from nvault:// into memory (a Blob, never a file: WebKitGTK disk-buffers http media
-// but not blob: media), played muted in a detached <video> (GStreamer / AVFoundation /
-// MediaCodec underneath), seeked to ~1 s (10 % of a short clip), drawn on a small canvas and
-// encoded as a JPEG. Kept in memory only (an object URL per file, LRU), dropped when the volume
-// locks. One at a time, latest asked first, only for tiles on screen (Thumbnail.svelte), and
-// never while the UI is busy: a frame of idle between files.
-
 import { isTauri, mediaRelease, mediaUrl, onVaultLocked, previewUrl } from "./api";
 import { fetchAsBlob } from "./mediaBlob";
 import { isIos } from "./platform";
 import type { FsNode, VaultId } from "./types";
 
-/** bytes fetched for the frame: enough for the header and the first second of a phone video */
 const PREFIX = (isIos ? 6 : 12) * 1024 * 1024;
-/** an MP4 whose index sits at the end (moov after mdat) is read whole up to this size */
 const WHOLE_MAX = (isIos ? 24 : 64) * 1024 * 1024;
-/** longest side of a thumbnail (device px); iOS stays small: its web process dies on memory */
 const MAX_PX = isIos ? 256 : 512;
 const ENTRIES = 300;
 const TIMEOUT_MS = 10_000;
@@ -28,7 +17,6 @@ type Job = {
   done: ((u: string | null) => void)[];
 };
 
-/** key -> object URL, or null (could not be made: not asked again) */
 const cache = new Map<string, string | null>();
 const queue: Job[] = [];
 let running = false;
@@ -52,20 +40,14 @@ function hookLock() {
   ).catch(() => undefined);
 }
 
-/** Whether this file's frame was tried and settled (made, or found impossible): not worth asking again. */
 export function videoThumbSettled(vault: VaultId, n: FsNode): boolean {
   return cache.has(thumbKey(vault, n));
 }
 
-/** The thumbnail already made for this file, if any (a poster for the player). */
 export function peekVideoThumb(vault: VaultId, n: FsNode): string | null {
   return cache.get(thumbKey(vault, n)) ?? null;
 }
 
-/**
- * The thumbnail of a video file (an object URL), or null when it cannot be made. `signal`
- * withdraws the request while it still waits (the tile scrolled away).
- */
 export function videoThumb(
   vault: VaultId,
   node: FsNode,
@@ -76,14 +58,13 @@ export function videoThumb(
   const key = thumbKey(vault, node);
   if (cache.has(key)) {
     const u = cache.get(key)!;
-    cache.delete(key); // most recently used last
+    cache.delete(key);
     cache.set(key, u);
     return Promise.resolve(u);
   }
   return new Promise((resolve) => {
     let job = queue.find((j) => j.key === key);
     if (job) {
-      // asked again: to the front
       queue.splice(queue.indexOf(job), 1);
       job.done.push(resolve);
     } else
@@ -128,8 +109,6 @@ async function pump() {
       const job = queue.pop();
       if (!job || !job.done.length) continue;
       let url: string | null = null;
-      // the whole job (ticket, bytes, the frame) has TIMEOUT_MS: one file the webview cannot
-      // load now (iOS: the preview's own player holds the decoder) never stalls the files after it
       const ac = new AbortController();
       let timer: ReturnType<typeof setTimeout> | undefined;
       let late = false;
@@ -143,7 +122,6 @@ async function pump() {
       } finally {
         clearTimeout(timer);
       }
-      // a frame that could not be made is not asked again; one that ran out of time is (later)
       if (late) {
         for (const d of job.done) d(null);
         continue;
@@ -161,7 +139,6 @@ async function pump() {
   }
 }
 
-/** Top-level MP4/MOV boxes in `head`: is the index (moov) before the media data (mdat)? */
 export function moovFirst(head: Uint8Array): boolean | null {
   const dv = new DataView(head.buffer, head.byteOffset, head.byteLength);
   let off = 0;
@@ -180,7 +157,7 @@ export function moovFirst(head: Uint8Array): boolean | null {
     if (size < 8) return null;
     off += size;
   }
-  return null; // not an ISO media file, or its boxes go past what was read
+  return null;
 }
 
 async function source(job: Job, signal?: AbortSignal): Promise<Blob | null> {
@@ -199,7 +176,6 @@ async function source(job: Job, signal?: AbortSignal): Promise<Blob | null> {
     moovFirst(new Uint8Array(buf, 0, Math.min(buf.byteLength, 1 << 20))) ===
       false
   ) {
-    // the index is at the end: the frame needs the whole file
     if (total > WHOLE_MAX) return null;
     return fetchAsBlob(url, total, signal);
   }
@@ -229,13 +205,10 @@ function once(el: HTMLMediaElement, ev: string, signal?: AbortSignal): Promise<v
 async function make(job: Job, signal: AbortSignal): Promise<string | null> {
   const r = await frame(job, signal, true);
   if (r !== "tainted") return r;
-  // the loopback server did not allow the canvas (old server, unexpected origin): the capped Blob path
   return frame(job, signal, false).then((x) => (x === "tainted" ? null : x));
 }
 
 async function frame(job: Job, signal: AbortSignal, loopback: boolean): Promise<string | null | "tainted"> {
-  // where the app streams media (Linux: a loopback URL with Range, a ticket) the <video> reads the
-  // file itself and seeks anywhere, for any size or container: no partial blob. Else the blob path.
   let ticket: string | null = null;
   if (isTauri && loopback) {
     try {
@@ -258,7 +231,7 @@ async function frame(job: Job, signal: AbortSignal, loopback: boolean): Promise<
     isBlob = true;
   }
   const v = document.createElement("video");
-  if (ticket) v.crossOrigin = "anonymous"; // the loopback server answers CORS for the app's origin
+  if (ticket) v.crossOrigin = "anonymous";
   v.muted = true;
   v.playsInline = true;
   v.setAttribute("playsinline", "");
@@ -292,7 +265,7 @@ async function frame(job: Job, signal: AbortSignal, loopback: boolean): Promise<
         );
       } catch {
         c.width = c.height = 0;
-        return "tainted" as const; // SecurityError: a tainted canvas
+        return "tainted" as const;
       }
       c.width = c.height = 0;
       return out ? URL.createObjectURL(out) : null;
@@ -300,7 +273,6 @@ async function frame(job: Job, signal: AbortSignal, loopback: boolean): Promise<
     try {
       return await work;
     } catch (e) {
-      // a CORS-refused loopback load is a media error: try the Blob path instead
       if (ticket && !signal.aborted) return "tainted";
       throw e;
     }

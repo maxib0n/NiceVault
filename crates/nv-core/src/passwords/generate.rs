@@ -1,5 +1,3 @@
-//! Password and passphrase generator (OS randomness, unbiased choices) with an entropy estimate.
-
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -11,7 +9,6 @@ const LOWER: &str = "abcdefghijklmnopqrstuvwxyz";
 const UPPER: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const DIGITS: &str = "0123456789";
 const SYMBOLS: &str = "!#$%&()*+,-./:;<=>?@[]^_{|}~";
-/// Look-alikes dropped by `exclude_ambiguous`.
 pub const AMBIGUOUS: &str = "0O1lI|";
 
 pub const MIN_LENGTH: usize = 4;
@@ -39,14 +36,12 @@ pub enum GenOptions {
     Passphrase {
         #[serde(default = "d_words")]
         words: usize,
-        /// "en" (EFF large wordlist) | "it"
         #[serde(default = "d_lang")]
         language: String,
         #[serde(default = "d_sep")]
         separator: String,
         #[serde(default)]
         capitalize: bool,
-        /// Append one random digit to one random word.
         #[serde(default)]
         number: bool,
     },
@@ -88,13 +83,11 @@ pub enum GenError {
     Separator,
 }
 
-/// A generated secret and its entropy in bits (as generated: what an attacker who knows the options faces).
 pub struct Generated {
     pub value: Zeroizing<String>,
     pub entropy_bits: f64,
 }
 
-/// Uniform in `0..n` (rejection sampling, no modulo bias).
 pub fn below(n: usize) -> usize {
     assert!(n > 0 && n <= u32::MAX as usize);
     let n = n as u32;
@@ -130,8 +123,6 @@ pub fn generate(o: &GenOptions) -> Result<Generated, GenError> {
                 return Err(GenError::NoClass);
             }
             let pool: Vec<char> = classes.concat();
-            // Rejection: redraw until every chosen class appears (keeps the result uniform over the
-            // passwords that satisfy the rule; with >= 4 chars and <= 4 classes this ends quickly).
             loop {
                 let mut out = Zeroizing::new(String::with_capacity(*length));
                 for _ in 0..*length {
@@ -179,8 +170,6 @@ fn capitalized(w: &str) -> String {
     c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
 }
 
-/// log2 of the number of length-`n` strings over the pool that contain every class
-/// (inclusion-exclusion), i.e. the exact entropy of the generator above.
 fn random_entropy(classes: &[Vec<char>], n: usize) -> f64 {
     let k = classes.len();
     let mut total = 0f64;
@@ -234,7 +223,6 @@ mod tests {
     fn random_entropy_is_sane() {
         let all = generate(&random(20, true, true, true, true, false)).unwrap().entropy_bits;
         let pool = (26 + 26 + 10 + SYMBOLS.len()) as f64;
-        // Slightly below the naive length*log2(pool): the "every class" rule removes some strings.
         assert!(all < 20.0 * pool.log2() && all > 20.0 * pool.log2() - 1.0, "{all}");
         let short = generate(&random(4, true, true, true, true, false)).unwrap().entropy_bits;
         assert!(short < 4.0 * pool.log2() - 1.0);

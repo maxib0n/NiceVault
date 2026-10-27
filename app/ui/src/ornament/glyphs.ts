@@ -1,6 +1,3 @@
-// The curated emblem icons (lib/emblem.ts EMBLEM_ICONS) as lucide components, and
-// a reader that turns a rendered lucide <svg> into canvas geometry, so the glyph
-// can be engraved, stamped or pressed into the paper as a watermark.
 import {
   Baby,
   BookOpen,
@@ -57,22 +54,15 @@ export const EMBLEM_GLYPHS: Record<EmblemIconId, Component<{ size?: number | str
   mountain: Mountain,
 };
 
-/**
- * Centre of the glyph's drawn geometry in the 24 grid (lucide glyphs are not all centred on
- * 12,12: the gem sits low, the plane leans). Needs the <svg> rendered (visibility hidden is
- * fine, display none is not); falls back to the grid centre.
- */
 export function glyphCentre(svg: SVGSVGElement): { x: number; y: number } {
   try {
     const b = svg.getBBox();
     if (b.width > 0 && b.height > 0) return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
   } catch {
-    /* not rendered */
   }
   return { x: 12, y: 12 };
 }
 
-/** Canvas geometry (24 grid) of a rendered lucide <svg>. */
 export function glyphPath(svg: SVGSVGElement): Path2D {
   const p = new Path2D();
   const n = (el: Element, a: string) => Number(el.getAttribute(a) ?? 0);

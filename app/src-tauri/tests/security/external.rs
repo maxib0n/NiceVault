@@ -1,10 +1,6 @@
-//! "Open with the default app" temp copies (src/external.rs).
-
 use super::open_vault;
 use nv_fs::{Fs, Kind, ROOT};
 
-/// Verified sound (Unix): the per-run folder and the per-file folder are 0700, and the
-/// copy is wiped (and its folder removed) when the volume locks.
 #[test]
 #[cfg(unix)]
 fn temp_copy_is_private_and_wiped_on_lock() {
@@ -26,9 +22,6 @@ fn temp_copy_is_private_and_wiped_on_lock() {
     st.lock_all("user");
 }
 
-/// The write-back follows a symlink the external side puts in place of the copy, so
-/// any host file the user can read is pulled into the volume (and a later preview/export
-/// shows it). Same-user only.
 #[test]
 #[cfg(unix)]
 fn reimport_does_not_follow_symlinks() {
@@ -51,7 +44,6 @@ fn reimport_does_not_follow_symlinks() {
     assert_eq!(&buf[..k], b"original", "the vault node now holds the symlink target's bytes");
 }
 
-/// "Open with" refuses programs and scripts on every OS.
 #[test]
 fn executables_are_not_opened() {
     use nicevault_app::state::runs_code;

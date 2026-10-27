@@ -1,5 +1,3 @@
-// Before an import: "Non c'è abbastanza spazio: servono X, liberi Y" (fixed-size: Estendi il volume…
-// prefilled; growable on a full drive: the message only). While it runs: speed and time left in the tray.
 import { boot, expect, jobTray, test } from './helpers';
 
 test('too big for a fixed volume: the dialog offers Estendi, prefilled to a size that fits', async ({ page }) => {
@@ -12,9 +10,9 @@ test('too big for a fixed volume: the dialog offers Estendi, prefilled to a size
   const rsz = page.getByRole('dialog', { name: 'Dimensione del volume' });
   const size = rsz.getByTestId('resize-size');
   await expect(size).toBeVisible();
-  expect(Number(await size.inputValue())).toBeGreaterThanOrEqual(8); // 4 GB volume + what is missing
+  expect(Number(await size.inputValue())).toBeGreaterThanOrEqual(8);
   await expect(rsz.getByTestId('resize-plan')).toHaveAttribute('data-plan', 'grow');
-  await expect(jobTray(page)).toHaveCount(0); // nothing started
+  await expect(jobTray(page)).toHaveCount(0);
 });
 
 test('too big for the drive of a growable volume: the message only', async ({ page }) => {

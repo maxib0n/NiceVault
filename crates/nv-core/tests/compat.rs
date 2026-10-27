@@ -1,10 +1,3 @@
-//! Volume-format compatibility: every fixture set in tests/fixtures/compat/<date>/ was written
-//! by a released build (see its README). This build must open each volume and read back
-//! everything its manifest.json records, then write to it and read it all back again.
-//! Fixtures are never opened in place (opening rewrites the header): each check works on a
-//! temp copy, and the fixture files are verified byte-identical before and after.
-//! The app-level half is app/src-tauri/tests/compat.rs.
-
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use nv_core::passwords::totp::Totp;
@@ -38,7 +31,6 @@ fn pat(seed: u64, len: usize) -> Vec<u8> {
         .collect()
 }
 
-/// Every fixture set: (folder, manifest).
 fn sets() -> Vec<(PathBuf, Value)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/compat");
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
@@ -53,14 +45,10 @@ fn sets() -> Vec<(PathBuf, Value)> {
         .collect()
 }
 
-/// The sets written by builds before node metadata (props.rs) and search (search.rs): the ones
-/// that gain them at their first open here. Later sets (from 2026-10-25) already have them.
 fn sets_before_metadata_and_search() -> Vec<(PathBuf, Value)> {
     sets().into_iter().filter(|(_, m)| m["generated_on"].as_str().is_some_and(|d| d < "2026-10-25")).collect()
 }
 
-/// `want` is contained in `got`: every object key of `want` exists in `got` with a contained
-/// value (new fields in later builds are fine), arrays have the same length, scalars are equal.
 fn contained(want: &Value, got: &Value, at: &str) {
     match (want, got) {
         (Value::Object(w), Value::Object(g)) => {
@@ -123,21 +111,17 @@ fn appearance_json(a: Option<&Appearance>) -> Value {
     json!({"accent": a.accent, "emblem": emblem})
 }
 
-/// A fresh writable copy of a fixture in `tmp`.
 fn copy_of(fixture: &Path, tmp: &Path, tag: &str) -> PathBuf {
     let p = tmp.join(format!("{tag}-{}", fixture.file_name().unwrap().to_string_lossy()));
     std::fs::copy(fixture, &p).unwrap();
     p
 }
 
-/// Everything the manifest's `core` section records. `after_write`: the volume has since been
-/// written by this build (extra nodes / slots / entries allowed, the root's mtime moved on).
 fn verify_core(v: &Vault, vol: &Value, after_write: bool) {
     let name = vol["file"].as_str().unwrap();
     let core = &vol["core"];
     v.check_integrity().unwrap();
 
-    // files and folders: paths, ids, kinds, sizes, mtimes, content
     let mut all = BTreeMap::new();
     walk(v, ROOT, "", &mut all);
     let want = core["nodes"].as_array().unwrap();
@@ -162,7 +146,6 @@ fn verify_core(v: &Vault, vol: &Value, after_write: bool) {
         assert!(matches!(resolve(v, p), Err(Error::NotFound)), "{name}: {p} should not exist");
     }
 
-    // raw app metadata, byte for byte
     for (k, w) in core["meta"].as_object().unwrap() {
         let got = v.meta_get(k).unwrap();
         match w {
@@ -171,7 +154,6 @@ fn verify_core(v: &Vault, vol: &Value, after_write: bool) {
         }
     }
 
-    // key slots (kind, label, KDF, fingerprint) and the header's appearance section
     let slots = serde_json::to_value(v.slots()).unwrap();
     let ws = core["slots"].as_array().unwrap();
     let gs = slots.as_array().unwrap();
@@ -181,14 +163,13 @@ fn verify_core(v: &Vault, vol: &Value, after_write: bool) {
     for w in ws {
         let g = gs.iter().find(|g| g["index"] == w["index"]).unwrap_or_else(|| panic!("{name}: slot {} missing", w["index"]));
         let mut w = w.clone();
-        w.as_object_mut().unwrap().remove("in_use"); // depends on which slot opened this session
+        w.as_object_mut().unwrap().remove("in_use");
         contained(&w, g, &format!("{name}:slot"));
     }
     if !after_write {
         contained(&core["appearance"], &appearance_json(v.appearance().as_ref()), &format!("{name}:appearance"));
     }
 
-    // password manager: entries, details, history, every secret, TOTP at a fixed time
     let list = serde_json::to_value(v.pm_list().unwrap()).unwrap();
     let list = list.as_array().unwrap();
     let wpm = core["pm"].as_array().unwrap();
@@ -237,7 +218,6 @@ fn check_volume(dir: &Path, vol: &Value) {
         .collect();
     let (main_slot, main_pw) = passwords[0].clone();
 
-    // header-only view, read-only on the fixture itself
     let peek = nv_core::peek(&fixture).unwrap();
     let got = json!({
         "appearance": appearance_json(peek.appearance.as_ref()),
@@ -246,7 +226,6 @@ fn check_volume(dir: &Path, vol: &Value) {
     });
     contained(&vol["peek"], &got, &format!("{name}:peek"));
 
-    // every password and the identity open it, at the recorded slot
     for (slot, p) in &passwords {
         let v = Vault::open(&copy_of(&fixture, tmp.path(), &format!("pw{slot}")), &pw(p)).unwrap_or_else(|e| panic!("{name}: slot {slot}: {e}"));
         assert_eq!(v.unlocked_slot(), Some(*slot), "{name}");
@@ -259,7 +238,6 @@ fn check_volume(dir: &Path, vol: &Value) {
         ident
     });
 
-    // full read-back
     let work = copy_of(&fixture, tmp.path(), "work");
     {
         let v = Vault::open(&work, &pw(&main_pw)).unwrap();
@@ -269,7 +247,6 @@ fn check_volume(dir: &Path, vol: &Value) {
         v.close().unwrap();
     }
 
-    // duress still armed: destroys the keys of a copy, then everything answers wrong_password
     if let Some(d) = vol["duress"].as_object() {
         let c = copy_of(&fixture, tmp.path(), "duress");
         assert_eq!(Vault::open(&c, &pw(d["password"].as_str().unwrap())).err(), Some(OpenError::WrongPassword));
@@ -279,8 +256,6 @@ fn check_volume(dir: &Path, vol: &Value) {
         }
     }
 
-    // migration path: this build writes to the old volume (data, metadata, PM, a new slot,
-    // the header section) and everything old and new reads back after a reopen
     let new_data = pat(77, 300_001);
     let new_pw = "added by a later build";
     {
@@ -294,7 +269,7 @@ fn check_volume(dir: &Path, vol: &Value) {
         assert_eq!(v.pm_get(&e.summary.id).unwrap().summary.title, "Aggiunta dopo");
         let a = v.appearance();
         v.set_appearance(Some(&Appearance { accent: Some("ottanio".into()), emblem: Some(LockedEmblem::Icon("star".into())) })).unwrap();
-        v.set_appearance(a.as_ref()).unwrap(); // and back
+        v.set_appearance(a.as_ref()).unwrap();
         v.add_password(&pw(new_pw), KdfPreset::Fast, Some("nuova")).unwrap();
         v.close().unwrap();
     }
@@ -310,7 +285,6 @@ fn check_volume(dir: &Path, vol: &Value) {
         v.close().unwrap();
     }
 
-    // the fixture itself was never touched
     assert_eq!(sha(&std::fs::read(&fixture).unwrap()), vol["sha256"].as_str().unwrap(), "{name}: fixture modified by the test");
     for suffix in ["-wal", "-shm"] {
         assert!(!dir.join(format!("{name}{suffix}")).exists(), "{name}: side file next to the fixture");
@@ -328,7 +302,6 @@ fn every_fixture_volume_still_opens_and_reads_back() {
     }
 }
 
-/// The fixture sets themselves: every volume / key file listed exists, nothing unlisted.
 #[test]
 fn fixture_sets_are_complete() {
     for (dir, m) in sets() {
@@ -346,10 +319,6 @@ fn fixture_sets_are_complete() {
     }
 }
 
-/// Proprietà metadata (props.rs, `nv.files_schema`): every fixture gains the side table at its
-/// first open with this build; its existing nodes read as unknown (no invented dates), new
-/// nodes get their creation time, import data round-trips, deletes still work, and the volume
-/// reopens (also after the write) with all the manifest's content intact.
 #[test]
 fn fixtures_gain_node_metadata_additively() {
     for (dir, m) in sets_before_metadata_and_search() {
@@ -373,7 +342,7 @@ fn fixtures_gain_node_metadata_additively() {
             let meta = v.node_meta(f.id).unwrap();
             assert_eq!((meta.created, meta.imported, meta.origin.as_deref()), (Some(7), Some(8), Some("/host/props-new.txt")));
             if let Some((_, (n, _))) = nodes.iter().find(|(_, (n, _))| n.kind == Kind::File) {
-                v.remove(n.id).unwrap(); // an old node without a row deletes as before
+                v.remove(n.id).unwrap();
             }
             v.flush().unwrap();
             v.close().unwrap();
@@ -385,10 +354,6 @@ fn fixtures_gain_node_metadata_additively() {
     }
 }
 
-/// Search and tags (search.rs, `nv.search_schema`): every fixture gains the tables and triggers at
-/// its first open with this build; every old name is found (accent / case folded in memory before
-/// the stored index is filled), the background fill completes, tags work on old nodes, an old
-/// node's rename and delete keep the index right, and the volume reopens intact.
 #[test]
 fn fixtures_gain_search_and_tags_additively() {
     use nv_core::{Filters, SearchQuery};
@@ -441,9 +406,6 @@ fn fixtures_gain_search_and_tags_additively() {
     }
 }
 
-/// "Aggiorna formato" on every fixture volume (a copy): it becomes single-file (format v2,
-/// journal inside the file) in place, everything the manifest records reads back, also after
-/// this build writes to it, and no side file is ever left next to it.
 #[test]
 fn fixtures_upgrade_to_single_file() {
     for (dir, m) in sets() {

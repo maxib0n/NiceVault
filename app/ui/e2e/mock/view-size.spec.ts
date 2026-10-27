@@ -1,6 +1,3 @@
-// View sizes: grid tiles S/M/L/XL and list density, from the toolbar, Ctrl+= / Ctrl+- / Ctrl+0
-// and Ctrl+wheel; remembered per volume (Settings.grid_size / list_density, inside the volume);
-// resizing never plays the glyph decode again.
 import type { Page } from '@playwright/test';
 import { boot, expect, expectScreen, fileList, item, listed, modKey, test } from './helpers';
 
@@ -16,7 +13,6 @@ test('grid: toolbar sizes, shortcuts, clamped, back to Medie', async ({ page }) 
   await expect(sizes.getByRole('radio')).toHaveCount(4);
   await expect(sizes.getByRole('radio', { name: 'Medie' })).toHaveAttribute('aria-checked', 'true');
   const m = await tileWidth(page);
-  // the folder's first decode is done, and the thumbnails' after it (reveal.ts: they wait for it)
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -34,7 +30,7 @@ test('grid: toolbar sizes, shortcuts, clamped, back to Medie', async ({ page }) 
 
   const mod = await modKey(page);
   await fileList(page).focus();
-  await page.keyboard.press(`${mod}+=`); // already the largest: stays
+  await page.keyboard.press(`${mod}+=`);
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'xl');
   await page.keyboard.press(`${mod}+-`);
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'l');
@@ -47,13 +43,11 @@ test('grid: toolbar sizes, shortcuts, clamped, back to Medie', async ({ page }) 
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'm');
   await expect(sizes.getByRole('radio', { name: 'Medie' })).toHaveAttribute('aria-checked', 'true');
 
-  // arrows inside the radiogroup
   await sizes.getByRole('radio', { name: 'Medie' }).focus();
   await page.keyboard.press('ArrowRight');
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'l');
   await expect(sizes.getByRole('radio', { name: 'Grandi', exact: true })).toBeFocused();
 
-  // no glyph decode on resize
   expect(await plays(page)).toBe(before);
 });
 
@@ -92,7 +86,6 @@ test('list: density radios and shortcuts change the row height', async ({ page }
   await page.keyboard.press(`${await modKey(page)}+=`);
   await expect(wrap(page)).toHaveAttribute('data-density', 'comfortable');
   expect(await rowHeight(page)).toBeGreaterThan(normal);
-  // the grid keeps its own size
   await page.getByRole('button', { name: 'Griglia' }).click();
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'm');
 });
@@ -103,7 +96,6 @@ test('remembered per volume: kept across lock + unlock, another volume has its o
   await page.getByRole('radio', { name: 'Grandi', exact: true }).click();
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'l');
 
-  // another volume: its own (default) size
   await page.getByRole('button', { name: 'Apri un altro volume' }).click();
   await expectScreen(page, 'welcome');
   await page.getByRole('button', { name: /^(Chiuso|Aperto) Archivio fiscale/ }).click();
@@ -114,7 +106,6 @@ test('remembered per volume: kept across lock + unlock, another volume has its o
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'm');
   await page.getByRole('button', { name: 'Blocca' }).click();
 
-  // back on Documenti, then lock and unlock it: still Grandi
   await expect(item(page, 'Foto')).toBeVisible();
   await expect(wrap(page)).toHaveAttribute('data-grid-size', 'l');
   await page.getByRole('button', { name: 'Blocca' }).click();

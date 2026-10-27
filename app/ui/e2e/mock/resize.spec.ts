@@ -1,5 +1,3 @@
-// Dettagli > Estendi / Riduci (ResizeDialog): size facts, what a size will do before asking,
-// progress, done and error states; growable volumes only show their size.
 import { boot, expect, test } from './helpers';
 
 test('fixed volume: extend, then shrink with compaction, stats follow', async ({ page }) => {
@@ -19,12 +17,10 @@ test('fixed volume: extend, then shrink with compaction, stats follow', async ({
   await expect(dlg).toHaveCount(0);
   await expect(page.getByText('6 GB', { exact: true }).first()).toBeVisible();
 
-  // too small: refused before asking
   await page.getByTestId('resize-open').click();
   await size.fill('0.001');
   await expect(plan).toHaveAttribute('data-plan', 'too_small');
   await expect(dlg.getByTestId('resize-submit')).toBeDisabled();
-  // the smallest size needs compaction (free pages in the tail of the store)
   await dlg.getByRole('button', { name: 'Al minimo' }).click();
   await expect(plan).toHaveAttribute('data-plan', 'compact');
   await expect(plan).toContainText('compattati');

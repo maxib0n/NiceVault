@@ -1,13 +1,3 @@
-//! "Estendi / Riduci" (nv_core resize.rs):
-//!
-//!  - `vault_resize_info { vault }` -> ResizeInfo: capacity (null = a growable volume, nothing to
-//!    resize), file size, data in use, the smallest size (and the smallest without compaction),
-//!    the largest the drive has room for, the drive's free space.
-//!  - `vault_resize { vault, size }` -> ResizeInfo (after): grows or shrinks a fixed-size volume;
-//!    emits `vault-resize { vault, phase, done, total }` (phase: compact | extend | commit |
-//!    truncate; at most ~10/s). Errors: not_fixed, out_of_range, too_small, no_space (codes
-//!    with the bytes in the message), else the usual io / locked. Nothing changes on a refusal.
-
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use nv_core::{ResizeError, ResizeInfo, ResizeProgress};
@@ -38,7 +28,6 @@ impl AppState {
         Ok(self.vault(id)?.resize_info()?)
     }
 
-    /// Blocks until done (file operations on the volume wait meanwhile).
     pub fn vault_resize(&self, id: &str, size: u64) -> ApiResult<ResizeInfo> {
         let v = self.vault(id)?;
         let last = Mutex::new(None::<Instant>);
@@ -48,7 +37,7 @@ impl AppState {
                 return;
             }
             *l = Some(Instant::now());
-            let _ = self.vault(id); // a long compaction is activity: no idle auto-lock under it
+            let _ = self.vault(id);
             self.emit("vault-resize", json!({ "vault": id, "phase": p.phase, "done": p.done, "total": p.total }));
         };
         v.resize(size, &report)?;

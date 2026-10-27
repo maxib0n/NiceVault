@@ -1,5 +1,3 @@
-//! Attacker's toolkit: a mirror of the on-disk header so tests can decode,
-//! edit and re-checksum copies exactly as someone holding the file could.
 #![allow(dead_code)]
 
 use nv_core::{Appearance, KdfPreset, Vault};
@@ -64,7 +62,6 @@ pub struct Fixed {
     pub capacity: u64,
 }
 
-/// Single-file volume (format v2 `journal` section; every volume `Vault::create` makes now).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct JournalRegion {
     pub region: u64,
@@ -99,7 +96,6 @@ pub fn encode(h: &Header) -> Vec<u8> {
     buf
 }
 
-/// Writes `h` as copy `which` with a valid (unkeyed) checksum: anyone can do this.
 pub fn write_copy(path: &Path, which: usize, h: &Header) {
     use std::os::unix::fs::FileExt;
     let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
@@ -112,7 +108,6 @@ pub fn write_at(path: &Path, off: usize, bytes: &[u8]) {
     f.write_all_at(bytes, off as u64).unwrap();
 }
 
-/// What the attacker computes with a master key of their own (HKDF-SHA256, no salt).
 pub fn derive(master: &[u8; 32], info: &[u8]) -> [u8; 32] {
     let mut k = [0u8; 32];
     hkdf::Hkdf::<sha2::Sha256>::new(None, master).expand(info, &mut k).unwrap();
@@ -142,7 +137,6 @@ pub fn wrap(kek: &[u8; 32], nonce: &[u8; 24], key: &[u8; 32], vid: &[u8; 16], in
 
 pub const FAST: Argon = Argon { m_kib: 8 * 1024, t: 1, p: 1 };
 
-/// A small volume: files `a` (4 KiB) and `big` (600 KiB, three chunks), password "pw".
 pub fn sample(dir: &Path, name: &str) -> (PathBuf, NodeId, NodeId) {
     let p = dir.join(name);
     let v = Vault::create(&p, &pw("pw"), KdfPreset::Fast).unwrap();
@@ -180,7 +174,6 @@ pub fn read_all(v: &Vault, id: NodeId) -> nv_fs::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Every file of the tree, by path, or the first error met.
 pub fn dump(v: &Vault) -> nv_fs::Result<Vec<(String, Vec<u8>)>> {
     fn walk(v: &Vault, dir: NodeId, prefix: &str, out: &mut Vec<(String, Vec<u8>)>) -> nv_fs::Result<()> {
         for n in v.readdir(dir)? {
@@ -199,14 +192,11 @@ pub fn dump(v: &Vault) -> nv_fs::Result<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
-/// What the app sees: open with `password`, then browse and read everything.
-/// `Err` = the tampering was noticed (open or a read failed).
 pub fn open_dump(path: &Path, password: &str) -> Result<Vec<(String, Vec<u8>)>, String> {
     let v = Vault::open(path, &pw(password)).map_err(|e| format!("open: {e}"))?;
     dump(&v).map_err(|e| format!("read: {e}"))
 }
 
-/// Whether SQLite's own integrity check passes (the app never runs it at open).
 pub fn integrity_ok(path: &Path, password: &str) -> bool {
     Vault::open(path, &pw(password)).is_ok_and(|v| v.check_integrity().is_ok())
 }

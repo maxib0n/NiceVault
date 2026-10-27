@@ -1,7 +1,3 @@
-//! "Estendi / Riduci" through the functions the Tauri commands call, with the JSON shapes api.ts
-//! relies on: vault_resize_info for fixed and growable volumes, vault_resize grow / shrink with
-//! its vault-resize events, the refusal codes, and the size surviving a lock + reopen.
-
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events};
 use nv_fs::{Fs, Kind, ROOT};
@@ -63,7 +59,7 @@ fn resize_through_the_app() {
     let e = st.vault_resize(&id, 1 << 50).unwrap_err();
     assert_eq!(e.code, "out_of_range", "{e}");
     let e = st.vault_resize(&id, (1 << 40) + 4096).unwrap_err();
-    assert!(e.code == "no_space", "{e}"); // 1 TiB more than any test drive has free
+    assert!(e.code == "no_space", "{e}");
 
     let after = st.vault_resize(&id, 16 * MIB).unwrap();
     assert_eq!(after.capacity, Some(16 * MIB));
@@ -82,7 +78,6 @@ fn resize_through_the_app() {
     drop(v);
     st.vault_lock(&id, "user").unwrap();
 
-    // growable: size facts, nothing to resize
     let g = t.path().join("g.nvault");
     let id = st.vault_create(g.to_str().unwrap(), pw(), Some("fast")).unwrap().id;
     let info = serde_json::to_value(st.vault_resize_info(&id).unwrap()).unwrap();

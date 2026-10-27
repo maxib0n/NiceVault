@@ -1,19 +1,13 @@
-// Android / iOS: marks <html data-platform="mobile"> for styles/mobile.css
-// (hides what can't work on a phone: mount as drive, Crea dispositivo, updater, tray/autostart)
-// and locks every open volume when the app stays in the background.
 import * as api from './api';
 import { isMobile } from './platform';
 import { installKeyboardInset, installLongPress } from './touch';
 
 export { detectMobile, isMobile } from './platform';
 
-/** In the background longer than this: every open volume is locked (reason "screen"). */
 export const BACKGROUND_LOCK_MS = 30_000;
 
-/** While another app reads / writes a volume through the Files provider (Android), asked again this often. */
 export const DOCS_RECHECK_MS = 10_000;
 
-/** false: postponed, another app is using a volume through the Files provider (Android, docs.rs). */
 async function lockAll(): Promise<boolean> {
   if (await api.mobileDocsBusy().catch(() => false)) return false;
   const open = await api.vaultListOpen().catch(() => []);
@@ -21,14 +15,9 @@ async function lockAll(): Promise<boolean> {
   return true;
 }
 
-/**
- * Lock on background: a timer while hidden, and a check on return (the OS may freeze the
- * page's timers while it is in the background, so the timer alone is not enough).
- */
 export function installBackgroundLock(doc: Document = document, now: () => number = Date.now, lock: () => Promise<boolean | void> = lockAll): () => void {
   let hiddenAt: number | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  // postponed (the Files provider is in use): try again while still in the background
   const fire = () => {
     timer = null;
     void lock().then((done) => {
@@ -56,13 +45,6 @@ export function installBackgroundLock(doc: Document = document, now: () => numbe
 
 const shown = (el: Element | null): el is HTMLElement => !!el && 'click' in el && el.getClientRects().length > 0;
 
-/**
- * Android's Back (MainActivity.kt calls `window.__nvBack()`): one step back in the app, true when
- * something was closed; false lets the OS put the app in the background. In order: the topmost
- * dialog (the preview, a page-dialog: as Esc would, so full screen / pickers behave the same),
- * a menu, picking several (Fine), an entry's Indietro, Impostazioni, Sblocca / Nuovo volume, a page of the volume other
- * than File, a subfolder.
- */
 export function goBack(doc: Document = document): boolean {
   const dialogs = [...doc.querySelectorAll<HTMLDialogElement>('dialog[open]')];
   const top = dialogs.at(-1);

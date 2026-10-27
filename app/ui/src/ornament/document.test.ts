@@ -6,7 +6,6 @@ describe('the document MRZ', () => {
   const v = { name: 'Documenti', path: '/run/media/utente/CHIAVETTA/Documenti.nvault' };
 
   it('ICAO 9303 check digits (7-3-1 over the MRZ alphabet)', () => {
-    // the ICAO specimen's document number
     expect(checkDigit('L898902C3')).toBe('6');
     expect(checkDigit('740812')).toBe('2');
     expect(checkDigit('<<<<<<')).toBe('0');

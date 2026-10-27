@@ -1,14 +1,3 @@
-<!--
-  One password-manager entry, as a record card: username, password (shown only on request),
-  live 2FA code, websites, other fields, notes, tags, history. Every secret is read on demand
-  (pm_reveal) or copied by the backend (pm_copy, wiped after its countdown). Revealed values are
-  forgotten when another entry is chosen.
-  Motion (glyph decode, lib/reveal.ts): the card decodes when it is opened with the pointer
-  (`opened` counts those opens; never on the arrow keys), a value decodes as it is revealed,
-  the 2FA code decodes when it turns over. Copied: the field's key holds a check until the
-  clipboard is wiped.
-  Hooks: [data-testid=pm-detail], [data-field=password|username|totp|field:i] rows.
--->
 <script lang="ts">
   import { Check, Copy, Eye, EyeOff, FolderInput, History, Pencil, Star, Trash } from '@lucide/svelte';
   import * as api from '../lib/api';
@@ -34,12 +23,10 @@
     onedit: () => void;
     ondelete: () => void;
     onmove?: () => void;
-    /** how many times an entry was opened with the pointer (the card decodes each time) */
     opened?: number;
     historyOpen?: boolean;
   } = $props();
 
-  // values shown on request, keyed by field; dropped for another entry
   let shown = $state<Record<string, string>>({});
   let revealed = $state(0);
   let history = $state<PmHistoryItem[]>([]);
@@ -67,7 +54,6 @@
     void api.pmHistory(store.vault, entry.id).then((h) => (history = h)).catch(() => (history = []));
   });
 
-  /** A decode only when asked for (an action can't be added conditionally). */
   function decodeWhen(node: HTMLElement, o: DecodeOptions | null) {
     let d: ReturnType<typeof decode> | null = o ? decode(node, o) : null;
     return {
@@ -275,7 +261,6 @@
     color: var(--accent);
   }
 
-  /* the record: a ruled ledger, printed labels on the left, the values set on the line */
   .rows {
     margin: 0;
     border-top: 1px solid var(--paper-rule-2);
@@ -309,7 +294,6 @@
     color: var(--ink);
     overflow-wrap: anywhere;
   }
-  /* a secret: the mask is a row of printed bullets, the value is set in the mono */
   .secret {
     letter-spacing: 0.04em;
   }
@@ -325,7 +309,6 @@
   .plain {
     color: var(--title-ink);
   }
-  /* a revealed value sits on a pressed slip, so it reads as the thing shown on request */
   .secret-row[data-shown='true'] .secret {
     justify-self: start;
     padding: 3px 8px;
@@ -341,7 +324,6 @@
     gap: 2px;
     justify-content: flex-end;
   }
-  /* copied: the key holds a check in the ink until the clipboard is wiped */
   .tools :global(.btn.copied) {
     color: var(--accent);
     --face-hi: var(--accent-soft);
@@ -373,7 +355,6 @@
     font-size: var(--text-xs);
     color: var(--ink-3);
   }
-  /* the line is a flex row (its spaces collapse): the dot keeps its own room */
   .dot {
     margin: 0 0.5em;
     color: var(--ink-4);

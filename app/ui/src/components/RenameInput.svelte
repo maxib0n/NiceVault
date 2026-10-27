@@ -1,4 +1,3 @@
-<!-- Inline rename field. Enter commits, Esc cancels, blur commits. The stem is pre-selected. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { onMount, tick } from 'svelte';
@@ -20,8 +19,6 @@
     el.setSelectionRange(0, dot > 0 ? dot : name.length);
   });
 
-  /** Keyboard-finished edits (Enter/Esc) hand focus back to the file list,
-   *  otherwise it falls to <body> when the input unmounts and the keyboard is dead. */
   function returnFocus(list: HTMLElement | null | undefined) {
     void tick().then(() => {
       if (list?.isConnected && (document.activeElement === document.body || document.activeElement === null)) list.focus();
@@ -36,7 +33,6 @@
     if (ok) {
       if (fromKeyboard) returnFocus(list);
     } else if (el) {
-      // (el is null when the editor is already gone: Esc while the rename was in flight)
       done = false;
       el.focus();
     }

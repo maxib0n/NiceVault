@@ -1,4 +1,3 @@
-// Dettagli > Volume: "Aggiorna formato" (single-file journal), opt-in with a confirm step.
 import { boot, expect, test } from './helpers';
 
 test('format upgrade: warning, cancel, confirm, then shown as single file', async ({ page }) => {

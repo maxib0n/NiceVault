@@ -1,40 +1,20 @@
-//! "Avvia all'accesso" (installed mode only): the OS's own per-user start-at-login entry, pointing
-//! at the installed binary, with `--minimized` when "Avvia ridotto" is on.
-//!   Linux / BSD: an XDG autostart entry, `~/.config/autostart/nicevault.desktop`
-//!   macOS:       a LaunchAgent, `~/Library/LaunchAgents/app.nicevault.desktop.plist`
-//!                (SMAppService needs a signed bundle; this ad-hoc signed one has none)
-//!   Windows:     the `NiceVault` value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
-//! No admin rights anywhere. Turning it off removes the entry.
-//!
-//! Test / e2e override (environment): `NICEVAULT_AUTOSTART_DIR` = a folder that gets the entry
-//! as a file in this platform's format (on Windows `nicevault.run`, holding the Run value's data)
-//! instead of the real location.
-
 use std::path::{Path, PathBuf};
 
-/// The command-line flag the entry passes: start hidden (tray icon only).
 pub const MINIMIZED_FLAG: &str = "--minimized";
-/// LaunchAgent label: the bundle identifier (tauri.conf.json).
 pub const LABEL: &str = "app.nicevault.desktop";
-/// Windows Run value name.
 pub const RUN_VALUE: &str = "NiceVault";
 #[cfg(windows)]
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
-/// `--minimized` among the arguments (the first one, the program, excluded).
 pub fn launched_minimized<I: IntoIterator<Item = S>, S: AsRef<std::ffi::OsStr>>(args: I) -> bool {
     args.into_iter().skip(1).any(|a| a.as_ref() == MINIMIZED_FLAG)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
-    /// An XDG autostart `.desktop` file.
     Desktop(PathBuf),
-    /// A launchd LaunchAgent plist.
     LaunchAgent(PathBuf),
-    /// A file holding what the Windows Run value would hold (tests, and the override on Windows).
     RunFile(PathBuf),
-    /// The real `HKCU\...\Run` value.
     #[cfg(windows)]
     Registry,
 }
@@ -42,14 +22,10 @@ pub enum Target {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Autostart {
     pub target: Target,
-    /// What the entry starts: the installed binary (AppImage: the AppImage itself; macOS: the
-    /// binary inside the .app, started through the bundle).
     pub exe: PathBuf,
 }
 
 impl Autostart {
-    /// This machine's entry for the running binary (with the override above). `None` when the
-    /// location cannot be known (no home / config dir, or the executable's path).
     pub fn detect() -> Option<Autostart> {
         let exe = std::env::var_os("APPIMAGE").map(PathBuf::from).or_else(|| std::env::current_exe().ok())?;
         let target = match std::env::var_os("NICEVAULT_AUTOSTART_DIR") {
@@ -84,7 +60,6 @@ impl Autostart {
         Some(Target::Desktop(dirs::config_dir()?.join("autostart/nicevault.desktop")))
     }
 
-    /// The entry is there.
     pub fn exists(&self) -> bool {
         match &self.target {
             Target::Desktop(p) | Target::LaunchAgent(p) | Target::RunFile(p) => p.is_file(),
@@ -93,8 +68,6 @@ impl Autostart {
         }
     }
 
-    /// `enabled`: writes (or rewrites) the entry, with `--minimized` when `minimized`.
-    /// Off: removes it (nothing there is fine).
     pub fn apply(&self, enabled: bool, minimized: bool) -> std::io::Result<()> {
         let file = |p: &Path, body: String| -> std::io::Result<()> {
             if enabled {
@@ -122,7 +95,6 @@ impl Autostart {
     }
 }
 
-/// Atomic write (temp file + rename), the folder created if missing. Not private: the OS reads it.
 fn write_entry(p: &Path, data: &[u8]) -> std::io::Result<()> {
     let dir = p.parent().ok_or_else(|| std::io::Error::other("no parent"))?;
     std::fs::create_dir_all(dir)?;
@@ -135,9 +107,6 @@ fn write_entry(p: &Path, data: &[u8]) -> std::io::Result<()> {
     r
 }
 
-/// One argument of a desktop entry's `Exec` key, quoted (Desktop Entry Specification, "The Exec
-/// key"): inside double quotes `"`, `` ` ``, `$` and `\` are backslash-escaped, `%` is doubled;
-/// then the whole value is escaped as a string value (`\` -> `\\`).
 fn exec_arg(s: &str) -> String {
     let mut q = String::from("\"");
     for c in s.chars() {
@@ -155,7 +124,6 @@ fn exec_arg(s: &str) -> String {
     q.replace('\\', "\\\\")
 }
 
-/// The XDG autostart entry.
 pub fn desktop_entry(exe: &Path, minimized: bool) -> String {
     let mut exec = exec_arg(&exe.to_string_lossy());
     if minimized {
@@ -171,7 +139,6 @@ fn xml(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// The `X.app` folder `exe` lives in (`X.app/Contents/MacOS/exe`), if it is in one.
 fn app_bundle(exe: &Path) -> Option<&Path> {
     let macos = exe.parent()?;
     let contents = macos.parent()?;
@@ -180,8 +147,6 @@ fn app_bundle(exe: &Path) -> Option<&Path> {
     ok.then_some(app)
 }
 
-/// The LaunchAgent: inside a bundle it starts the bundle through `open` (Launch Services: the
-/// Dock icon and the one-instance rule of an app), else the binary itself.
 pub fn launch_agent(exe: &Path, minimized: bool) -> String {
     let mut args: Vec<String> = match app_bundle(exe) {
         Some(app) => vec!["/usr/bin/open".into(), "-a".into(), app.to_string_lossy().into_owned()],
@@ -214,7 +179,6 @@ pub fn launch_agent(exe: &Path, minimized: bool) -> String {
     )
 }
 
-/// The Windows Run value's data: the quoted path, then the flag.
 pub fn run_command(exe: &Path, minimized: bool) -> String {
     let mut s = format!("\"{}\"", exe.to_string_lossy());
     if minimized {
@@ -226,7 +190,6 @@ pub fn run_command(exe: &Path, minimized: bool) -> String {
 
 #[cfg(windows)]
 mod registry {
-    //! HKCU string values through advapi32 (no extra crate).
     use std::ffi::c_void;
 
     type Hkey = isize;
@@ -253,14 +216,12 @@ mod registry {
 
     pub fn set(key: &str, name: &str, value: &str) -> std::io::Result<()> {
         let (k, n, v) = (wide(key), wide(name), wide(value));
-        // SAFETY: NUL-terminated UTF-16 buffers that outlive the call; len in bytes, NUL included.
         let r = unsafe { RegSetKeyValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr(), REG_SZ, v.as_ptr().cast(), (v.len() * 2) as u32) };
         if r == ERROR_SUCCESS { Ok(()) } else { Err(err(r)) }
     }
 
     pub fn delete(key: &str, name: &str) -> std::io::Result<()> {
         let (k, n) = (wide(key), wide(name));
-        // SAFETY: as above.
         let r = unsafe { RegDeleteKeyValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr()) };
         if r == ERROR_SUCCESS || r == ERROR_FILE_NOT_FOUND { Ok(()) } else { Err(err(r)) }
     }
@@ -268,7 +229,6 @@ mod registry {
     pub fn get(key: &str, name: &str) -> Option<String> {
         let (k, n) = (wide(key), wide(name));
         let mut len = 0u32;
-        // SAFETY: size query (null data), then a buffer of that many bytes.
         unsafe {
             if RegGetValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), std::ptr::null_mut(), &mut len) != ERROR_SUCCESS {
                 return None;
@@ -302,7 +262,6 @@ mod tests {
         assert!(e.contains("\nExec=\"/opt/Nice Vault/nicevault\" --minimized\n"), "{e}");
         assert!(e.contains("\nType=Application\n") && e.contains("\nName=NiceVault\n"));
         let e = desktop_entry(Path::new("/home/a$b/100%/x\"y\\z"), false);
-        // `$` `"` `\` escaped inside the quotes, `%` doubled, then `\` escaped again for the string value
         assert!(e.contains("\nExec=\"/home/a\\\\$b/100%%/x\\\\\"y\\\\\\\\z\"\n"), "{e}");
     }
 
@@ -336,7 +295,7 @@ mod tests {
             let a = Autostart { target: target(p.clone()), exe: PathBuf::from("/opt/nv/nicevault") };
             let p = &p;
             assert!(!a.exists());
-            a.apply(false, false).unwrap(); // nothing to remove is fine
+            a.apply(false, false).unwrap();
             a.apply(true, false).unwrap();
             assert!(a.exists());
             assert!(!std::fs::read_to_string(p).unwrap().contains(MINIMIZED_FLAG));
@@ -344,7 +303,6 @@ mod tests {
             assert!(std::fs::read_to_string(p).unwrap().contains(MINIMIZED_FLAG));
             a.apply(false, true).unwrap();
             assert!(!a.exists());
-            // no temp files left behind
             assert_eq!(std::fs::read_dir(p.parent().unwrap()).unwrap().count(), 0);
         }
     }

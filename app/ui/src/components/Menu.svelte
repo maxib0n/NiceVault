@@ -1,4 +1,3 @@
-<!-- Floating menu (context menu, sort menu). Keyboard: ↑ ↓ Home End, Enter/Space, Esc, Tab closes. -->
 <script lang="ts" module>
   import type { Component } from 'svelte';
 
@@ -9,7 +8,6 @@
     shortcut?: string;
     danger?: boolean;
     disabled?: boolean;
-    /** renders as menuitemradio/checkbox with aria-checked */
     checked?: boolean;
     separatorBefore?: boolean;
     action: () => void;
@@ -36,7 +34,6 @@
     x: number;
     y: number;
     label: string;
-    /** a phone's sheet names what it acts on at its head (the item, "3 selezionati") */
     title?: string;
     onclose: (restoreFocus: boolean) => void;
   } = $props();
@@ -52,14 +49,11 @@
   onMount(async () => {
     await tick();
     if (!el) return;
-    // keep inside the viewport
     const r = el.getBoundingClientRect();
     adjusted = {
       left: Math.max(4, Math.min(x, window.innerWidth - r.width - 4)),
       top: Math.max(4, Math.min(y, window.innerHeight - r.height - 4)),
     };
-    // opened by a click: the menu itself takes focus (no item lit until a key moves); opened
-    // from the keyboard: its first item, as before (lib/modality.ts)
     if (pointerLast()) el.focus();
     else buttons()[0]?.focus();
   });
@@ -88,8 +82,6 @@
   }
 </script>
 
-<!-- on a phone it is a sheet from the bottom (styles/mobile.css): the keyboard coming up resizes the
-     window, which must not close it -->
 <svelte:window onpointerdown={outside} onblur={() => onclose(false)} onresize={() => isMobile || onclose(false)} />
 
 <div
@@ -128,7 +120,6 @@
 </div>
 
 <style>
-  /* a slip of paper lifted off the page: one soft elevation, hairline edge */
   .menu {
     position: fixed;
     z-index: var(--z-menu);
@@ -162,7 +153,6 @@
   .item:hover:not(:disabled) {
     background: color-mix(in oklab, var(--ink) 5%, transparent);
   }
-  /* keyboard: the row is washed in the volume's ink, a hairline round it */
   .item:focus-visible {
     outline: none;
     background: var(--accent-soft);

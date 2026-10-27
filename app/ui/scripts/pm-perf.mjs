@@ -1,10 +1,3 @@
-// Password-manager list performance against the mock (Chromium or WebKit via Playwright).
-//   node scripts/pm-perf.mjs [baseURL] [--entries=2000] [--browser=chromium|webkit] [--trace=out.json]
-// Needs a server on baseURL (default http://127.0.0.1:5295), ideally `vite build && vite preview`.
-// Prints JSON: first render (click on the sidebar entry -> rows painted), scroll (frames for a 3 s
-// scripted scroll: avg fps, worst frame, frames > 16.7 ms, long tasks), search (keydown -> list
-// repainted per keystroke, and the worst frame while typing), select (click -> detail painted).
-// The in-page probe (window.__pmProbe) is shared with e2e/real (WebKitGTK) through pmProbeSource.
 import { chromium, webkit } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 
@@ -152,7 +145,6 @@ async function main() {
   await page.locator('[data-ready="true"]').waitFor();
   if (opt('icons', 'on') === 'off') await page.evaluate(() => (window.__nv.mock.siteIcons = false));
   if (trace && which === 'chromium') await browser.startTracing(page, { path: trace, screenshots: false });
-  // first render: sidebar click -> rows on screen
   const first = await page.evaluate(
     () =>
       new Promise((resolve) => {

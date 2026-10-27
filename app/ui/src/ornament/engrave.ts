@@ -1,19 +1,12 @@
-// Any picture becomes a security engraving: a screen of parallel, gently waving
-// lines whose thickness follows the tone (dark = thick), cut in the volume's ink.
-// The way a banknote prints a portrait, so a user's photo sits on the document
-// as print, not as a pasted raster.
-
 export interface ToneMap {
   w: number;
   h: number;
-  /** darkness 0 (paper) .. 1 (full ink), row-major */
   dark: Float32Array;
 }
 
 const cache = new Map<string, Promise<ToneMap | null>>();
 const N = 128;
 
-/** Samples a data: URL into a normalised darkness map (auto-levelled, so any photo engraves well). */
 export function toneMap(src: string): Promise<ToneMap | null> {
   let p = cache.get(src);
   if (!p) {
@@ -43,7 +36,6 @@ async function load(src: string): Promise<ToneMap | null> {
       const b = px[i * 4 + 2] / 255;
       lum[i] = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     }
-    // auto-levels between the 2nd and 98th percentile
     const sorted = Float32Array.from(lum).sort();
     const lo = sorted[Math.floor(N * N * 0.02)];
     const hi = sorted[Math.floor(N * N * 0.98)];
@@ -60,7 +52,6 @@ async function load(src: string): Promise<ToneMap | null> {
 }
 
 function sample(t: ToneMap, x: number, y: number): number {
-  // bilinear, x/y in 0..1
   const fx = Math.min(t.w - 1.001, Math.max(0, x * (t.w - 1)));
   const fy = Math.min(t.h - 1.001, Math.max(0, y * (t.h - 1)));
   const x0 = Math.floor(fx);
@@ -72,10 +63,6 @@ function sample(t: ToneMap, x: number, y: number): number {
   return (d[i] * (1 - ax) + d[i + 1] * ax) * (1 - ay) + (d[i + t.w] * (1 - ax) + d[i + t.w + 1] * ax) * ay;
 }
 
-/**
- * The line screen as filled ribbons in a box (x, y, size): `lines` rows, each a
- * ribbon whose half-thickness follows the darkness underneath. Clipped by the caller.
- */
 export function lineScreen(path: Path2D, t: ToneMap, x: number, y: number, size: number, lines: number, minHair: number): void {
   const gap = size / lines;
   const maxHalf = gap * 0.47;
@@ -91,7 +78,6 @@ export function lineScreen(path: Path2D, t: ToneMap, x: number, y: number, size:
     for (let i = 0; i <= n; i++) {
       const xx = x + Math.min(size, i * step);
       const u = (xx - x) / size;
-      // the screen breathes: a slow wave, phase-shifted line to line
       const yw = yc + gap * 0.22 * Math.sin(u * 9.5 + j * 0.55);
       const v = Math.min(1, Math.max(0, (yw - y) / size));
       const d = sample(t, u, v);

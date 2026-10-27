@@ -1,37 +1,3 @@
-//! File search, filters and tags, all inside the volume.
-//!
-//! Additive tables, created by a versioned migration (`meta nv.search_schema` = 1, one transaction,
-//! idempotent, run at every open and create after the volume_id check):
-//!
-//! ```sql
-//! CREATE TABLE search_names (node INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
-//!                            norm TEXT NOT NULL);           -- fold(name): lowercase, no accents
-//! CREATE TABLE search_dirty (node INTEGER PRIMARY KEY);     -- names to (re)fold: new or renamed nodes
-//! CREATE TRIGGER search_dirty_insert AFTER INSERT ON nodes ...           -- INSERT OR IGNORE INTO search_dirty
-//! CREATE TRIGGER search_dirty_rename AFTER UPDATE OF name ON nodes ...   -- (same, when the name changed)
-//! CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL, norm TEXT NOT NULL UNIQUE,
-//!                    color TEXT NOT NULL, created INTEGER NOT NULL);
-//! CREATE TABLE node_tags (node INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-//!                         tag INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-//!                         PRIMARY KEY (node, tag)) WITHOUT ROWID;
-//! CREATE INDEX node_tags_by_tag ON node_tags(tag, node);
-//! ```
-//! The triggers use plain SQL only, so every writer keeps the index honest — this build, the
-//! mounted drive, and an older build that knows nothing about search (it renames: the node is
-//! queued; it deletes: the foreign keys drop the name and the tag rows). Folding needs Rust, so
-//! queued names are folded later: in memory at the next search (results are always complete) and
-//! persisted in batches by [`Vault::search_index_step`] (the app's background job). A volume from
-//! before this table has no names yet: the same job fills them, crash-safe because every batch is
-//! one atomic step and the work left is recomputed from the tables (missing or queued rows).
-//! `meta nv.search_norm` = the fold version the stored names were made with; another one drops
-//! them (rebuilt by the job).
-//!
-//! Searching scans an in-memory copy of the index (node, parent, name, folded name, kind group,
-//! size, mtime, tags) built from these tables at the first search of a session and refreshed
-//! for exactly the nodes changed since (the store reports them), so a query over 100k names is a
-//! few milliseconds of `str::contains` with no SQL. The copy lives in the store's state: it goes
-//! with the keys when the volume locks.
-
 use crate::{Inner, Vault, dberr, now_ns};
 use nv_fs::{Error, Kind, Node, NodeId, ROOT, Result};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -39,10 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-/// `meta` key of this schema's version (ASCII integer).
 pub const SEARCH_SCHEMA_KEY: &str = "nv.search_schema";
 pub const SEARCH_SCHEMA_VERSION: u32 = 1;
-/// `meta` key: version of [`fold`] the stored `search_names.norm` / `tags.norm` were made with.
 pub const SEARCH_NORM_KEY: &str = "nv.search_norm";
 const NORM_VERSION: &str = "1";
 
@@ -98,9 +62,6 @@ fn meta_text(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
     }))
 }
 
-/// Applies the missing steps in one transaction; idempotent. A schema version this build cannot
-/// read (garbage) is left alone; a higher one too (newer builds only add, so the v1 tables it
-/// finds are still used). Runs at open and create, after the volume_id check.
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     let have = match meta_version(conn, SEARCH_SCHEMA_KEY)? {
         None => 0,
@@ -117,12 +78,10 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             conn.execute_batch(m)?;
         }
         if norm.as_deref() != Some(NORM_VERSION) {
-            // names folded by another fold version: refold (the background job fills them again)
             conn.execute("DELETE FROM search_names", [])?;
             let tags: Vec<(i64, String)> =
                 conn.prepare("SELECT id, name FROM tags")?.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
             for (id, name) in tags {
-                // a clash under the new fold keeps both: the id makes the second one unique
                 let n = tag_norm(&name);
                 if conn.execute("UPDATE OR IGNORE tags SET norm = ? WHERE id = ?", params![n, id])? == 0 {
                     conn.execute("UPDATE tags SET norm = ? WHERE id = ?", params![format!("{n}\u{0}{id}"), id])?;
@@ -149,12 +108,6 @@ fn missing_table(e: &rusqlite::Error) -> bool {
     e.to_string().contains("no such table")
 }
 
-// ---------------------------------------------------------------------------
-// folding
-
-/// The search form of a text: lowercase, accents and other combining marks removed (NFD), a few
-/// letters that do not decompose spelled out (ß ss, æ ae, œ oe, ø o, đ d, ł l, þ th, ı i).
-/// `Città` and `CITTA` both fold to `citta`. Version [`NORM_VERSION`]; any change bumps it.
 pub fn fold(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -190,8 +143,6 @@ fn fold_char(c: char, out: &mut String) {
     });
 }
 
-/// `fold(s)` plus, for every byte of it, the UTF-16 range of the character of `s` it came from
-/// (highlights are UTF-16 offsets: what JavaScript strings index by).
 fn fold_mapped(s: &str) -> (String, Vec<(u32, u32)>) {
     let mut out = String::with_capacity(s.len());
     let mut map = Vec::with_capacity(s.len());
@@ -210,8 +161,6 @@ fn tag_norm(name: &str) -> String {
     fold(name).split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Search terms of a query: whitespace-separated, `"..."` keeps a phrase together; folded,
-/// deduplicated. Every term must occur in a name (substring, anywhere).
 pub fn terms(text: &str) -> Vec<String> {
     let mut out: Vec<String> = vec![];
     let mut push = |t: &str| {
@@ -236,11 +185,6 @@ pub fn terms(text: &str) -> Vec<String> {
     out
 }
 
-// ---------------------------------------------------------------------------
-// kind groups
-
-/// What a node is, for filters: from the extension (folders: `folders`). The UI mirrors the map
-/// (app/ui/src/lib/search.ts).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KindGroup {
@@ -269,7 +213,6 @@ const GROUPS: [(KindGroup, &str); 6] = [
     ),
 ];
 
-/// The kind group of a node named `name`.
 pub fn kind_group(name: &str, dir: bool) -> KindGroup {
     if dir {
         return KindGroup::Folders;
@@ -292,34 +235,22 @@ pub fn kind_group(name: &str, dir: bool) -> KindGroup {
     KindGroup::Other
 }
 
-// ---------------------------------------------------------------------------
-// filters + queries
-
 pub type TagId = u64;
 
-/// Narrows search results (and, in the app, a folder listing). Every field is optional; all
-/// given ones must hold.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Filters {
-    /// Any of these groups (empty = any).
     pub kinds: Vec<KindGroup>,
-    /// unix ns, inclusive.
     pub modified_after: Option<i64>,
-    /// unix ns, exclusive.
     pub modified_before: Option<i64>,
-    /// Bytes, inclusive. A size bound leaves folders out.
     pub min_size: Option<u64>,
     pub max_size: Option<u64>,
-    /// Nodes carrying these tags (empty = no tag condition): all of them, or any with `tags_any`.
     pub tags: Vec<TagId>,
     pub tags_any: bool,
-    /// Search only: inside this folder (any depth). Default: the whole volume.
     pub within: Option<NodeId>,
 }
 
 impl Filters {
-    /// Whether a node passes (everything but `within`).
     pub fn matches(&self, group: KindGroup, size: u64, mtime: i64, tags: &[TagId]) -> bool {
         if !self.kinds.is_empty() && !self.kinds.contains(&group) {
             return false;
@@ -341,24 +272,19 @@ impl Filters {
         true
     }
 
-    /// [`Filters::matches`] for a node.
     pub fn matches_node(&self, n: &Node, tags: &[TagId]) -> bool {
         self.matches(kind_group(&n.name, n.kind == Kind::Dir), n.size, n.mtime, tags)
     }
 }
 
-/// Result order. Folders come first in every order but `relevance`, like the file browser.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Sort {
-    /// best match first (whole name, name start, word starts, anywhere), then by name; with no
-    /// terms the same as `name`
     #[default]
     Relevance,
     Name,
     Size,
     Mtime,
-    /// by extension, then name
     Type,
 }
 
@@ -375,9 +301,7 @@ pub struct SearchQuery {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Hit {
     pub node: Node,
-    /// The folder holding it: "/" or "/Foto/Mare".
     pub path: String,
-    /// `[start, end)` UTF-16 ranges of `node.name` that matched the terms (sorted, merged).
     pub highlights: Vec<[u32; 2]>,
     pub tags: Vec<TagId>,
 }
@@ -385,17 +309,10 @@ pub struct Hit {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SearchPage {
     pub hits: Vec<Hit>,
-    /// Matches in all (this page is `offset .. offset + hits.len()` of them).
     pub total: usize,
-    /// Offset of the next page, `None` = this was the last.
     pub next_offset: Option<usize>,
-    /// Names not persisted in the index yet ([`Vault::search_index_step`]); the results are
-    /// complete anyway.
     pub pending: u64,
 }
-
-// ---------------------------------------------------------------------------
-// the in-memory index
 
 struct Entry {
     id: NodeId,
@@ -407,26 +324,20 @@ struct Entry {
     norm: Box<str>,
 }
 
-/// More changed nodes than this since the last search: rebuild instead of refreshing each.
 const MAX_TOUCHED: usize = 20_000;
 
-/// Search state of an open volume (lives in [`Inner`], dropped with it at lock).
 #[derive(Default)]
 pub(crate) struct Cache {
     built: bool,
     entries: Vec<Entry>,
     pos: HashMap<NodeId, usize>,
-    /// Nodes changed since the copy was made (the store reports them).
     touched: HashSet<NodeId>,
     tags: HashMap<NodeId, Vec<TagId>>,
-    /// Rows without a stored name and not queued, as of the build (minus what was stored since).
     missing: u64,
-    /// The missing-rows scan of [`Vault::search_index_step`] continues after this id.
     scan_from: i64,
 }
 
 impl Cache {
-    /// The store changed these nodes (created, renamed, moved, removed, resized, retimed, tagged).
     pub(crate) fn touch(&mut self, ids: impl IntoIterator<Item = NodeId>) {
         if !self.built {
             return;
@@ -437,7 +348,6 @@ impl Cache {
         }
     }
 
-    /// Forget the copy (rebuilt at the next search), e.g. after SQLite rolled a transaction back.
     pub(crate) fn reset(&mut self) {
         let scan_from = self.scan_from;
         *self = Cache { scan_from, ..Default::default() };
@@ -464,7 +374,6 @@ impl Cache {
 
     fn build(&mut self, conn: &Connection) -> Result<()> {
         let stored = meta_text(conn, SEARCH_NORM_KEY).map_err(dberr)?.as_deref() == Some(NORM_VERSION);
-        // Three plain scans merged by id: much cheaper than a join (one b-tree probe per row each).
         let mut names: Vec<(u64, String)> = vec![];
         let mut dirty: HashSet<NodeId> = HashSet::new();
         if stored {
@@ -532,7 +441,6 @@ impl Cache {
         Ok(())
     }
 
-    /// Brings the copy up to date: built once, then only the nodes changed since.
     fn refresh(&mut self, conn: &Connection) -> Result<()> {
         if !self.built {
             return self.build(conn);
@@ -580,7 +488,6 @@ impl Cache {
         self.pos.get(&id).map(|&p| &self.entries[p])
     }
 
-    /// "/A/B" of folder `dir` ("/" for the root), memoised per query.
     fn dir_path(&self, dir: NodeId, memo: &mut HashMap<NodeId, String>) -> String {
         if dir == ROOT {
             return "/".into();
@@ -604,7 +511,6 @@ impl Cache {
         p
     }
 
-    /// Whether `id` is `top` or below it, memoised per query.
     fn inside(&self, id: NodeId, top: NodeId, memo: &mut HashMap<NodeId, bool>) -> bool {
         let mut chain = vec![];
         let mut cur = id;
@@ -636,7 +542,6 @@ impl Cache {
         let none: Vec<TagId> = vec![];
         let mut inside_memo = HashMap::new();
         let within = q.filters.within.filter(|&w| w != ROOT);
-        // (rank, entry index, size, mtime)
         let mut found: Vec<(u8, usize, u64, i64)> = vec![];
         for (idx, e) in self.entries.iter().enumerate() {
             if !terms.iter().all(|t| e.norm.contains(t.as_str())) {
@@ -664,7 +569,7 @@ impl Cache {
                 Sort::Relevance => a.0.cmp(&b.0).then(db.cmp(&da)).then_with(by_name),
                 _ => {
                     if da != db {
-                        return db.cmp(&da); // folders first, whatever the direction
+                        return db.cmp(&da);
                     }
                     match sort {
                         Sort::Size => a.2.cmp(&b.2).then_with(by_name),
@@ -717,8 +622,6 @@ fn ext_of(norm: &str) -> &str {
     }
 }
 
-/// 0 = the whole name (or the name without its extension) is the query, 1 = the name starts with
-/// the first term, 2 = every term starts a word, 3 = anywhere.
 fn rank(norm: &str, terms: &[String], joined: &str) -> u8 {
     let stem = match norm.rsplit_once('.') {
         Some((s, _)) if !s.is_empty() => s,
@@ -737,7 +640,6 @@ fn rank(norm: &str, terms: &[String], joined: &str) -> u8 {
     }
 }
 
-/// Every occurrence of every term in `name`, as merged UTF-16 ranges.
 fn highlights(name: &str, terms: &[String]) -> Vec<[u32; 2]> {
     if terms.is_empty() {
         return vec![];
@@ -760,7 +662,6 @@ fn highlights(name: &str, terms: &[String]) -> Vec<[u32; 2]> {
     out
 }
 
-/// Text order with digit runs compared as numbers ("foto 2" before "foto 10").
 pub fn natural_cmp(a: &str, b: &str) -> Ordering {
     let (mut x, mut y) = (a.as_bytes(), b.as_bytes());
     loop {
@@ -796,14 +697,8 @@ fn trim_zeros(d: &[u8]) -> &[u8] {
     &d[z.min(d.len().saturating_sub(1))..]
 }
 
-// ---------------------------------------------------------------------------
-// tags
-
-/// Tag colours: the 7 inks + neutral. Another value read from a volume (a newer build's) is
-/// returned as stored; the UI shows it neutral.
 pub const TAG_COLORS: [&str; 8] = ["velluto", "prugna", "prussia", "bottiglia", "seppia", "ardesia", "ottanio", "neutral"];
 pub const MAX_TAGS: usize = 1000;
-/// Characters (Unicode scalar values) of a tag name.
 pub const MAX_TAG_NAME: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -811,7 +706,6 @@ pub struct Tag {
     pub id: TagId,
     pub name: String,
     pub color: String,
-    /// Nodes carrying it.
     pub count: u64,
 }
 
@@ -827,7 +721,6 @@ pub enum TagError {
     NotFound,
     #[error("too many tags")]
     TooMany,
-    /// The volume's tag tables are a newer build's (or missing): nothing written.
     #[error("tags of a newer version")]
     Unsupported,
     #[error(transparent)]
@@ -865,8 +758,6 @@ fn tag_exists(conn: &Connection, id: TagId) -> std::result::Result<(), TagError>
     conn.query_row("SELECT 1 FROM tags WHERE id = ?", [id as i64], |_| Ok(())).optional().map_err(tag_err)?.ok_or(TagError::NotFound)
 }
 
-/// One write step for tags (savepoint of the open transaction; durable at the next durability
-/// point — the app flushes after each command).
 fn tag_op<T>(i: &mut Inner, f: impl FnOnce(&Connection) -> std::result::Result<T, TagError>) -> std::result::Result<T, TagError> {
     let mut out = None;
     let r = i.op(|c| match f(c) {
@@ -876,7 +767,7 @@ fn tag_op<T>(i: &mut Inner, f: impl FnOnce(&Connection) -> std::result::Result<T
         }
         Err(e) => {
             out = Some(Err(e));
-            Err(Error::Io("tag step refused".into())) // rolls the savepoint back
+            Err(Error::Io("tag step refused".into()))
         }
     });
     match (r, out) {
@@ -887,7 +778,6 @@ fn tag_op<T>(i: &mut Inner, f: impl FnOnce(&Connection) -> std::result::Result<T
 }
 
 impl Vault {
-    /// Searches the volume (names, filters, order, one page). See [`SearchQuery`].
     pub fn search(&self, q: &SearchQuery) -> Result<SearchPage> {
         self.with(|i| {
             let Inner { conn, search, bufs, .. } = i;
@@ -900,10 +790,6 @@ impl Vault {
         })
     }
 
-    /// Persists up to `max` folded names into the index (queued ones first, then nodes that have
-    /// none, e.g. in a volume from before search) as one atomic step; returns how many are still
-    /// pending. Idempotent and crash-safe: what is left is always recomputed from the tables.
-    /// Does nothing (0) in a volume whose index this build does not write (newer fold version).
     pub fn search_index_step(&self, max: usize) -> Result<u64> {
         self.with(|i| {
             if meta_text(&i.conn, SEARCH_NORM_KEY).map_err(dberr)?.as_deref() != Some(NORM_VERSION) {
@@ -949,7 +835,6 @@ impl Vault {
                 Ok((missing.len() as u64, missing.last().map_or(scan_from, |m| m.0), missing.len() < room))
             })?;
             i.search.scan_from = if scan_done { 0 } else { scanned_to };
-            // left: nodes with no stored name and not queued, plus everything queued
             let (missing, dirty): (i64, i64) = i
                 .conn
                 .query_row(
@@ -967,9 +852,6 @@ impl Vault {
         })
     }
 
-    // ---------------- tags ----------------
-
-    /// Every tag, by name, with how many nodes carry it. None in a volume without the tables.
     pub fn tags(&self) -> Result<Vec<Tag>> {
         self.with(|i| {
             let mut st = match i.conn.prepare(
@@ -986,7 +868,6 @@ impl Vault {
         })
     }
 
-    /// A new tag. Names are unique ignoring case, accents and repeated spaces.
     pub fn tag_create(&self, name: &str, color: &str) -> std::result::Result<Tag, TagError> {
         let name = valid_tag_name(name)?;
         let color = valid_color(color)?;
@@ -1006,7 +887,6 @@ impl Vault {
         })
     }
 
-    /// Renames and / or recolours a tag (`None` = unchanged).
     pub fn tag_update(&self, id: TagId, name: Option<&str>, color: Option<&str>) -> std::result::Result<Tag, TagError> {
         let name = name.map(valid_tag_name).transpose()?;
         let color = color.map(valid_color).transpose()?;
@@ -1029,7 +909,6 @@ impl Vault {
         })
     }
 
-    /// Deletes a tag (and every assignment of it); returns the nodes that carried it.
     pub fn tag_delete(&self, id: TagId) -> std::result::Result<Vec<NodeId>, TagError> {
         let mut g = self.lock()?;
         let i = g.as_mut().unwrap();
@@ -1042,15 +921,13 @@ impl Vault {
                 .map_err(tag_err)?
                 .collect::<rusqlite::Result<_>>()
                 .map_err(tag_err)?;
-            c.execute("DELETE FROM tags WHERE id = ?", [id as i64]).map_err(tag_err)?; // node_tags: ON DELETE CASCADE
+            c.execute("DELETE FROM tags WHERE id = ?", [id as i64]).map_err(tag_err)?;
             Ok(nodes)
         })?;
         i.search.touch(nodes.iter().copied());
         Ok(nodes)
     }
 
-    /// Adds (`on`) or removes every tag of `tags` to / from every node of `nodes` (missing nodes
-    /// and the root are skipped); returns the nodes whose tags changed.
     pub fn tags_set(&self, tags: &[TagId], nodes: &[NodeId], on: bool) -> std::result::Result<Vec<NodeId>, TagError> {
         let mut g = self.lock()?;
         let i = g.as_mut().unwrap();
@@ -1078,7 +955,6 @@ impl Vault {
         Ok(changed)
     }
 
-    /// The tags of each of `nodes` that has any.
     pub fn node_tags(&self, nodes: &[NodeId]) -> Result<HashMap<NodeId, Vec<TagId>>> {
         self.with(|i| {
             let mut st = match i.conn.prepare_cached("SELECT tag FROM node_tags WHERE node = ? ORDER BY tag") {
@@ -1098,7 +974,6 @@ impl Vault {
         })
     }
 
-    /// The tags of the children of `dir` that have any (one query, for a folder listing).
     pub fn child_tags(&self, dir: NodeId) -> Result<HashMap<NodeId, Vec<TagId>>> {
         self.with(|i| {
             let mut st = match i.conn.prepare_cached(
@@ -1133,7 +1008,7 @@ mod tests {
         assert_eq!(map[0], (0, 1));
         assert_eq!(map[1], (1, 2));
         assert_eq!(map[2], (1, 2));
-        assert_eq!(map[3], (2, 4)); // the emoji: 4 UTF-8 bytes, 2 UTF-16 units
+        assert_eq!(map[3], (2, 4));
         assert_eq!(*map.last().unwrap(), (4, 5));
     }
 

@@ -1,5 +1,3 @@
-// Applies URL switches (mock mode only) so the designer can land directly on
-// any screen/state: see switches.ts for the list.
 import { m } from '../paraglide/messages.js';
 import * as api from './api';
 import { fileType } from './filetype';
@@ -31,10 +29,10 @@ function firstRecent(): RecentEntry {
 }
 
 export async function applySwitches(): Promise<void> {
-  look.start(); // per-volume accent / theme / auto-lock (both modes)
+  look.start();
   if (api.isTauri) return;
   const s = switches;
-  if (s.view) prefs.view = s.view; // not persisted
+  if (s.view) prefs.view = s.view;
   if (s.autolock) idle.timeoutMs = s.autolock * 1000;
   if (s.error === 'toast') toasts.push(m.toast_damaged_demo(), 'error', 0);
 
@@ -46,7 +44,7 @@ export async function applySwitches(): Promise<void> {
       app.goto('create');
       return;
     case 'device':
-      app.goto('device'); // DeviceWizard.svelte reads device_step
+      app.goto('device');
       return;
     case 'unlock': {
       const target = firstRecent();
@@ -62,14 +60,13 @@ export async function applySwitches(): Promise<void> {
     case 'details':
     case 'passwords': {
       if (s.empty) {
-        // empty=1 with vault: open a fresh, empty volume
         await vaults.createVault(`${STICK}/Vuoto.nvault`, MOCK_PASSWORD).catch(() => undefined);
       } else {
         const ok = await vaults.unlockVault(firstRecent(), MOCK_PASSWORD);
         if (!ok) return;
       }
       app.goto(s.screen);
-      if (s.screen === 'passwords') return; // Passwords.svelte reads entry / q / dialog
+      if (s.screen === 'passwords') return;
       const b = vaults.browser;
       if (!b) return;
       if (s.dir) await b.gotoPath(s.dir);
@@ -78,7 +75,6 @@ export async function applySwitches(): Promise<void> {
         for (const j of api.mock().seedJobs(vaults.activeId)) jobs.track(j.job, j.kind, vaults.activeId, j.label, j.kind === 'export' ? '/home/utente/Scrivania' : b.vault.name);
         jobs.open = true;
       }
-      // the volume's search: filters (chips), a query typed, the index filling
       if (s.screen === 'vault' && (s.filters || s.q)) {
         if (s.filters) {
           const p = parseFilterSwitch(s.filters);

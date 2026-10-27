@@ -1,9 +1,3 @@
-// Which theme and ink the app wears, by precedence:
-//   1. a volume is open and on screen: that volume's own settings (Dettagli > Aspetto);
-//   2. Sblocca of a volume whose look is visible while locked: its ink (the header carries no
-//      theme, so the app's theme);
-//   3. everywhere else (Benvenuto, Impostazioni, the wizard, Sblocca of an encrypted look):
-//      the app's own look (Impostazioni > Aspetto dell'app).
 import { DEFAULT_ACCENT, isAccent, type AccentId } from './accents';
 import { lockedAccent } from './emblem';
 import type { RecentEntry, Settings, ThemeId } from './types';

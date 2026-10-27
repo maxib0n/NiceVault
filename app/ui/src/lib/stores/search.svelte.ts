@@ -1,6 +1,3 @@
-// Search, filters and tags of ONE open volume: the filter chips'
-// state (remembered per volume for the session), their translation into the backend's
-// SearchFilters, and the volume's tags (tags_list, kept fresh on tags-changed by FileBrowser).
 import * as api from '../api';
 import { errorCode, errorText } from '../errors';
 import { m } from '../../paraglide/messages.js';
@@ -15,7 +12,6 @@ export interface UiFilters {
   size: SizePreset | null;
   date: DatePreset | null;
   tags: TagId[];
-  /** any of the tags instead of all of them */
   tagsAny: boolean;
 }
 
@@ -29,7 +25,6 @@ const MiB = 1024 * 1024;
 const NS = 1_000_000;
 const DAY = 86_400_000;
 
-/** The backend's filters for `f` (dates from `now`, local time); `within` only for fs_search. */
 export function apiFilters(f: UiFilters, within: NodeId | null = null, now: Date = new Date()): SearchFilters | null {
   const out: SearchFilters = {};
   if (f.kinds.length) out.kinds = [...f.kinds];
@@ -55,12 +50,10 @@ export function apiFilters(f: UiFilters, within: NodeId | null = null, now: Date
   return Object.keys(out).length ? out : null;
 }
 
-/** Filters / scope per volume (by path), for this session only. */
 const remembered = new Map<string, { filters: UiFilters; scope: SearchScope }>();
 export const rememberedFor = (path: string) => remembered.get(path) ?? { filters: NO_FILTERS, scope: 'volume' as SearchScope };
 export const remember = (path: string, filters: UiFilters, scope: SearchScope) => remembered.set(path, { filters, scope });
 
-/** "kinds:photos,videos;size:small;date:week;tags:1,2;any:1;scope:folder" (the ?filters= switch). */
 export function parseFilterSwitch(s: string): { filters: UiFilters; scope: SearchScope | null } {
   const f: UiFilters = { ...NO_FILTERS, kinds: [], tags: [] };
   let scope: SearchScope | null = null;
@@ -77,12 +70,10 @@ export function parseFilterSwitch(s: string): { filters: UiFilters; scope: Searc
   return { filters: f, scope };
 }
 
-/** A tag error in words (a name taken reads as a tag's, not a file's). */
 export function tagErrorText(e: unknown): string {
   return errorCode(e) === 'exists' ? m.tag_err_exists() : errorText(e);
 }
 
-/** The volume's tags, by name, with their counts. */
 export class VolumeTags {
   list = $state.raw<Tag[]>([]);
   loaded = $state(false);
@@ -95,11 +86,9 @@ export class VolumeTags {
       this.list = await api.tagsList(this.vault);
       this.loaded = true;
     } catch {
-      // locked meanwhile: the screen goes with it
     }
   }
 
-  /** Throws the backend's error (the picker shows it under its field). */
   async create(name: string, color: TagColor): Promise<Tag> {
     const t = await api.tagsCreate(this.vault, name.trim(), color);
     await this.load();

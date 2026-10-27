@@ -1,11 +1,3 @@
-<!--
-  The filter line under the search field: where to search (the whole volume / this folder, with
-  a query), then Tipo · Dimensione · Data · Tag. Each chip is a pill that opens a small slip of
-  choices; a chip in use shows its value and an x that clears it; "Azzera filtri" clears all.
-  Without a query the chips narrow the folder on screen (fs_list filters).
-  Hooks: [data-testid=filter-chip-<kind|size|date|tags>], [data-testid=filter-clear-<…>],
-  [data-testid=filter-clear-all], [data-testid=filter-menu], [data-testid=search-scope].
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Archive, Calendar, ChevronDown, Code, File, FileText, Film, Folder, Image, Music, Ruler, Shapes, Tag as TagIcon, Tags, X } from '@lucide/svelte';
@@ -95,7 +87,6 @@
     return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
   }
 
-  /** ↑ ↓ Home End between the choices of a slip */
   function listKeys(e: KeyboardEvent) {
     const box = e.currentTarget as HTMLElement;
     const opts = [...box.querySelectorAll<HTMLElement>('.opt:not(:disabled)')];
@@ -266,7 +257,6 @@
     background: var(--paper-rule-2);
   }
 
-  /* where to search: two latching keys in one pressed-in bed (the toolbar's view switch) */
   .scope {
     display: flex;
     flex: none;
@@ -311,7 +301,6 @@
     font-size: var(--text-xs);
   }
 
-  /* a chip: a pill engraved round its edge; in use, it is inked in the volume's colour */
   .chip {
     display: inline-flex;
     align-items: stretch;

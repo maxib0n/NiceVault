@@ -1,12 +1,7 @@
 #!/usr/bin/env bash
-# Regenerates the mock-mode sample files in public/mock/ (everything except the
-# photos) procedurally (ImageMagick, ffmpeg, python); released as CC0.
 set -euo pipefail
 cd "$(dirname "$0")/../public/mock"
 
-# Photos (photo-01..14.jpg) are real CC0 photographs, not generated here:
-# see SOURCES.md ("Mock photos") for each file's source page.
-# A portrait-orientation scan and a PNG "card".
 magick -size 320x440 xc:'#f3f1ec' -fill '#d9d4c7' -draw 'rectangle 24,40 296,120' \
   -fill '#c9c2b2' -draw 'rectangle 24,150 200,170' -draw 'rectangle 24,190 260,210' \
   -draw 'rectangle 24,230 230,250' -draw 'rectangle 24,270 280,290' -quality 70 scan.jpg
@@ -14,7 +9,6 @@ magick -size 428x270 xc:'#dfe7ea' -fill '#b8c8ce' -draw 'roundrectangle 16,16 41
   -fill '#8fa6ae' -draw 'rectangle 36,60 150,190' -fill '#6f878f' -draw 'rectangle 170,70 390,86' \
   -draw 'rectangle 170,104 340,118' -draw 'rectangle 170,134 370,148' card.png
 
-# Video (VP9 webm; Chromium and WebKit both play it) and audio (Opus).
 ffmpeg -loglevel error -y -f lavfi -i "mandelbrot=s=320x180:rate=24" -t 4 \
   -c:v libvpx-vp9 -b:v 180k -pix_fmt yuv420p clip.webm
 ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=330:duration=3" -f lavfi -i "sine=frequency=495:duration=3" \
@@ -88,9 +82,6 @@ All files in this directory were generated procedurally by scripts/gen-mock-asse
 NiceVault in-browser mock. They are dedicated to the public domain under CC0 1.0.
 TXT
 
-# In-app viewer samples (public/mock/v/): code, other encodings, CSV, Markdown, archives,
-# Office/ODF, unknown bytes, an undecodable HEIC (scripts/gen-viewer-samples.py), plus a
-# JPEG carrying EXIF orientation 6 (pixels landscape, shown portrait) and a WebP.
 python3 -I ../../scripts/gen-viewer-samples.py v
 magick photo-01.jpg -resize 480x -strip -quality 72 v/ruotata.jpg
 python3 -I - v/ruotata.jpg <<'PY'

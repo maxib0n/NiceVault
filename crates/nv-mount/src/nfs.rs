@@ -1,35 +1,9 @@
-//! macOS backend: an embedded NFSv3 server (`nfsserve`) on 127.0.0.1:<random port>, mounted
-//! with the system NFS client (`mount_nfs`). No kernel extension, no admin rights:
-//!
-//! * Darwin lets an unprivileged user mount onto a directory that user owns (BSD
-//!   user-mount semantics; `nosuid,nodev` are forced). `/Volumes` is root-owned, so the default
-//!   mountpoint is `~/NiceVault/<name>`.
-//! * macOS's NFS client does not use a reserved (<1024) source port unless `resvport` is given,
-//!   and our server does not require one, so no root is needed on either side.
-//! * The MOUNT protocol is served on the same port as NFS, so no portmapper/rpcbind is involved
-//!   (`port=` and `mountport=` point at the same socket).
-//!
-//! rclone's `nfsmount` and nfsserve's own demo use the same arrangement without sudo on macOS.
-//!
-//! Other local users: the server listens on loopback, which every account on the Mac can reach.
-//! NFSv3 AUTH_UNIX credentials are client-asserted, so they prove nothing. Instead every file
-//! handle carries a 128-bit random secret generated per mount, and the MOUNT call (the only way to
-//! obtain the root handle) is accepted once, only while our own `mount_nfs` is running. If any
-//! other MOUNT arrives in that window the mount is refused and the server (with its secret)
-//! stopped, so a racing account never keeps a handle. A process that does not hold a handle
-//! cannot forge one. Modes are reported as 0600/0700.
-//!
-//! The adapter (`NfsAdapter`) is plain Rust and is unit-tested on Linux against an in-memory Fs.
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-/// `accept_mount` states.
 pub(crate) const GATE_CLOSED: u8 = 0;
 pub(crate) const GATE_OPEN: u8 = 1;
-/// The one MOUNT was answered.
 pub(crate) const GATE_USED: u8 = 2;
-/// A further MOUNT came while the window was open: somebody raced us.
 pub(crate) const GATE_RACED: u8 = 3;
 
 use async_trait::async_trait;
@@ -76,15 +50,12 @@ pub(crate) struct NfsAdapter {
     uid: u32,
     gid: u32,
     read_only: bool,
-    /// Embedded in every file handle; see the module docs.
     secret: [u8; 16],
-    /// One MOUNT request is honoured while this is GATE_OPEN.
     pub(crate) accept_mount: Arc<AtomicU8>,
 }
 
 fn random_secret() -> std::io::Result<[u8; 16]> {
     let mut b = [0u8; 16];
-    // SAFETY: the buffer is valid for 16 bytes (getentropy allows up to 256).
     if unsafe { libc::getentropy(b.as_mut_ptr().cast(), b.len()) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
@@ -93,12 +64,10 @@ fn random_secret() -> std::io::Result<[u8; 16]> {
 
 impl NfsAdapter {
     pub(crate) fn new(fs: Arc<dyn Fs>, read_only: bool) -> std::io::Result<Self> {
-        // SAFETY: getuid/getgid have no preconditions.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
         Ok(Self { fs, uid, gid, read_only, secret: random_secret()?, accept_mount: Arc::new(AtomicU8::new(GATE_CLOSED)) })
     }
 
-    /// Run a (possibly slow, blocking) Fs call off the async reactor.
     async fn blocking<T: Send + 'static>(
         &self,
         f: impl FnOnce(&dyn Fs) -> nv_fs::Result<T> + Send + 'static,
@@ -150,7 +119,6 @@ impl NfsAdapter {
         if size.is_some() || mtime.is_some() {
             self.rw()?;
         }
-        // mode/uid/gid/atime are not stored; accepted and ignored.
         self.blocking(move |fs| {
             if let Some(sz) = size {
                 fs.set_size(id, sz)?;
@@ -274,7 +242,6 @@ impl NFSFileSystem for NfsAdapter {
         .await
         {
             Ok(Ok(())) => Ok(()),
-            // The contract reports a non-empty directory target as Exists.
             Ok(Err(Error::Exists)) => Err(nfsstat3::NFS3ERR_NOTEMPTY),
             Ok(Err(e)) => Err(stat(e)),
             Err(_) => Err(nfsstat3::NFS3ERR_SERVERFAULT),
@@ -290,8 +257,6 @@ impl NFSFileSystem for NfsAdapter {
                 fs.readdir(dirid)
             })
             .await?;
-        // Deterministic order by id, so `start_after` (the cookie) stays valid even if that
-        // entry has been deleted in between.
         children.sort_by_key(|n| n.id);
         let start = children.partition_point(|n| n.id <= start_after);
         let rest = &children[start..];
@@ -330,10 +295,8 @@ impl NFSFileSystem for NfsAdapter {
         if fh.data.len() != 24 {
             return Err(nfsstat3::NFS3ERR_BADHANDLE);
         }
-        // Constant-time compare.
         let diff = fh.data[..16].iter().zip(&self.secret).fold(0u8, |acc, (a, b)| acc | (a ^ b));
         if diff != 0 {
-            // Also what a handle from a previous mount of the same mountpoint gets.
             return Err(nfsstat3::NFS3ERR_STALE);
         }
         Ok(u64::from_le_bytes(fh.data[16..24].try_into().unwrap()))
@@ -373,16 +336,11 @@ impl NFSFileSystem for NfsAdapter {
             dtpref: 64 << 10,
             maxfilesize: u64::MAX >> 1,
             time_delta: nfstime3 { seconds: 0, nseconds: 1 },
-            // No symlinks, no hard links.
             properties: nfsserve::nfs::FSF_HOMOGENEOUS | nfsserve::nfs::FSF_CANSETTIME,
         })
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Server
-
-/// A running NFS server: a dedicated thread with its own tokio runtime.
 pub(crate) struct Server {
     pub(crate) port: u16,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
@@ -407,7 +365,6 @@ impl Server {
                     _ = rx => {}
                 }
             });
-            // Dropping the runtime cancels the per-connection tasks.
             rt.shutdown_timeout(std::time::Duration::from_secs(2));
         })?;
         Ok(Server { port, stop: Some(tx), thread: Some(thread) })
@@ -429,9 +386,6 @@ impl Drop for Server {
     }
 }
 
-
-// ---------------------------------------------------------------------------------------------
-// mount_nfs (macOS only)
 
 #[cfg(target_os = "macos")]
 pub(crate) use mac::{available, mount, unavailable_reason};
@@ -455,8 +409,6 @@ mod mac {
         Path::new(MOUNT_NFS).exists() && home().is_some()
     }
 
-    /// `nfs_missing`: macOS's NFS client is not there; `nfs_no_home`: no home folder for
-    /// `~/NiceVault/<name>`.
     pub(crate) fn unavailable_reason() -> Option<(&'static str, String)> {
         if !Path::new(MOUNT_NFS).exists() {
             return Some(("nfs_missing", format!("macOS's NFS client ({MOUNT_NFS}) is missing on this Mac.")));
@@ -482,8 +434,6 @@ mod mac {
             Ok(()) => return Ok(()),
             Err(e) => e,
         };
-        // Busy (open files, Finder/Spotlight holding it): force, as rclone does. Works unprivileged
-        // for a mount the user owns.
         util::run(Command::new("/usr/sbin/diskutil").args(["unmount", "force"]).arg(p))
             .map_err(|e| format!("{first}; diskutil: {e}"))
     }
@@ -492,7 +442,6 @@ mod mac {
         fn unmount(self: Box<Self>) -> Result<()> {
             let NfsMount { mut server, dir, fs } = *self;
             if let Err(e) = do_unmount(&dir.path) {
-                // Keep serving: stopping the server under a live mount would hang the client.
                 std::mem::forget(server);
                 return Err(MountError::Busy(e));
             }
@@ -546,7 +495,6 @@ mod mac {
         let path = dir.path.clone();
         let m = Box::new(NfsMount { server, dir, fs });
         if gate != GATE_USED {
-            // Another local process sent MOUNT in our window (or took the only one): drop it all.
             let _ = m.unmount();
             return Err(MountError::Failed("another process tried to mount the volume".into()));
         }
@@ -606,7 +554,6 @@ mod tests {
         let (r, eof) = a.read(f, 5_000_000, 10).await.unwrap();
         assert!(r.is_empty() && eof);
 
-        // setattr: truncate + mtime.
         let mut s = sattr3::default();
         s.size = set_size3::size(10);
         s.mtime = set_mtime::SET_TO_CLIENT_TIME(nfsserve::nfs::nfstime3 { seconds: 1_000_000_000, nseconds: 5 });
@@ -615,29 +562,24 @@ mod tests {
         assert_eq!(at.mtime.seconds, 1_000_000_000);
         assert_eq!(mem.getattr(f).unwrap().mtime, 1_000_000_000_000_000_005);
 
-        // create with size attr (O_TRUNC-ish).
         let mut s = sattr3::default();
         s.size = set_size3::size(0);
         let (g, gattr) = a.create(d, &n("g"), s).await.unwrap();
         assert_eq!(gattr.size, 0);
         is(a.create_exclusive(d, &n("g")).await, nfsstat3::NFS3ERR_EXIST);
 
-        // rename over existing file.
         a.rename(d, &n("g"), d, &n("f.bin")).await.unwrap();
         assert_eq!(a.lookup(d, &n("f.bin")).await.unwrap(), g);
         is(a.lookup(d, &n("g")).await, nfsstat3::NFS3ERR_NOENT);
-        // rename empty dir onto non-empty dir.
         a.mkdir(ROOT, &n("empty")).await.unwrap();
         is(a.rename(ROOT, &n("empty"), ROOT, &n("dir")).await, nfsstat3::NFS3ERR_NOTEMPTY);
 
-        // remove.
         is(a.remove(ROOT, &n("dir")).await, nfsstat3::NFS3ERR_NOTEMPTY);
         a.remove(d, &n("f.bin")).await.unwrap();
         a.remove(ROOT, &n("dir")).await.unwrap();
         a.remove(ROOT, &n("empty")).await.unwrap();
         assert!(mem.readdir(ROOT).unwrap().is_empty());
 
-        // unsupported / invalid
         is(a.symlink(ROOT, &n("l"), &n("t"), &sattr3::default()).await, nfsstat3::NFS3ERR_NOTSUPP);
         is(a.create(ROOT, &"x".repeat(300).as_bytes().into(), sattr3::default()).await, nfsstat3::NFS3ERR_NAMETOOLONG);
         is(a.create(ROOT, &vec![0xff, 0xfe].into(), sattr3::default()).await, nfsstat3::NFS3ERR_INVAL);
@@ -651,7 +593,6 @@ mod tests {
         a.accept_mount.store(super::GATE_OPEN, std::sync::atomic::Ordering::SeqCst);
         is(a.path_to_id(b"/etc").await, nfsstat3::NFS3ERR_NOENT);
         assert_eq!(a.path_to_id(b"/").await.unwrap(), ROOT);
-        // one-shot: a second MOUNT is refused and marks the window as raced
         is(a.path_to_id(b"/").await, nfsstat3::NFS3ERR_ACCES);
         assert_eq!(a.accept_mount.load(std::sync::atomic::Ordering::SeqCst), super::GATE_RACED);
         let fh = a.id_to_fh(42);
@@ -681,7 +622,6 @@ mod tests {
                 break;
             }
             after = r.entries.last().unwrap().fileid;
-            // Deleting the cookie entry must not break the walk.
             mem.remove(after).unwrap();
         }
         assert_eq!(seen.len(), 25);
@@ -704,10 +644,6 @@ mod tests {
         assert_eq!(a.getattr(f).await.unwrap().mode, 0o400);
     }
 
-    /// Before any handle check, the record-marking layer allocated whatever 31-bit length
-    /// a fragment header announced (and kept appending fragments). Any local process could make
-    /// the app allocate gigabytes. Now a record over 2 MiB drops the connection at once (the
-    /// old server just waited for the announced bytes, so the read below timed out).
     #[test]
     fn oversized_rpc_record_drops_the_connection() {
         use std::io::{Read, Write};
@@ -718,7 +654,6 @@ mod tests {
             s.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
             let mut closed = false;
             for len in frags {
-                // not the last fragment: the server must keep it all to assemble the record
                 if s.write_all(&len.to_be_bytes()).is_err() {
                     closed = true;
                     break;
@@ -741,7 +676,6 @@ mod tests {
         server.stop();
     }
 
-    /// Full protocol path: a real NFSv3 client (MOUNT + NFS RPCs over TCP) against our server.
     #[test]
     fn over_the_wire() {
         use nfs3_client::Nfs3ConnectionBuilder;
@@ -762,7 +696,6 @@ mod tests {
                     .mount_port(port)
                     .nfs3_port(port)
             };
-            // MOUNT is refused outside the mount window.
             assert!(builder().mount().await.is_err());
             gate.store(super::GATE_OPEN, std::sync::atomic::Ordering::SeqCst);
             let mut c = builder().mount().await.unwrap();
@@ -839,7 +772,6 @@ mod tests {
                 rd.reply.entries.0.iter().map(|e| String::from_utf8(e.name.0.to_vec()).unwrap()).collect();
             assert!(names.contains(&"renamed.bin".to_string()), "{names:?}");
 
-            // A forged handle (wrong secret) is rejected.
             let mut forged = fh.data.to_vec();
             forged[0] ^= 0x55;
             let r = c

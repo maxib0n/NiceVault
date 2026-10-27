@@ -1,10 +1,6 @@
-// The picture under the pointer while dragging files: a compact preview (lib/dragPreview.ts)
-// handed to dataTransfer.setDragImage, never the browser's snapshot of the whole tile / row.
-// One item: its picture + its name; several: up to 5 pictures fanned + a count.
 import type { Page } from '@playwright/test';
 import { boot, expect, item, listed, modKey, test } from './helpers';
 
-/** Starts a drag on `name` and returns what setDragImage received. */
 async function dragImageOf(page: Page, name: string) {
   return item(page, name).evaluate((el) => {
     const calls: { tag: string; testid?: string; count?: string; w: number; h: number; x: number; y: number; cards: number; label: string | null }[] = [];
@@ -49,6 +45,5 @@ test('several items: fanned pictures (at most 5) and the count', async ({ page }
   expect(c.cards).toBe(5);
   expect(c.label).toBeNull();
   expect(c.w).toBeLessThan(160);
-  // the preview is gone again shortly after the drag started
   await expect(page.getByTestId('drag-preview')).toHaveCount(0, { timeout: 4000 });
 });

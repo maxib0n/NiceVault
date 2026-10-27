@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# C/C++ compiler and linker driver for iOS from Linux: the swiftly clang (same LLVM as
-# Apple's toolchain era) with the target triple and the xtool-extracted SDK as sysroot.
-# NV_IOS_TRIPLE: arm64-apple-ios<min> or arm64-apple-ios<min>-simulator (set by build-ios.sh).
-# Strip any -arch/-isysroot/--target the caller passes (cc-rs, OpenSSL's Configure) so ours win.
 args=()
 skip=0
 for a in "$@"; do

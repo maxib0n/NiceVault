@@ -1,9 +1,3 @@
-<!--
-  The security tint: a field of fine waves printed with a split fountain (the
-  ink duct is split, so the colour runs from the volume's ink into a second ink
-  across the sheet). A clean disc is knocked out around `around` (the rosette),
-  and the field fades out before any text. Fills its positioned parent.
--->
 <script lang="ts">
   import InkCanvas, { type InkEnv } from './InkCanvas.svelte';
   import { hair } from './ink.svelte';
@@ -14,7 +8,7 @@
     seed = 3,
     fade = 0.72,
     measure,
-  }: { around?: HTMLElement; seed?: number; fade?: number; /** redraw when this changes (the size of `around`) */ measure?: unknown } = $props();
+  }: { around?: HTMLElement; seed?: number; fade?: number; measure?: unknown } = $props();
 
   function offsetIn(el: HTMLElement, root: HTMLElement): { x: number; y: number } {
     let x = 0;
@@ -25,7 +19,6 @@
       y += n.offsetTop;
       n = n.offsetParent as HTMLElement | null;
     }
-    // root not on the chain: measure both against the shared parent
     if (n !== root) {
       const r = offsetIn(root, document.body);
       const e = offsetIn(el, document.body);
@@ -35,7 +28,7 @@
   }
 
   function draw(ctx: CanvasRenderingContext2D, w: number, h: number, env: InkEnv) {
-    void measure; // the knock-out follows the seal when it is resized
+    void measure;
     const hw = hair(env.dpr);
     const p = new Path2D();
     waves(p, -8, 0, w + 16, h, Math.max(3.2, w / 92), seed, Math.max(3.5, w / 64));
@@ -48,7 +41,6 @@
     ctx.strokeStyle = g;
     ctx.stroke(p);
     ctx.restore();
-    // the field is printed as a soft-edged panel round the seal and fades before any text
     ctx.save();
     ctx.globalCompositeOperation = 'destination-in';
     const o = around ? offsetIn(around, env.el) : { x: w / 2, y: h / 2 };
@@ -72,7 +64,6 @@
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      // the knock-out is cut clean: a hairline marks its edge
       ctx.save();
       ctx.lineWidth = hw * 0.7;
       ctx.strokeStyle = env.ink('color-mix(in srgb, var(--engrave-2) 70%, transparent)');

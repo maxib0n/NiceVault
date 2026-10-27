@@ -1,8 +1,3 @@
-<!--
-  A phone's "Vista" sheet (the key in the compact head): grid or list, and the icon size
-  (S M L XL) or the row density, as on desktop's head. A short dialog, so a bottom sheet on a
-  phone (Dialog + styles/mobile.css). The sort sheet keeps its own size entries too.
--->
 <script lang="ts">
   import { LayoutGrid, List } from '@lucide/svelte';
   import { m } from '../paraglide/messages.js';
@@ -62,7 +57,6 @@
     display: flex;
     width: 100%;
   }
-  /* icon and label on one line, centred, every key the same height as the size keys below */
   .vs .segmented > :global(button) {
     flex: 1;
     display: inline-flex;

@@ -1,9 +1,3 @@
-//! Global settings (not per volume): the UI language, the app's own appearance (theme, ink,
-//! interface size: worn wherever no volume's look applies) and the defaults for NEW volumes, plus
-//! what the Impostazioni screen shows about the app, and how it starts ("Avvia all'accesso",
-//! "Avvia ridotto", "Resta nel vassoio": installed mode only, see autostart.rs and tray.rs). Stored by `store.rs`: installed mode in
-//! `settings.json` in the OS config dir, portable mode in memory for this session only.
-
 use crate::appearance::{Settings, SettingsPatch};
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, lock_or_recover};
@@ -11,40 +5,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct AppSettings {
-    /// "system" | "it" | "en"
     pub language: String,
-    /// What a volume created from now on starts with (theme, accent, auto-lock options).
     pub defaults: Settings,
-    /// true = kept in the OS config dir (installed); false = this session only (portable).
     pub persisted: bool,
-    /// Password manager: fetch each entry's site icon from its website (default on).
     pub site_icons: bool,
-    /// Subtle UI sounds (default on).
     pub sounds: bool,
-    /// ←/→ in a full-screen video: "seek" (default) or "step" (previous / next file).
     pub video_arrows: String,
-    /// The volume's sidebar folded to a slim rail (desktop; default off).
     pub sidebar_collapsed: bool,
-    /// The app's own theme ("dark" | "light" | "system") and ink: Benvenuto, Impostazioni, the
-    /// wizard, Sblocca of a volume whose look is encrypted. A volume's own look wins inside it.
     pub app_theme: String,
     pub app_accent: String,
-    /// Interface size, percent (one of `store::UI_SCALES`): the webview's zoom.
     pub ui_scale: u32,
-    /// New volumes start with the app's theme and ink ("Come l'app"), not `defaults.theme / accent`.
     pub new_like_app: bool,
-    /// "Avvia all'accesso": the OS starts NiceVault when this user logs in (installed only).
     pub start_at_login: bool,
-    /// "Avvia ridotto": started at login it stays hidden, with a tray icon; closing the window
-    /// hides it there instead of quitting (installed only).
     pub start_minimized: bool,
-    /// "Resta nel vassoio quando chiudi la finestra": closing the window hides it, NiceVault
-    /// keeps running in the tray (volumes open, auto-lock on); the tray's Esci quits. Installed
-    /// only (default on); without a tray on this desktop closing quits anyway (tray.rs).
     pub close_to_tray: bool,
-    /// Phones: "Salva foto e video nella Galleria" — Esporta puts pictures and videos in the
-    /// system gallery (iOS Photos, Android Pictures/Movies) instead of Files. null = never asked:
-    /// the first export of a photo asks once.
     pub gallery_save: Option<bool>,
 }
 
@@ -69,9 +43,7 @@ pub struct AppSettingsPatch {
 #[derive(Clone, Debug, Serialize)]
 pub struct AppInfo {
     pub version: String,
-    /// Running from a removable drive: nothing is written on the host or the drive.
     pub portable: bool,
-    /// Where installed mode keeps known.json and settings.json.
     pub config_dir: Option<String>,
 }
 

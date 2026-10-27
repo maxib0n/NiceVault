@@ -1,9 +1,7 @@
-// Volume emblem helpers (pure; the icon components are mapped in components/Emblem.svelte).
 import type { Emblem, RecentEntry } from './types';
 import { m } from '../paraglide/messages.js';
 import { DEFAULT_FRAME, frameOf, type FrameId } from '../ornament/frames';
 
-/** Curated icons for "things worth keeping": id = lucide icon name, label = its message. Order = picker order. */
 export const EMBLEM_ICONS = [
   { id: 'house', label: m.icon_house },
   { id: 'file-text', label: m.icon_file_text },
@@ -35,14 +33,11 @@ export type EmblemIconId = (typeof EMBLEM_ICONS)[number]['id'];
 
 export const INITIAL: Emblem = { kind: 'initial' };
 
-/** Max decoded size of a custom image (the backend refuses more). */
 export const MAX_IMAGE_BYTES = 64 * 1024;
 export const IMAGE_SIZE = 256;
-/** The header (locked-screen) copy of an image emblem: nv-core caps (MAX_LOCKED_IMAGE / _SIDE). */
 export const LOCKED_IMAGE_BYTES = 24 * 1024;
 export const LOCKED_IMAGE_SIZE = 128;
 
-/** What a mark shows: an emblem, or the neutral rosette (volume opted out while locked). */
 export type EmblemView = Emblem | { kind: 'hidden' };
 
 export function isKnownIcon(id: string): id is EmblemIconId {
@@ -53,19 +48,16 @@ export function iconLabel(id: string): string {
   return EMBLEM_ICONS.find((i) => i.id === id)?.label() ?? id;
 }
 
-/** First letter of the volume name (monogram), uppercase; "·" when the name has none. */
 export function initialOf(name: string): string {
   const mt = name.trim().match(/\p{L}|\p{N}/u);
   return mt ? mt[0].toLocaleUpperCase() : '·';
 }
 
-/** Locked screens (Benvenuto, Sblocca): the header's emblem, else the initial; hidden when the look is encrypted. */
 export function lockedView(r: Pick<RecentEntry, 'emblem' | 'show_when_locked'>): EmblemView {
   if (r.show_when_locked === false) return { kind: 'hidden' };
   return r.emblem ?? INITIAL;
 }
 
-/** Normalizes what the UI renders: unknown icon ids fall back to the initial. */
 export function viewOf(e: EmblemView | null | undefined): EmblemView {
   if (!e) return INITIAL;
   if (e.kind === 'icon' && !isKnownIcon(e.id)) return INITIAL;
@@ -93,25 +85,14 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
-/**
- * Locked screens: the frame round the emblem, as this computer last saw it open (the frame lives
- * inside the volume: RecentEntry.emblem_frame); the default rosette for an encrypted look or a
- * volume never opened here.
- */
 export function lockedFrame(r: Pick<RecentEntry, 'emblem_frame' | 'show_when_locked'> | null | undefined): FrameId {
   return r && r.show_when_locked !== false ? frameOf(r.emblem_frame) : DEFAULT_FRAME;
 }
 
-/** Locked screens: the header's accent of a visible volume, else null (= the default accent). */
 export function lockedAccent(r: Pick<RecentEntry, 'accent' | 'show_when_locked'> | null | undefined): string | null {
   return r && r.show_when_locked !== false ? (r.accent ?? null) : null;
 }
 
-/**
- * Browser only: centre-crops a picked image to a square, scales it to 256x256 and
- * encodes WebP (PNG where the webview can't encode WebP), shrinking until it fits 64 KB.
- * Returns base64 without the data: prefix.
- */
 export async function imageFileToEmblem(file: Blob): Promise<string> {
   let bmp: ImageBitmap;
   try {
@@ -125,11 +106,6 @@ export async function imageFileToEmblem(file: Blob): Promise<string> {
   throw { code: 'image_complex', message: 'Image too complex: try another one.' };
 }
 
-/**
- * The header copy of an image emblem (base64 in, base64 out): <= 128 px, <= 24 KB WebP/PNG.
- * null where the platform can't decode/encode images (vitest) or nothing fits: the
- * backend then shows the initial on locked screens.
- */
 export async function lockedImageOf(data_base64: string): Promise<string | null> {
   try {
     if (typeof createImageBitmap !== 'function' || typeof document === 'undefined') return null;
@@ -145,7 +121,6 @@ export async function lockedImageOf(data_base64: string): Promise<string | null>
   }
 }
 
-/** Centre-crop to a square, try each size x quality until the encoding fits `maxBytes`. */
 async function encodeSquare(bmp: ImageBitmap, sizes: number[], maxBytes: number): Promise<string | null> {
   const side = Math.min(bmp.width, bmp.height);
   const sx = (bmp.width - side) / 2;
@@ -160,7 +135,7 @@ async function encodeSquare(bmp: ImageBitmap, sizes: number[], maxBytes: number)
       const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/webp', q));
       if (!blob) continue;
       if (blob.size <= maxBytes) return bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
-      if (blob.type !== 'image/webp') break; // PNG fallback ignores quality: try a smaller size
+      if (blob.type !== 'image/webp') break;
     }
   }
   return null;

@@ -1,4 +1,3 @@
-// Mount backends (mount_available) in the UI language: the backend sends a reason code.
 import type { Backend } from './types';
 import { m } from '../paraglide/messages.js';
 
@@ -15,19 +14,15 @@ const REASON: Record<string, (b: Backend) => string> = {
   windows_only: () => m.mount_windows_only(),
 };
 
-/** Why a backend is unavailable (null when it is available or nothing is known). */
 export function backendReason(b: Backend): string | null {
   if (b.available) return null;
   return (b.reason_code ? REASON[b.reason_code]?.(b) : null) ?? b.reason ?? null;
 }
 
-/** The backend whose state the system-drive switch explains: this OS's own one (older
- *  backends without `native`: the first unavailable one). */
 export function nativeBackend(list: Backend[]): Backend | null {
   return list.find((b) => b.native) ?? list.find((b) => !b.available) ?? null;
 }
 
-/** "FUSE", "NFS locale", "WinFsp" */
 export function backendLabel(b: Backend): string {
   return b.id === 'nfs' ? m.mount_nfs_label() : b.label;
 }

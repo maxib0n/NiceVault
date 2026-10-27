@@ -1,12 +1,6 @@
-// Thumbnails of pictures the Rust side cannot decode (HEIC/HEIF, AVIF, TIFF, DNG): ImageIO makes
-// them (src-tauri/src/thumbs.rs `native`), so the web view gets a small SDR JPEG, never the 12 MP
-// HEIC original (decoded at full size by WebKit for every grid tile, and drawn into the glyph
-// decode's canvas). Memory only: the bytes come in and go out as buffers, nothing touches disk.
 import Foundation
 import ImageIO
 
-/// A JPEG of `src` whose longer side is at most `px` (EXIF orientation applied), or nil. The
-/// returned buffer (`*outLen` bytes) is freed with `nv_imageio_free`.
 @_cdecl("nv_imageio_thumbnail")
 public func nv_imageio_thumbnail(_ src: UnsafePointer<UInt8>?, _ len: Int, _ px: UInt32, _ outLen: UnsafeMutablePointer<Int>?) -> UnsafeMutablePointer<UInt8>? {
     guard let src = src, len > 0, px > 0, let outLen = outLen else { return nil }

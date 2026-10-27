@@ -1,8 +1,3 @@
-<!--
-  What is inside an archive, without extracting it: ZIP (and its families: jar, apk, epub,
-  cbz) from the central directory at the end of the file, tar by hopping header to header.
-  Compressed streams (gz, xz, 7z, rar…) keep their content to themselves: facts only.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { File, Folder, Lock } from '@lucide/svelte';
@@ -57,7 +52,6 @@
         return;
       }
       if (ac.signal.aborted) return;
-      // a tree in path order: folders named by their entries even when not listed themselves
       const seen = new Set<string>();
       const out: Row[] = [];
       for (const r of list.sort((a, b) => a.name.localeCompare(b.name))) {

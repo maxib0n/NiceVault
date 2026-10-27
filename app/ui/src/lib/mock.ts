@@ -1,7 +1,3 @@
-// In-browser mock of the Tauri backend. It implements the same command names,
-// argument shapes and events as the command contract, so api.ts is identical in
-// both modes. Seeded with realistic data; every vault accepts the password "demo".
-
 import type {
   ApiError,
   AppearanceState,
@@ -46,47 +42,32 @@ export const MOCK_PASSWORD = 'demo';
 export const STICK = switches.demo ? DEMO_STICK : '/run/media/utente/CHIAVETTA';
 
 export interface MockOptions {
-  /** multiplier for every simulated delay; 0 = instant (tests) */
   speed: number;
   empty: boolean;
   mountUnavailable: boolean;
   mounted: boolean;
-  /** mount_available as on another OS (?mount=win_missing|win_old|win_broken|win_ok|mac_ok|mac_nonfs) */
   mountOs: string | null;
   importFails: boolean;
-  /** delete jobs stop half way: the volume is full (no_room_to_delete) */
   deleteFails?: boolean;
-  /** ms per committed delete batch (?slow_delete); default 40 */
   slowDelete?: number | null;
   singleSlot: boolean;
   unlockMs: number;
-  /** force every seeded volume's emblem (?emblem=): hidden = opted out of showing it while locked */
   emblem: 'initial' | 'icon' | 'image' | 'hidden' | null;
-  /** force every seeded volume's appearance visibility (?appearance=) */
   appearance: Visibility | null;
-  /** force every seeded volume's emblem frame (?frame=) */
   frame: string | null;
-  /** the automatic start-up check finds MOCK_UPDATE (?update=available); a manual check always does */
   updateOnStart: boolean;
-  /** update_install: in place (replaced) or the read-only fallback (downloaded, ?update=downloads) */
   updateMode: 'replaced' | 'downloaded';
-  /** extra generated password-manager entries in every seeded volume (?pm=N) */
   pmEntries: number;
-  /** Crea dispositivo (deviceMock.ts): ?device=empty|incomplete, ?device_fail=code[@step], ?device_offline */
   device: 'empty' | 'incomplete' | null;
   deviceFail: string | null;
   deviceOffline: boolean;
-  /** ?device_slow=candidates|options|plan|create|auth, ?device_volumes (deviceMock.ts) */
   deviceSlow: 'candidates' | 'options' | 'plan' | 'create' | 'auth' | null;
   deviceVolumes: boolean;
-  /** Aggiorna i programmi sulla chiavetta (stickMock.ts): ?stick=old|missing|current|unmounted|tight, ?stick_offline, ?stick_fail=code */
   stick: StickScenario;
   stickOffline: boolean;
   stickFail: string | null;
-  /** Estendi / Riduci (resizeMock.ts): ?fixed = seeded volumes are fixed-size, ?resize_fail=code */
   fixed: boolean;
   resizeFail: string | null;
-  /** Aggiorna formato: ?fmt_full = seeded fixed-size volumes are too full for it (volume_full) */
   fmtFull: boolean;
 }
 
@@ -118,7 +99,6 @@ const DEFAULTS: MockOptions = {
   pmEntries: 0,
 };
 
-/** The fake newer release the mock offers. */
 export const MOCK_UPDATE = {
   current: '0.1.0',
   version: '0.2.0',
@@ -134,7 +114,6 @@ const THEMES = ['system', 'light', 'dark'] as const;
 const LOCK_SCOPES = ['volume', 'all'] as const;
 const GRID_SIZES = ['s', 'm', 'l', 'xl'] as const;
 const LIST_DENSITIES = ['compact', 'normal', 'comfortable'] as const;
-// new volumes: anthracite, red velvet (mirrors the backend's defaults)
 const DEFAULT_SETTINGS: Settings = {
   auto_lock_minutes: 15,
   accent: DEFAULT_ACCENT,
@@ -146,11 +125,9 @@ const DEFAULT_SETTINGS: Settings = {
   list_density: 'normal',
 };
 
-/** The seeded duress ("autodistruzione") password of Documenti: entering it destroys the volume. */
 export const MOCK_DURESS_PASSWORD = 'panico';
 const DURESS_CONFLICT = 'A self-destruct password must differ from every other password of the volume.';
 
-/** Mirrors appearance.rs Settings::apply: unknown accents / themes / scopes ignored, minutes capped. */
 function applySettings(base: Settings, patch: Partial<Settings> | undefined): Settings {
   const s = { ...DEFAULT_SETTINGS, ...base };
   if (!patch) return s;
@@ -165,8 +142,6 @@ function applySettings(base: Settings, patch: Partial<Settings> | undefined): Se
   return s;
 }
 
-// The real backend keeps settings inside each volume, so they survive a restart. The mock
-// keeps them in localStorage (per browser profile) for the same effect across reloads.
 const SETTINGS_STORE = 'nv.mock.volume-settings';
 
 function loadStoredSettings(): Record<string, Settings> {
@@ -181,20 +156,17 @@ function storeSettings(path: string, s: Settings): void {
   try {
     localStorage.setItem(SETTINGS_STORE, JSON.stringify({ ...loadStoredSettings(), [path]: s }));
   } catch {
-    /* ignore */
   }
 }
 
 interface MockNode extends FsNode {
-  asset?: string; // URL served for previews
-  /** Proprietà (props.rs NodeMeta): unix ns / host path; undefined = unknown */
+  asset?: string;
   created?: number | null;
   imported?: number | null;
   origin?: string | null;
   sha256?: string | null;
 }
 
-/** What the mock's sample media are (props.rs reads them from the headers). */
 const ASSET_INFO: Record<string, { mime: string; width?: number; height?: number; duration_ms?: number }> = {
   '/mock/photo-01.jpg': { mime: 'image/jpeg', width: 960, height: 659 },
   '/mock/photo-02.jpg': { mime: 'image/jpeg', width: 960, height: 638 },
@@ -211,7 +183,6 @@ const ASSET_INFO: Record<string, { mime: string; width?: number; height?: number
   '/mock/key.pub': { mime: 'text/plain' },
 };
 
-/** A stable fake SHA-256 (hex) for a mock file. */
 function fakeSha(seed: string): string {
   let h = 2166136261;
   let out = '';
@@ -230,20 +201,13 @@ interface MockVolume {
   nodes: Map<NodeId, MockNode>;
   nextId: number;
   slots: SlotInfo[];
-  /** emblem + visibility (show_when_locked = visible) */
   emblem: EmblemState;
   settings: Settings;
-  /** header copy of an image emblem (vault_emblem_set locked_image_base64) */
   lockedImage: string | null;
-  /** duress slot index -> its password */
   duress: Map<number, string>;
-  /** a duress password was entered: no password opens it any more */
   destroyed: boolean;
-  /** format v2 (vault_upgrade_format) */
   singleFile?: boolean;
-  /** made with fixed_size (format v2 single-file when made by this build, see vault_create) */
   fixed?: boolean;
-  /** opens as an older copy (`?rolledback=1`), until vault_accept_rollback */
   rolledBack?: { seen: number; now: number } | null;
 }
 
@@ -251,9 +215,7 @@ interface OpenVault {
   id: VaultId;
   path: string;
   mountpoint: string | null;
-  /** open order: settings_* without `vault` act on the highest */
   seq: number;
-  /** Date.now() of the last command that touched it (idle clock, like autolock.rs) */
   lastActivity: number;
 }
 
@@ -300,7 +262,6 @@ function basename(p: string): string {
   return p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? p;
 }
 
-/** store.rs volume_tag: a stable document number (Crockford base32, 9 characters) for the mock's volumes. */
 function volumeTag(path: string): string {
   const A = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
   let h = 2166136261 >>> 0;
@@ -329,14 +290,10 @@ function validName(name: string): boolean {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Seed data
-
 type Seed = [name: string, sizeOrChildren: number | Seed[], asset?: string];
 
 const photo = (n: number) => `/mock/photo-${String(n).padStart(2, '0')}.jpg`;
 
-// Folder-envelope variants (FolderPeek), one folder per case: open `?screen=vault&dir=Personale/Buste`.
 const dirs = (names: string[]): Seed[] => names.map((n) => [n, [['dentro.bin', 1_000]]]);
 const GAME_FILES: Seed[] = [
   ['sh2pc.exe', 6.2 * MB],
@@ -423,7 +380,6 @@ const DOCUMENTI: Seed[] = [
         ],
       ],
       ['Buste', BUSTE],
-      // one sample of each kind the in-app viewers read (public/mock/v, gen-viewer-samples.py)
       [
         'Anteprime',
         [
@@ -437,6 +393,8 @@ const DOCUMENTI: Seed[] = [
           ['Lettera (UTF-16).txt', 330, '/mock/v/lettera-utf16.txt'],
           ['Spese maggio.csv', 230, '/mock/v/spese.csv'],
           ['Guida al volume.md', 953, '/mock/v/guida.md'],
+          ['Taccuino di casa.md', 2_483, '/mock/v/taccuino.md'],
+          ['Nota sospetta.md', 1_126, '/mock/v/sospetto.md'],
           ['Vecchio PC.zip', 845, '/mock/v/archivio.zip'],
           ['Backup contatti.tar', 10_240, '/mock/v/backup.tar'],
           ['Backup contatti.tar.gz', 237, '/mock/v/backup-tar-gz.bin'],
@@ -517,17 +475,13 @@ function defaultSlots(single: boolean): SlotInfo[] {
   return slots;
 }
 
-// ---------------------------------------------------------------------------
-
 const GB = 1024 * 1024 * 1024;
 
-/** The drives of the mock computer: the stick NiceVault runs from, and the internal disk. */
 export const MOCK_DRIVES: Drive[] = [
   { id: '/dev/sdb1', label: switches.demo ? DEMO_STICK_LABEL : 'CHIAVETTA', mount_path: STICK, folder: STICK, fs_type: 'exfat', total_bytes: 32 * GB, free_bytes: 21.7 * GB, removable: true, system: false, app_here: true, is_nicevault_device: false },
   { id: '/dev/nvme0n1p2', label: '', mount_path: '/', folder: switches.demo ? DEMO_HOME : '/home/utente/Documenti', fs_type: 'ext4', total_bytes: 512 * GB, free_bytes: 188 * GB, removable: false, system: true, app_here: false, is_nicevault_device: false },
 ];
 
-/** What simulateDrive('add') plugs in: an external disk with the volume "Fotografie". */
 export const MOCK_BACKUP_DRIVE: Drive = {
   id: '/dev/sdc1', label: 'BACKUP', mount_path: '/run/media/utente/BACKUP', folder: '/run/media/utente/BACKUP', fs_type: 'ntfs', total_bytes: 1000 * GB, free_bytes: 612 * GB, removable: true, system: false, app_here: false, is_nicevault_device: false,
 };
@@ -537,7 +491,6 @@ const FOTOGRAFIE: Seed[] = [
   ['Nonna.png', 860_000, '/mock/card.png'],
 ];
 
-/** import_size of a host path in the mock: a made-up size per name; huge* = 6 GiB (does not fit), slow* = 80 MB */
 function mockPathSize(path: string): number {
   const name = basename(path);
   if (/^huge/i.test(name)) return 6 * 1024 ** 3;
@@ -550,18 +503,14 @@ export class MockBackend {
   private volumes = new Map<string, MockVolume>();
   private open = new Map<VaultId, OpenVault>();
   private recents: RecentEntry[] = [];
-  /** drives_list (drives.rs); simulateDrive() plugs / pulls one */
   private drives: Drive[] = [...MOCK_DRIVES.map((d) => ({ ...d }))];
-  /** session defaults (no volume open); seed of new volumes */
   private defaults: Settings = { ...DEFAULT_SETTINGS };
   private listeners = new Map<EventName, Set<Handler<EventName>>>();
   private jobSeq = 0;
   private vaultSeq = 0;
   private cancelled = new Set<JobId>();
-  /** volumes seeded with sample data (they also get sample password-manager entries) */
   private seededPaths = new Set<string>();
   private update = { checkOnStart: true, lastCheck: null as number | null, found: false, downloaded: false, installed: false };
-  /** password manager (pm_* commands): see pmMock.ts */
   readonly pm = new PmMock({
     pathOf: (vault) => this.vault(vault).ov.path,
     seeded: (path) => this.seededPaths.has(path),
@@ -572,7 +521,6 @@ export class MockBackend {
     siteIcons: () => this.siteIcons,
   });
 
-  /** fs_search + tags_* (search.rs): see searchMock.ts */
   readonly search = new SearchMock({
     volume: (vault) => {
       const { vol } = this.vault(vault);
@@ -582,16 +530,11 @@ export class MockBackend {
     wait: (ms) => this.wait(ms),
     emit: (event, payload) => this.emit(event, payload),
   });
-  /** Crea dispositivo (device_* commands): see deviceMock.ts */
   device!: DeviceMock;
-  /** Aggiorna i programmi sulla chiavetta (device_sticks, device_stick_*): see stickMock.ts */
   stick!: StickMock;
-  /** fixed-size volumes too full for Aggiorna formato (?fmt_full) */
   private fmtFull = new Set<string>();
-  /** Estendi / Riduci (vault_resize*): see resizeMock.ts */
   resize!: ResizeMock;
   viewers!: ViewersMock;
-  /** the last vault_create's arguments, password left out (tests: fixed_size) */
   lastCreate: Record<string, unknown> | null = null;
 
   constructor(opts: Partial<MockOptions> = {}) {
@@ -631,9 +574,6 @@ export class MockBackend {
     const doc = this.addVolume(`${STICK}/${docName}.nvault`, this.opts.empty ? [] : D ? DEMO_DOCUMENTS : DOCUMENTI, now - 2 * DAY);
     const arc = this.addVolume(`${STICK}/${arcName}.nvault`, this.opts.empty ? [] : D ? DEMO_TAX : ARCHIVIO, now - 40 * DAY);
     const dia = this.addVolume(`${STICK}/${diaName}.nvault`, this.opts.empty ? [] : D ? DEMO_JOURNAL : DIARIO, now - 20 * DAY);
-    // Seeded looks: Documenti = custom image, Rosso velluto (the default ink), visible;
-    // Archivio fiscale = icon, Blu di Prussia, visible; Diario = icon, Verde bottiglia, ENCRYPTED
-    // (locked screens show a neutral rosette); Vecchio (unreachable) = initial.
     const forced = this.opts.emblem;
     const seed = (vol: MockVolume, own: Emblem, icon: string, accent: string, visibility: Visibility, frame = 'guilloche') => {
       const emblem: Emblem =
@@ -647,9 +587,7 @@ export class MockBackend {
     seed(dia, { kind: 'icon', id: 'book-open' }, 'book-open', 'bottiglia', 'encrypted');
     if (!this.opts.empty) for (const v of [doc, arc, dia]) this.seededPaths.add(v.path);
     for (const v of [doc, arc, dia]) this.resize.seed(v.path);
-    // ?fmt_full: the seeded fixed-size volumes have no room for the journal region until extended
     if (this.opts.fixed && this.opts.fmtFull) for (const v of [doc, arc, dia]) this.fmtFull.add(v.path);
-    // Documenti also has a duress password ("panico"); never the only key (single-slot mode: none).
     if (!this.opts.singleSlot) {
       doc.slots.push({ index: 2, kind: 'duress', label: switches.demo ? DEMO_SLOTS.duress : 'Autodistruzione', kdf: { m_kib: 524_288, t: 3, p: 4 }, in_use: false });
       doc.duress.set(2, MOCK_DURESS_PASSWORD);
@@ -672,7 +610,6 @@ export class MockBackend {
           source: 'known',
         },
       ];
-      // ?recents=long: names and places as long as people make them (Benvenuto's fit checks)
       if (switches.recents === 'long') {
         const long = (name: string, path: string, days: number, source: RecentEntry['source'], size: number): RecentEntry => ({
           path, name, size_bytes: size, last_opened: now - days * DAY, exists: true, unlock_ms: this.opts.unlockMs, source,
@@ -686,9 +623,7 @@ export class MockBackend {
     }
   }
 
-  /** What the header shows while locked (real backend: nv_core::peek of the appearance section). */
   private look(vol: MockVolume): Pick<RecentEntry, 'emblem' | 'show_when_locked' | 'accent' | 'emblem_frame' | 'volume_tag' | 'key_slots' | 'kdf'> {
-    // the header's plaintext (store.rs entry): the document number, the keys, the first KDF
     const head = { volume_tag: volumeTag(vol.path), key_slots: vol.slots.length, kdf: vol.slots.find((s) => s.kind === 'password')?.kdf ?? null };
     if (!vol.emblem.show_when_locked) return { emblem: null, show_when_locked: false, accent: null, emblem_frame: null, ...head };
     const e = vol.emblem.emblem;
@@ -707,7 +642,6 @@ export class MockBackend {
     };
   }
 
-  /** settings_* target: `vault` (must be open), else the most recently opened, else null (defaults). */
   private settingsTarget(vault: unknown): MockVolume | null {
     if (vault !== undefined && vault !== null) return this.vault(String(vault)).vol;
     const last = [...this.open.values()].sort((a, b) => b.seq - a.seq)[0];
@@ -718,8 +652,6 @@ export class MockBackend {
     vol.settings = s;
     storeSettings(vol.path, s);
   }
-
-  // --- infrastructure -------------------------------------------------------
 
   private wait(ms: number): Promise<void> {
     const t = ms * this.opts.speed;
@@ -761,7 +693,6 @@ export class MockBackend {
       for (const [name, v, asset] of items) {
         const id = vol.nextId++;
         const mtime = (mtimeMs - (k++ % 37) * 3.7 * DAY) * NS;
-        // seeded = imported from the home folder a while after it was last changed
         const origin = `${switches.demo ? DEMO_HOME : '/home/utente/Documenti'}${hostPath(parent)}/${name}`;
         const meta = { created: mtime - 30 * DAY * NS, imported: mtime + 2 * DAY * NS, origin };
         if (Array.isArray(v)) {
@@ -789,7 +720,7 @@ export class MockBackend {
   private vault(id: VaultId): { ov: OpenVault; vol: MockVolume } {
     const ov = this.open.get(id);
     if (!ov) throw err('locked', 'The volume is locked.');
-    ov.lastActivity = Date.now(); // any command on a volume is activity (state.rs AppState::vault)
+    ov.lastActivity = Date.now();
     return { ov, vol: this.volumes.get(ov.path)! };
   }
 
@@ -820,13 +751,11 @@ export class MockBackend {
       appearance_tampered: false,
       volume_tag: volumeTag(ov.path),
       single_file: !!vol.singleFile,
-      // a fixed-size volume needs room for the journal region (?fmt_full: the seeded ones have none)
       can_upgrade_format: !vol.singleFile && !this.fmtFull.has(ov.path),
       ...(vol.rolledBack ? { rolled_back: { ...vol.rolledBack } } : {}),
     };
   }
 
-  /** Mirrors appearance.rs validate_locked_image (the mock checks only the size and format). */
   private validLockedImage(b64: unknown): string | null {
     if (b64 === undefined || b64 === null || b64 === '') return null;
     const img = this.validEmblem({ kind: 'image', data_base64: b64 });
@@ -834,7 +763,6 @@ export class MockBackend {
     return img.data_base64;
   }
 
-  /** Mirrors app/src-tauri/src/emblem.rs validate(). */
   private validEmblem(e: unknown): Emblem {
     const bad = (m: string) => err('invalid_emblem', m);
     const x = e as Record<string, unknown> | null;
@@ -883,10 +811,8 @@ export class MockBackend {
     });
   }
 
-  /** vault_appearance_set / vault_emblem_set: undefined fields keep their value. */
   private setAppearance(vol: MockVolume, p: { accent?: unknown; emblem?: unknown; visibility?: unknown; locked_image_base64?: unknown; emblem_frame?: unknown }) {
     const emblem = p.emblem !== undefined && p.emblem !== null ? this.validEmblem(p.emblem) : undefined;
-    // emblem.rs validate_frame: the charset only (a newer build's frame is kept as it is)
     if (p.emblem_frame !== undefined && p.emblem_frame !== null) {
       if (typeof p.emblem_frame !== 'string' || !/^[a-z0-9-]{1,32}$/.test(p.emblem_frame)) throw err('invalid_emblem', 'Invalid frame.');
       vol.emblem = { ...vol.emblem, emblem_frame: p.emblem_frame };
@@ -922,17 +848,12 @@ export class MockBackend {
     }
   }
 
-  // --- test / devtools helpers ---------------------------------------------
-
-  /** Simulate pulling the USB stick: every open vault locks with reason "removed". */
   simulateRemoval(reason: LockReason = 'removed'): void {
     for (const id of [...this.open.keys()]) {
       this.open.delete(id);
       this.emit('vault-locked', { vault: id, reason });
     }
   }
-
-  // --- Proprietà (props.rs) ---------------------------------------------------
 
   private pathOf(vol: MockVolume, id: NodeId): string {
     const parts: string[] = [];
@@ -966,7 +887,6 @@ export class MockBackend {
     };
   }
 
-  /** Steps a props job: `step(i)` returns the progress payload, the last call the result. */
   private propsJob(vault: VaultId, steps: number, step: (i: number) => Record<string, unknown>, done: () => Record<string, unknown>): JobId {
     const job = `props-${++this.jobSeq}`;
     let i = 0;
@@ -1027,11 +947,6 @@ export class MockBackend {
     );
   }
 
-  /** drives.rs hot-plug: plug in (`add`) or pull out (`remove`) a drive, then `drives-changed`.
-   *  `add` without a drive plugs MOCK_BACKUP_DRIVE, which carries the volume "Fotografie".
-   *  `remove` without an id pulls the last plugged removable drive. Volumes on a pulled drive
-   *  vanish from Benvenuto (or show as unreachable when known) and lock with reason "removed".
-   *  devtools: __nv.mock.simulateDrive('add') */
   simulateDrive(action: 'add' | 'remove', drive?: Partial<Drive> | string): Drive | null {
     if (action === 'add') {
       const d: Drive = { ...MOCK_BACKUP_DRIVE, ...(typeof drive === 'object' ? drive : {}) };
@@ -1064,7 +979,6 @@ export class MockBackend {
     return d;
   }
 
-  /** autolock.rs autolock_status: per-volume countdown (null = never). */
   autolockStatus(now = Date.now()): AutoLockStatus[] {
     return [...this.open.values()]
       .map((ov) => {
@@ -1074,7 +988,6 @@ export class MockBackend {
       .sort((x, y) => x.vault.localeCompare(y.vault));
   }
 
-  /** Lock `due` volumes (all open ones when one of them has lock_scope "all"), like autolock.rs. */
   private autoLock(due: OpenVault[], reason: LockReason): VaultId[] {
     if (due.length === 0) return [];
     const all = due.some((ov) => this.volumes.get(ov.path)!.settings.lock_scope === 'all');
@@ -1086,8 +999,6 @@ export class MockBackend {
     return ids;
   }
 
-  /** autolock.rs idle_tick: lock the volumes idle for their own minutes at `now`. The UI's idle
-   *  store drives the mock's idle locks itself (api.vaultLock "idle"); this is for tests / devtools. */
   idleTick(now = Date.now()): VaultId[] {
     const due = [...this.open.values()].filter((ov) => {
       const min = this.volumes.get(ov.path)!.settings.auto_lock_minutes;
@@ -1096,7 +1007,6 @@ export class MockBackend {
     return this.autoLock(due, 'idle');
   }
 
-  /** autolock.rs lock_event: the system sleeps / the screen locks (devtools: __nv.mock.simulateLockEvent('screen')). */
   simulateLockEvent(reason: 'sleep' | 'screen'): VaultId[] {
     const due = [...this.open.values()].filter((ov) => {
       const s = this.volumes.get(ov.path)!.settings;
@@ -1107,24 +1017,17 @@ export class MockBackend {
 
   private osDragHandlers = new Set<(e: OsDragEvent) => void>();
 
-  /** api.onOsDragDrop in mock mode. */
   onOsDrag(handler: (e: OsDragEvent) => void): () => void {
     this.osDragHandlers.add(handler);
     return () => this.osDragHandlers.delete(handler);
   }
 
-  /** Replay a Tauri-style OS drag event (enter/over/drop/leave with host paths and a CSS-px position). */
   simulateOsDrag(e: OsDragEvent): void {
     for (const h of this.osDragHandlers) h(e);
   }
 
   private externalSeq = 0;
 
-  /** A change made outside the app through the mounted drive (a copy from the file manager):
-   *  adds `add` (default: one new text file) to folder `dir`, deletes the children named in
-   *  `remove`, then emits fs-changed { vault, dirs: [dir] } like fs_events.rs (`emit: false`
-   *  skips the event). `vault` defaults to the most recently opened volume. Returns the new ids.
-   *  devtools: __nv.mock.simulateExternalChange(1) */
   simulateExternalChange(
     dir: NodeId = ROOT,
     opts: { vault?: VaultId; add?: string[]; remove?: string[]; emit?: boolean } = {},
@@ -1157,7 +1060,6 @@ export class MockBackend {
     this.opts.mountUnavailable = !available;
   }
 
-  /** Long-running jobs for screenshots of the job tray (?jobs=1). */
   seedJobs(vault: VaultId): { job: JobId; kind: 'import' | 'export'; label: string }[] {
     const a = this.runJob(vault, 'Importazione', [
       ['DSC_0192.jpg', 6.1 * MB],
@@ -1175,7 +1077,6 @@ export class MockBackend {
     ];
   }
 
-  /** Bytes for a preview; null when the node has no mock asset. */
   assetUrl(vault: VaultId, node: NodeId): string | null {
     const ov = this.open.get(vault);
     if (!ov) return null;
@@ -1183,10 +1084,6 @@ export class MockBackend {
     return a?.startsWith('gen:') ? generatedAsset(a) : a;
   }
 
-  // --- job engine ----------------------------------------------------------
-
-  /** fs_delete as delete.rs: post-order, committed batches of 128 items / 4 MB, job-progress with
-   *  items and freed bytes, fs-changed per batch, cancellable between batches, job-done.outcome. */
   private deleteJob(vault: VaultId, vol: MockVolume, ids: NodeId[]): JobId {
     const job = `job-${++this.jobSeq}`;
     const order: MockNode[] = [];
@@ -1207,7 +1104,7 @@ export class MockBackend {
     const progress = (current: string) =>
       this.emit('job-progress', { job, done_bytes: out.freed_bytes, total_bytes, current, done_items: out.deleted, total_items });
     const step = () => {
-      if (this.cancelled.has(job)) return; // job_cancel emitted job-done
+      if (this.cancelled.has(job)) return;
       if (!this.open.has(vault)) {
         this.emit('job-done', { job, error: err('locked', 'The volume was locked.'), outcome: out });
         return;
@@ -1289,7 +1186,6 @@ export class MockBackend {
       if (step >= steps || step >= failAt) finish();
       else setTimeout(run, tick);
     };
-    // Emit asynchronously so the caller receives the JobId first (like Tauri).
     if (duration <= 0) {
       setTimeout(() => {
         if (!o.fail) this.emit('job-progress', { job, done_bytes: total, total_bytes: total, current: current(total) });
@@ -1301,9 +1197,6 @@ export class MockBackend {
     return job;
   }
 
-  // --- camera roll (mobile.rs mobile_import_photos) --------------------------
-  /** the last pick: names; ?photos=N picks N items (default 3), ?pickfail=K makes the first K
-   *  fail as offline (iCloud without network) on the first try, "Riprova questi" brings them in */
   private pick: string[] = [];
   private pickTried = new Set<number>();
 
@@ -1340,7 +1233,7 @@ export class MockBackend {
         for (const i of items.slice(k)) failures.push({ index: i, name: this.pick[i], reason: 'offline', message: 'Cancelled.' });
         failures.forEach((f) => ((f as { reason: string }).reason = f.message === 'Cancelled.' ? 'cancelled' : f.reason));
         progress(true, true);
-        return; // job_cancel emitted job-done
+        return;
       }
       if (k < total) {
         const i = items[k];
@@ -1367,30 +1260,22 @@ export class MockBackend {
     return { job, total };
   }
 
-  // --- command dispatch ----------------------------------------------------
-
-  // --- global settings (app_settings_*, app_info): the mock is "portable", memory only ------
   language = 'system';
   siteIcons = true;
   sounds = true;
   videoArrows: 'seek' | 'step' = switches.video_arrows ?? 'seek';
   sidebarCollapsed = false;
-  // the app's own look (?app_theme= / ?app_accent= / ?scale= start the session with another)
   appTheme: ThemeId = switches.app_theme ?? 'dark';
   appAccent: string = switches.app_accent ?? DEFAULT_ACCENT;
   uiScale = switches.scale ?? 100;
   newLikeApp = true;
-  // ?installed=1: settings "persisted", start-at-login options available (memory only here too)
   installed = switches.installed;
   startAtLogin = false;
   startMinimized = false;
   closeToTray = true;
-  /** phones: "Salva foto e video nella Galleria" (null = not asked yet) */
   gallerySave: boolean | null = null;
-  /** what mobile_save_gallery "saved" (e2e reads it through window.__nv.mock) */
   gallerySaved: NodeId[] = [];
 
-  /** What a volume created now starts with (mirrors Store::new_volume_settings). */
   private newVolumeSettings(): Settings {
     return this.newLikeApp ? { ...this.defaults, theme: this.appTheme, accent: this.appAccent } : { ...this.defaults };
   }
@@ -1441,7 +1326,6 @@ export class MockBackend {
       if (isAccent(p.app_accent)) this.appAccent = p.app_accent;
       if (typeof p.ui_scale === 'number' && [90, 100, 110, 125, 150].includes(p.ui_scale)) this.uiScale = p.ui_scale;
       if (typeof p.new_like_app === 'boolean') this.newLikeApp = p.new_like_app;
-      // portable: ignored, like the backend
       if (this.installed && typeof p.start_at_login === 'boolean') this.startAtLogin = p.start_at_login;
       if (this.installed && typeof p.start_minimized === 'boolean') this.startMinimized = p.start_minimized;
       if (this.installed && typeof p.close_to_tray === 'boolean') this.closeToTray = p.close_to_tray;
@@ -1531,7 +1415,7 @@ export class MockBackend {
         vol.password = String(a.password);
         vol.settings = this.newVolumeSettings();
         vol.fixed = !!a.fixed_size;
-        vol.singleFile = true; // new volumes are single-file (format v2), fixed-size ones too
+        vol.singleFile = true;
         vol.slots = [{ index: 0, kind: 'password', label: 'Principale', kdf: { m_kib: 524_288, t: 3, p: 4 }, in_use: true }];
         const ov: OpenVault = { id: `v${++this.vaultSeq}`, path, mountpoint: null, seq: this.vaultSeq, lastActivity: Date.now() };
         this.open.set(ov.id, ov);
@@ -1544,7 +1428,6 @@ export class MockBackend {
         await this.wait(this.opts.unlockMs);
         if (!vol) throw err('not_found', 'The volume file is not reachable.');
         if (vol.destroyed || a.password !== vol.password) {
-          // a duress password destroys the keys and answers like any wrong password (duress.rs)
           if (!vol.destroyed && [...vol.duress.values()].includes(String(a.password))) vol.destroyed = true;
           throw err('wrong_password', 'Wrong password.');
         }
@@ -1635,7 +1518,6 @@ export class MockBackend {
         if (!validName(name)) throw err('invalid_name', 'Invalid name.');
         const clash = this.children(vol, Number(a.new_parent)).find((c) => c.name === name && c.id !== n.id);
         if (clash) throw err('exists', 'Something with this name already exists.');
-        // refuse moving a folder into itself
         for (let p = Number(a.new_parent); p !== ROOT; p = this.node(vol, p).parent) {
           if (p === n.id) throw err('invalid_name', 'A folder cannot go inside itself.');
         }
@@ -1673,7 +1555,7 @@ export class MockBackend {
           return [s.name, s.size, url, s.name];
         });
         return this.runJob(vault, 'Importazione', items.map(([n, s]) => [n, s]), {
-          durationMs: items.some(([n]) => /slow/i.test(n)) ? 8000 : undefined, // e2e: a slow import shows speed and ETA
+          durationMs: items.some(([n]) => /slow/i.test(n)) ? 8000 : undefined,
           fail: this.opts.importFails ? err('io', 'No space left on the drive.') : undefined,
           onDone: () => {
             for (const [name, size, asset, origin] of items) {
@@ -1719,7 +1601,6 @@ export class MockBackend {
         this.emit('job-done', { job: String(a.job), error: err('cancelled', 'Cancelled.') });
         return null;
       }
-      // Android / iOS (src-tauri/src/mobile.rs): parity for the browser preview of the phone layout
       case 'mobile_volume_in':
         return String(a.uri);
       case 'mobile_import_photos':
@@ -1728,7 +1609,6 @@ export class MockBackend {
         await this.wait(80);
         return a.multiple ? ['/var/mobile/tmp/nv-import/2/0/Bolletta luce.pdf'] : ['/var/mobile/tmp/nv-import/2/0/Archivio fiscale.nvault'];
       case 'mobile_save_gallery': {
-        // as mobile.rs: pictures / videos "saved" (the Android list), the rest back for Files
         await this.wait(120);
         const { vol } = this.vault(String(a.vault));
         const saved: NodeId[] = [];
@@ -1832,7 +1712,6 @@ export class MockBackend {
         const s = vol.slots.find((x) => x.index === slot);
         if (!s) throw err('not_found', 'Key not found.');
         if (s.kind !== 'password') throw err('invalid_slot', 'This key is not a password.');
-        // the whole volume is written again beside itself: as slow as the volume is large
         await this.wait(Math.max(this.opts.unlockMs, 2600));
         if (a.password !== vol.password) throw err('wrong_password', 'Wrong password.');
         vol.slots = [{ ...s, in_use: true }];
@@ -1844,7 +1723,6 @@ export class MockBackend {
         const { vol } = this.vault(String(a.vault));
         const slot = Number(a.slot);
         if (!vol.slots.some((x) => x.index === slot)) throw err('not_found', 'Key not found.');
-        // a duress slot never counts: it cannot be the only key left
         if (!vol.slots.some((x) => x.index !== slot && x.kind !== 'duress')) throw err('last_slot', 'It is the only key: it cannot be removed.');
         vol.slots = vol.slots.filter((x) => x.index !== slot);
         vol.duress.delete(slot);
@@ -1899,7 +1777,7 @@ export class MockBackend {
           const path = this.vault(String(a.vault)).ov.path;
           const before = this.resize.capacity(path) ?? 0;
           const r = await this.resize.invoke(cmd, a);
-          if ((this.resize.capacity(path) ?? 0) > before) this.fmtFull.delete(path); // extended: room for the region
+          if ((this.resize.capacity(path) ?? 0) > before) this.fmtFull.delete(path);
           return r;
         }
         if (cmd === 'media_url' || cmd === 'media_release' || cmd === 'fs_open_mounted' || cmd === 'open_link') return this.viewers.invoke(cmd, a);
@@ -1909,7 +1787,6 @@ export class MockBackend {
   }
 }
 
-/** mount_available as each OS answers it (state.rs mount_available). */
 export function mockBackends(os: string | null, fuseMissing: boolean): Backend[] {
   const off = (id: Backend['id'], label: string, code: string, reason: string): Backend => ({ id, label, available: false, reason, reason_code: code, native: false, link: null, min_version: null });
   const win = os?.startsWith('win_') ?? false;

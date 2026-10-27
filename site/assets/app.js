@@ -1,4 +1,3 @@
-// The public repository. Rename it here and every link on the page follows.
 const REPO = 'maxib0n/NiceVault';
 
 (() => {
@@ -10,12 +9,10 @@ const REPO = 'maxib0n/NiceVault';
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-  // links
   $$('[data-repo]').forEach((a) => (a.href = REPO_URL));
   $$('[data-releases]').forEach((a) => (a.href = RELEASES));
   $$('[data-asset]').forEach((a) => (a.href = LATEST + a.dataset.asset));
 
-  // what runs here
   function detect() {
     const uad = navigator.userAgentData;
     const ua = navigator.userAgent || '';
@@ -49,7 +46,6 @@ const REPO = 'maxib0n/NiceVault';
     main.textContent = 'See downloads';
   }
 
-  // screens: tabs with arrow-key support
   const viewer = $('#viewer');
   const tabs = $$('[role="tab"]', viewer);
   function select(tab, focus) {
@@ -72,7 +68,6 @@ const REPO = 'maxib0n/NiceVault';
     });
   });
 
-  // a static block of ciphertext inside the file diagram
   const noise = $('#noise');
   if (noise) {
     const h = '0123456789abcdef';
@@ -83,7 +78,6 @@ const REPO = 'maxib0n/NiceVault';
 
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // clips play only while on screen, and not at all with reduced motion
   const vids = $$('.clips video');
   if ('IntersectionObserver' in window && !reduce) {
     const vo = new IntersectionObserver((es) => es.forEach((e) => {

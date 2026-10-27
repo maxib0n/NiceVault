@@ -1,4 +1,3 @@
-<!-- PDF via pdf.js (WebKitGTK has no built-in PDF viewer). Loaded lazily; pages render to canvas. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { skeleton } from '../lib/reveal';
@@ -57,7 +56,6 @@
 
 <div class="pdf-view" data-status={status} aria-busy={status === 'loading'}>
   {#if status === 'loading'}
-    <!-- a page-shaped field of glyphs while pdf.js decrypts and lays out the first page -->
     <div class="state page-skeleton nv-enter" data-state="loading">
       <span class="visually-hidden">{m.pdf_opening()}</span>
       <span class="skeleton" aria-hidden="true" use:skeleton={{ lines: 12, seed: 7, widths: ['58%', '100%', '94%', '100%', '72%', '0%', '100%', '88%', '100%', '96%', '64%', '30%'] }}></span>
@@ -82,7 +80,6 @@
   .state[data-state='loading'] {
     animation: nv-enter 1ms linear 300ms backwards;
   }
-  /* the page it will be: paper proportions, the glyphs where the text will land */
   .page-skeleton {
     width: min(900px, 100% - 32px);
     margin: 0 auto;
@@ -105,7 +102,6 @@
     align-items: center;
     gap: var(--space-5);
   }
-  /* pages are paper on the stage, in both themes */
   .pages :global(.pdf-page) {
     background: white;
     border-radius: 1px;

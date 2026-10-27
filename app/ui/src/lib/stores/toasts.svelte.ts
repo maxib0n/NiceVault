@@ -1,4 +1,3 @@
-// Transient one-sentence notifications.
 import { errorText } from '../errors';
 import { play } from '../sound';
 
@@ -23,12 +22,10 @@ class Toasts {
     return id;
   }
 
-  /** Show any thrown value as a one-sentence error. */
   error(e: unknown): number {
     return this.push(errorText(e), 'error');
   }
 
-  /** Drop everything (e.g. the last volume just locked: toasts name its files). */
   clear(): void {
     this.items = [];
   }

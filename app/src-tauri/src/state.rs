@@ -1,6 +1,3 @@
-//! App state and every blocking operation behind the Tauri commands. Commands (commands.rs)
-//! are thin async wrappers; tests call these methods directly.
-
 use crate::appearance::{self as look, AppearanceState, Settings, SettingsPatch, Visibility};
 use crate::emblem::{Emblem, EmblemState};
 use crate::error::{ApiError, ApiResult};
@@ -16,12 +13,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::{Duration, Instant};
 
-/// Where events go: the Tauri app in production, a recorder in tests.
 pub trait Events: Send + Sync {
     fn emit(&self, event: &str, payload: serde_json::Value);
 }
 
-/// Discards events.
 pub struct NoEvents;
 impl Events for NoEvents {
     fn emit(&self, _: &str, _: serde_json::Value) {}
@@ -33,19 +28,12 @@ pub struct OpenVault {
     pub name: String,
     pub vault: Arc<Vault>,
     pub mount: Option<nv_mount::MountHandle>,
-    /// Open order (higher = opened later): picks the volume `settings_*` act on without `vault`.
     pub seq: u64,
-    /// This volume's idle clock (autolock.rs).
     pub activity: Arc<crate::autolock::Activity>,
-    /// Cached copy of its settings (the auto-lock fields drive autolock.rs).
     pub autolock: Settings,
-    /// Opened OLDER than this computer last saw it, until the user accepts it.
     pub rolled_back: Option<RolledBack>,
 }
 
-/// The volume's commit counter is behind the one this computer remembers for its id: the file was
-/// replaced by an older copy of itself (a restored backup, a sync conflict,
-/// or someone undoing changes on purpose). `seen` = remembered here, `now` = in the file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub struct RolledBack {
     pub seen: u64,
@@ -64,10 +52,8 @@ pub struct AppState {
     pub(crate) external: External,
     pub(crate) events: Box<dyn Events>,
     pub(crate) last_copy: Mutex<crate::passwords::LastCopy>,
-    /// Serializes open/create/lock so the same file is never opened twice.
     lifecycle: Mutex<()>,
     open_seq: AtomicU64,
-    /// "Apri con" has told this session once that its copies sit on the host's disk.
     host_copy_told: std::sync::atomic::AtomicBool,
     me: Weak<AppState>,
 }
@@ -78,27 +64,18 @@ pub struct VaultInfo {
     pub path: String,
     pub name: String,
     pub mountpoint: Option<String>,
-    /// Argon2id parameters of the slot that unlocked this session (password slots only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kdf: Option<nv_core::KdfParams>,
     pub emblem: Emblem,
-    /// The frame round the emblem (emblem.rs FRAMES).
     pub emblem_frame: String,
-    /// = `visibility == "visible"` (kept for older callers).
     pub show_when_locked: bool,
     pub visibility: Visibility,
-    /// This volume's settings (accent, theme, auto-lock): apply them while it is active.
     pub settings: Settings,
-    /// The header's appearance section had been edited while locked (now rewritten).
     pub appearance_tampered: bool,
-    /// The document number: 9 characters made from the header's volume id (store::volume_tag).
     pub volume_tag: String,
-    /// Format v2 single-file volume (its journal lives inside the `.nvault`).
     pub single_file: bool,
-    /// Older than this computer last saw it: warn, `vault_accept_rollback` to keep it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rolled_back: Option<RolledBack>,
-    /// "Aggiorna formato" is available (`vault_upgrade_format`).
     pub can_upgrade_format: bool,
 }
 
@@ -108,14 +85,11 @@ pub struct VaultStats {
     pub file_count: u64,
     pub file_size_bytes: u64,
     pub free_bytes: u64,
-    /// When the volume's file was last written (unix ms; 0 = unknown).
     pub modified_ms: u64,
 }
 
-/// `{ index, kind, label, kdf: {m_kib, t, p} | null, fingerprint, in_use }` — see types.ts.
 pub use nv_core::SlotInfo;
 
-/// WinFsp's releases page, offered when it is missing or too old.
 pub const WINFSP_DOWNLOAD: &str = "https://winfsp.dev/rel/";
 
 #[derive(Clone, Debug, Serialize)]
@@ -123,20 +97,13 @@ pub struct BackendInfo {
     pub id: &'static str,
     pub label: &'static str,
     pub available: bool,
-    /// English fallback; the UI translates `reason_code`.
     pub reason: Option<String>,
-    /// fuse_missing | linux_only | nfs_admin | macos_only | winfsp_missing | winfsp_unsupported |
-    /// winfsp_load_failed | windows_only
     pub reason_code: Option<&'static str>,
-    /// This OS's own backend (the one whose reason the "Unità di sistema" switch shows).
     pub native: bool,
-    /// Where to get what is missing (WinFsp's download page), opened via open_link.
     pub link: Option<&'static str>,
-    /// Oldest supported version of what is missing (WinFsp: "2.1").
     pub min_version: Option<&'static str>,
 }
 
-/// `fs_open_external`'s answer.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct OpenedExternal {
     pub host_disk_notice: bool,
@@ -159,44 +126,33 @@ pub fn random_id() -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// Extensions Windows' ShellExecute runs as code rather than opening as a document.
 const RUNS_ON_WINDOWS: &[&str] = &[
     "exe", "com", "bat", "cmd", "ps1", "psm1", "psd1", "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "msi", "msp", "mst",
     "scr", "pif", "lnk", "cpl", "reg", "jar", "url", "inf", "scf", "application", "appref-ms", "gadget", "msc", "msh",
     "xll", "settingcontent-ms", "library-ms", "search-ms", "chm", "dll", "sys", "appx", "msix", "appinstaller", "diagcab",
     "py", "pyw", "pyz", "pyc", "ws", "wsc", "sct", "ade", "adp", "mde", "accde", "xbap", "jnlp", "vb", "msixbundle", "appxbundle",
 ];
-/// Linux desktops (xdg-open: a launcher, an installer, a script handed to an interpreter,
-/// Wine for the Windows types above, Java for .jar).
 const RUNS_ON_LINUX: &[&str] = &[
     "desktop", "kdesktop", "sh", "bash", "zsh", "csh", "ksh", "tcsh", "fish", "run", "bin", "appimage", "flatpak", "flatpakref",
     "flatpakrepo", "snap", "deb", "rpm", "pl", "rb", "so", "ko", "x86_64",
 ];
-/// macOS (LaunchServices: Terminal for .command/.tool, an app bundle, a URL file, an installer,
-/// AppleScript, Automator).
 const RUNS_ON_MACOS: &[&str] = &[
     "app", "command", "tool", "terminal", "webloc", "inetloc", "fileloc", "pkg", "mpkg", "scpt", "scptd", "applescript", "workflow",
     "action", "prefpane", "qlgenerator", "kext", "osax", "saver", "plugin", "bundle", "dylib", "mobileconfig", "dmg", "shortcut",
 ];
 
-/// A file the OS (or Wine, Java, a script interpreter) would run instead of showing, by name:
-/// the lists of every OS, on every OS (a volume moves between them).
 pub fn runs_code(name: &str) -> bool {
     let n = nv_fs::host_name(name).to_ascii_lowercase();
     let n = n.trim_end_matches(['.', ' ']);
-    // (Windows drops trailing dots and spaces: "a.exe." runs as "a.exe")
     n.rsplit_once('.').is_some_and(|(_, e)| [RUNS_ON_WINDOWS, RUNS_ON_LINUX, RUNS_ON_MACOS].iter().any(|l| l.contains(&e)))
 }
 
-/// The first bytes of a program or script: ELF, PE ("MZ"), Mach-O (thin or fat), a `#!`
-/// script, a Java archive. The desktop may go by content when the name says nothing.
 pub fn sniffs_runnable(h: &[u8]) -> bool {
     const MAGIC: &[&[u8]] = &[b"\x7fELF", b"MZ", b"#!", b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xce\xfa\xed\xfe", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca"];
     MAGIC.iter().any(|m| h.starts_with(m)) || (h.starts_with(b"PK\x03\x04") && h.windows(20).any(|w| w == b"META-INF/MANIFEST.MF"))
         || h.starts_with(b"[Desktop Entry]")
 }
 
-/// Refuses to hand a file to the OS when it would run (by name or by its first bytes).
 pub fn refuse_runnable(v: &Vault, n: &Node) -> ApiResult<()> {
     let mut head = [0u8; 512];
     let k = if n.kind == Kind::File { v.read(n.id, 0, &mut head).unwrap_or(0) } else { 0 };
@@ -243,7 +199,6 @@ impl AppState {
         }
     }
 
-    /// The open volume `id`. Counts as activity on it (idle auto-lock).
     pub fn vault(&self, id: &str) -> ApiResult<Arc<Vault>> {
         lock_or_recover(&self.vaults)
             .get(id)
@@ -258,9 +213,6 @@ impl AppState {
         Self::snap(o).info()
     }
 
-    /// What `info` needs from the map entry: taken with `vaults` held, the volume's own queries
-    /// then made without it (they wait for that volume's store lock, which an import holds for
-    /// its spills and commits; the other volumes and every `state.vault(..)` must not wait too).
     fn snap(o: &OpenVault) -> InfoSnap {
         InfoSnap {
             id: o.id.clone(),
@@ -307,14 +259,11 @@ impl InfoSnap {
 }
 
 impl AppState {
-    // ---------------- volumes ----------------
 
     pub fn vault_create(&self, path: &str, password: SecretString, kdf: Option<&str>) -> ApiResult<VaultInfo> {
         self.vault_create_sized(path, password, kdf, None)
     }
 
-    /// `fixed_size`: a preallocated volume of that many bytes (it never grows; "Crea
-    /// dispositivo" > "Tutta la partizione" / a fixed "Un pezzo"). None = grows as needed.
     pub fn vault_create_sized(&self, path: &str, password: SecretString, kdf: Option<&str>, fixed_size: Option<u64>) -> ApiResult<VaultInfo> {
         let path = abs_path(path)?;
         if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("nvault")) {
@@ -324,7 +273,7 @@ impl AppState {
             return Err(ApiError::new("invalid_password", "Serve una password."));
         }
         let kdf = match kdf {
-            Some("fast") if cfg!(debug_assertions) => KdfPreset::Fast, // tests only
+            Some("fast") if cfg!(debug_assertions) => KdfPreset::Fast,
             _ => KdfPreset::Strong,
         };
         let _g = lock_or_recover(&self.lifecycle);
@@ -344,7 +293,6 @@ impl AppState {
             e => e.into(),
         })?;
         drop(password);
-        // New volumes start from the defaults (in the app's look when "Come l'app"), look visible while locked.
         let defaults = lock_or_recover(&self.store).new_volume_settings();
         look::save_settings(&v, &defaults)?;
         look::sync_header(&v, &file_stem(&path))?;
@@ -364,8 +312,6 @@ impl AppState {
         let t0 = Instant::now();
         let v = Vault::open(&path, &password)?;
         drop(password);
-        // Bring the header section in line with the volume (repairs a tampered or stale one,
-        // gives volumes made before it existed their visible default).
         let _ = look::sync_header(&v, &file_stem(&path));
         Ok(self.register(path, v, t0.elapsed()))
     }
@@ -389,7 +335,6 @@ impl AppState {
         {
             let mut store = lock_or_recover(&self.store);
             store.touch(&o.path, Some(took.as_millis() as u64));
-            // the locked screens of this computer may show its frame (a visible look only)
             store.set_frame(&o.path, info.show_when_locked.then(|| info.emblem_frame.clone()));
         }
         crate::watch::spawn_removal_watcher(self.me.clone(), o.id.clone(), o.path.clone());
@@ -399,9 +344,6 @@ impl AppState {
         info
     }
 
-    /// Compares the volume's commit counter with this computer's anchor for its id; raises
-    /// the anchor when the volume is as new or newer. An older one is reported and the anchor
-    /// is left alone (it is lowered only by `vault_accept_rollback`).
     fn check_fresh(&self, v: &Vault) -> Option<RolledBack> {
         let id = v.volume_id()?;
         let now = v.commit_seq().ok()?;
@@ -415,8 +357,6 @@ impl AppState {
         }
     }
 
-    /// "Tieni questa versione": the user knows the volume is an older copy (they restored a
-    /// backup): the anchor follows it from now on and the warning goes.
     pub fn vault_accept_rollback(&self, id: &str) -> ApiResult<VaultInfo> {
         let mut g = lock_or_recover(&self.vaults);
         let o = g.get_mut(id).ok_or_else(ApiError::locked)?;
@@ -427,7 +367,6 @@ impl AppState {
         Ok(Self::info(o))
     }
 
-    /// Unmount, cancel jobs, sync + wipe external copies, close the store. Idempotent.
     pub fn vault_lock(&self, id: &str, reason: &str) -> ApiResult<()> {
         let reason = if LOCK_REASONS.contains(&reason) { reason } else { "user" };
         let _g = lock_or_recover(&self.lifecycle);
@@ -441,18 +380,11 @@ impl AppState {
         if let Some(m) = o.mount.take() {
             let _ = m.unmount();
         }
-        // The anchor learns how far this session took the volume (a durability point
-        // first, so the counter is the one the closed file keeps). A volume reported as rolled
-        // back keeps its higher anchor until the user accepts it.
         if reason != "removed" && nv_fs::Fs::flush(&*o.vault).is_ok()
             && let (Some(vid), Ok(now)) = (o.vault.volume_id(), o.vault.commit_seq())
         {
             lock_or_recover(&self.store).set_anchor(&vid, now, false);
         }
-        // Jobs and preview requests hold short-lived clones; wait briefly so the store is
-        // closed (WAL checkpointed, keys wiped) before we report it locked.
-        // (A holder still running after the 5 s keeps the keys in memory until it finishes:
-        // bounded by that job or request, and the volume is already unregistered.)
         let mut arc = o.vault;
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
@@ -465,14 +397,13 @@ impl AppState {
                     arc = a;
                     std::thread::sleep(Duration::from_millis(20));
                 }
-                Err(_) => break, // the last holder's drop closes it
+                Err(_) => break,
             }
         }
         self.emit("vault-locked", serde_json::json!({ "vault": id, "reason": reason }));
         Ok(())
     }
 
-    /// Locks everything (app exit, system sleep).
     pub fn lock_all(&self, reason: &str) {
         let ids: Vec<String> = lock_or_recover(&self.vaults).keys().cloned().collect();
         for id in ids {
@@ -482,10 +413,6 @@ impl AppState {
         self.clear_copied(None);
     }
 
-    /// "Aggiorna formato": makes the volume single-file in place (nv_core::Vault::upgrade_format,
-    /// crash-safe; builds before this one cannot open it afterwards). The session goes on.
-    /// Growable and fixed-size volumes alike; `volume_full`: a fixed-size volume without room
-    /// for the journal region inside it (extend it first). Already single-file: nothing happens.
     pub fn vault_upgrade_format(&self, id: &str) -> ApiResult<VaultInfo> {
         let v = self.vault(id)?;
         let full = || ApiError::new("volume_full", "The fixed-size volume is too full for the new format: extend it first.");
@@ -500,7 +427,6 @@ impl AppState {
         snap.map(InfoSnap::info).ok_or_else(ApiError::locked)
     }
 
-    /// Whether the volume is unlocked (without counting as activity for the auto-lock).
     pub fn is_open(&self, id: &str) -> bool {
         lock_or_recover(&self.vaults).contains_key(id)
     }
@@ -527,15 +453,10 @@ impl AppState {
         Ok(VaultStats { used_bytes: st.used_bytes, file_count: st.files, file_size_bytes: size, free_bytes: st.free_bytes, modified_ms })
     }
 
-    // ---------------- emblem ----------------
-
     pub fn vault_emblem_get(&self, id: &str) -> ApiResult<EmblemState> {
         Ok(crate::emblem::load(&*self.vault(id)?))
     }
 
-    /// Stores the emblem inside the volume; `show_when_locked` is the appearance visibility
-    /// (true = visible: the header section is rewritten, false = encrypted: it is cleared).
-    /// `locked_image`: the UI's <= 24 KiB, <= 128 px copy of an image emblem for the header.
     pub fn vault_emblem_set(
         &self,
         id: &str,
@@ -560,8 +481,6 @@ impl AppState {
         })
     }
 
-    /// Changes any of accent / emblem / visibility (`None` keeps it), then rewrites the
-    /// header section accordingly. Unknown accents are ignored, like `settings_set`.
     pub fn vault_appearance_set(
         &self,
         id: &str,
@@ -579,8 +498,6 @@ impl AppState {
             look::patch_settings(&v, SettingsPatch { accent, ..Default::default() })?;
         }
         if emblem.is_some() || visibility.is_some() || frame.is_some() {
-            // Only the parts given are written; a record from a newer build keeps the rest
-            // (or the change is refused when it cannot be completed, see emblem::save).
             let prev = crate::emblem::stored(&v).map(|p| p.emblem);
             crate::emblem::save(&v, emblem.as_ref(), visibility.map(Visibility::shown), frame.as_deref())?;
             if let Some(e) = &emblem {
@@ -589,7 +506,7 @@ impl AppState {
                 } else if thumb.is_some() {
                     look::save_locked_image(&v, thumb.as_deref())?;
                 } else if prev.as_ref() != Some(e) {
-                    look::save_locked_image(&v, None)?; // a new image without its small copy
+                    look::save_locked_image(&v, None)?;
                 }
             }
         }
@@ -599,11 +516,7 @@ impl AppState {
         Ok(st)
     }
 
-    // ---------------- recent / settings ----------------
-
     pub fn recent_list(&self) -> Vec<RecentEntry> {
-        // test hook (e2e/real/reveal.mjs): a slow scan (USB sticks waking up), so Benvenuto is
-        // shown well before the volumes it decodes with are known
         if cfg!(debug_assertions)
             && let Some(ms) = std::env::var("NICEVAULT_TEST_RECENTS_DELAY_MS").ok().and_then(|v| v.parse::<u64>().ok())
         {
@@ -624,8 +537,6 @@ impl AppState {
         lock_or_recover(&self.vaults).get(id).map(|o| (v, o.name.clone())).ok_or_else(ApiError::locked)
     }
 
-    /// The volume `settings_*` act on: `vault` when given (must be open), else the most
-    /// recently opened one still open, else `None` (session defaults).
     fn settings_target(&self, vault: Option<&str>) -> ApiResult<Option<(Arc<Vault>, String)>> {
         if let Some(id) = vault {
             return self.open_named(id).map(Some);
@@ -633,7 +544,6 @@ impl AppState {
         Ok(lock_or_recover(&self.vaults).values().max_by_key(|o| o.seq).map(|o| (o.vault.clone(), o.name.clone())))
     }
 
-    /// Settings of `vault` (or see [`Self::settings_target`]).
     pub fn settings_get(&self, vault: Option<&str>) -> ApiResult<Settings> {
         Ok(match self.settings_target(vault)? {
             Some((v, _)) => look::load_settings(&v),
@@ -641,9 +551,6 @@ impl AppState {
         })
     }
 
-    /// Patches the settings of `vault` (stored inside it; an accent change also refreshes
-    /// the header section when visible). With no volume open: the session defaults, which
-    /// new volumes start from.
     pub fn settings_set(&self, patch: SettingsPatch, vault: Option<&str>) -> ApiResult<Settings> {
         let Some((v, name)) = self.settings_target(vault)? else { return Ok(lock_or_recover(&self.store).set_defaults(patch)) };
         let s = look::patch_settings(&v, patch)?;
@@ -655,7 +562,6 @@ impl AppState {
     }
 
     pub fn default_volume_dir(&self) -> String {
-        // Android / iOS: <app data>/Volumes (mobile.rs)
         #[cfg(mobile)]
         if let Some(d) = std::env::var_os("NICEVAULT_VOLUME_DIR") {
             return d.to_string_lossy().into_owned();
@@ -668,10 +574,7 @@ impl AppState {
         dir.to_string_lossy().into_owned()
     }
 
-    // ---------------- files ----------------
-
     pub fn fs_list(&self, id: &str, dir: NodeId) -> ApiResult<Vec<Node>> {
-        // test hook (e2e/real/reveal.mjs): a slow drive, so the loading state is seen
         if cfg!(debug_assertions)
             && let Some(ms) = std::env::var("NICEVAULT_TEST_LIST_DELAY_MS").ok().and_then(|v| v.parse::<u64>().ok())
         {
@@ -717,8 +620,6 @@ impl AppState {
         Ok(())
     }
 
-    /// Deletes on the calling thread, in committed batches (delete.rs); the `fs_delete` command
-    /// runs the same as a job (`delete::fs_delete`). An item that could not go is an error here.
     pub fn fs_delete(&self, id: &str, nodes: &[NodeId]) -> ApiResult<()> {
         let v = self.vault(id)?;
         if nodes.contains(&ROOT) {
@@ -734,21 +635,15 @@ impl AppState {
         }
     }
 
-    /// Decrypts `node` into the private temp dir (watched, wiped on lock); returns the path.
     pub fn extract_external(&self, id: &str, node: NodeId) -> ApiResult<PathBuf> {
         let v = self.vault(id)?;
         self.external.extract(&self.arc(), id, &v, node)
     }
 
-    /// One write-back pass over the external copies (the watcher thread does this every 1 s).
     pub fn poll_external(&self) {
         self.external.poll(self)
     }
 
-    /// Opens a temp copy with the OS default app. `host_disk_notice`: the first time in a
-    /// portable session where the copy is on the host's disk (not Linux's tmpfs
-    /// `$XDG_RUNTIME_DIR`), the UI says so once (wiped on lock, but a crash or a locked
-    /// file can leave it there, and on SSD / copy-on-write file systems an overwrite is best effort).
     pub fn fs_open_external(&self, id: &str, node: NodeId) -> ApiResult<OpenedExternal> {
         {
             let v = self.vault(id)?;
@@ -759,8 +654,6 @@ impl AppState {
         let on_disk = !crate::external::copies_in_memory() && !lock_or_recover(&self.store).installed();
         Ok(OpenedExternal { host_disk_notice: on_disk && !self.host_copy_told.swap(true, Ordering::Relaxed) })
     }
-
-    // ---------------- mount ----------------
 
     pub fn mount_available(&self) -> Vec<BackendInfo> {
         let avail = nv_mount::available();
@@ -784,7 +677,6 @@ impl AppState {
             }
         };
         let s = |code, msg: &str| (code, msg.to_owned());
-        // the native backend's precise reason (Windows: missing / too old / failed to load)
         let why = nv_mount::unavailable_reason();
         let (win_why, mac_why) = if win { (why, None) } else { (None, why) };
         vec![
@@ -821,7 +713,7 @@ impl AppState {
             Some(o) => o.mount = Some(h),
             None => {
                 drop(g);
-                let _ = h.unmount(); // locked meanwhile
+                let _ = h.unmount();
                 return Err(ApiError::locked());
             }
         }
@@ -839,8 +731,6 @@ impl AppState {
         Ok(())
     }
 
-    // ---------------- keyslots ----------------
-
     pub fn slots_list(&self, id: &str) -> ApiResult<Vec<SlotInfo>> {
         let s = self.vault(id)?.slots();
         if s.is_empty() {
@@ -857,10 +747,6 @@ impl AppState {
         self.slots_list(id)
     }
 
-    /// Re-keys a password slot after checking `old_password` against that same slot.
-    /// The session already holds the master key, so the check is a guard against a
-    /// walk-up change on an unlocked machine, not a cryptographic requirement.
-    /// `label`: `Some` replaces the slot's label (empty clears), `None` keeps it.
     pub fn slot_change_password(
         &self,
         id: &str,
@@ -886,8 +772,6 @@ impl AppState {
         self.slots_list(id)
     }
 
-    /// Adds a duress ("autodistruzione") password: entering it at unlock destroys the volume's
-    /// keys and answers "wrong_password" (nv_core::Vault::add_duress). Removed with `slot_remove`.
     pub fn slot_add_duress(&self, id: &str, password: SecretString, label: Option<String>) -> ApiResult<Vec<SlotInfo>> {
         if secrecy::ExposeSecret::expose_secret(&password).is_empty() {
             return Err(ApiError::new("invalid_password", "Serve una password."));
@@ -896,9 +780,6 @@ impl AppState {
         self.slots_list(id)
     }
 
-    /// Re-encrypts the volume under a new master key, keeping only password slot `slot`
-    /// (`password` must open it); every other slot is dropped and must be added again
-    /// (nv_core::Vault::rotate_master). Slow: rewrites the whole volume, needs its size free.
     pub fn slot_rotate_key(&self, id: &str, slot: usize, password: SecretString) -> ApiResult<Vec<SlotInfo>> {
         self.vault(id)?.rotate_master(slot, &password)?;
         self.slots_list(id)
@@ -908,8 +789,6 @@ impl AppState {
         self.vault(id)?.remove_slot(slot)?;
         self.slots_list(id)
     }
-
-    // ---------------- jobs ----------------
 
     pub fn job_cancel(&self, job: &str) {
         if let Some(j) = lock_or_recover(&self.jobs).get(job) {

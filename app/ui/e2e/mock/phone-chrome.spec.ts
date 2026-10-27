@@ -1,7 +1,3 @@
-// The phone's chrome round the notch and the home bar (2026-10-25, iPhone): Benvenuto's
-// Impostazioni key stays a key,
-// a dialog with nothing to type is a slip as tall as what it says. The notch is emulated with --nv-inset-top
-// (styles/mobile.css --safe-top takes the larger of it and env(safe-area-inset-top)).
 import { type Page } from '@playwright/test';
 import { boot, expect, test } from './helpers';
 
@@ -43,7 +39,6 @@ test('a dialog with nothing to type is a slip from the bottom, as tall as its co
     const d = (await dialog.boundingBox())!;
     expect(Math.round(d.y + d.height)).toBe(852);
     expect(d.y).toBeGreaterThan(852 / 3);
-    // its key clears the home bar
     const close = (await dialog.getByRole('button', { name: 'Chiudi' }).last().boundingBox())!;
     expect(close.y + close.height).toBeLessThanOrEqual(852 - HOME);
   }).toPass();

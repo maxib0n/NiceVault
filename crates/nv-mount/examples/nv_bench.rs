@@ -1,21 +1,3 @@
-//! Write-path benchmark: copies a set of files into a fresh volume and reports throughput,
-//! write amplification and syncs. See scripts/bench-io.sh.
-//!
-//! nv_bench --vol-dir DIR --src-dir DIR --mode api|fuse|plain --files COUNTxBYTES [--label L]
-//!
-//! - `api`:   Vault API directly (1 MiB writes, one flush at the end, like the app's import job).
-//! - `fuse`:  mount the vault with FUSE in this process and run `cp -r` into it.
-//! - `plain`: `cp -r` into a plain folder under --vol-dir (the device baseline).
-//!
-//! `--single`: the volume is single-file (format v2, journal inside the `.nvault`: created, then
-//! `upgrade_format`). `--rewrite` (api): afterwards overwrite every file in place once (journaled
-//! pages) and report that pass on a second line.
-//!
-//! `--fixed BYTES` (api): a fixed-size volume of that capacity, single-file (what this build makes);
-//! with `--side` the side-file journal of the fixed-size volumes made before (label suffix `fx` / `fxside`).
-//!
-//! Times include the final durability point (vault close / `sync -f`).
-
 use nv_core::{FileKind, KdfPreset, Vault, io_counters};
 use nv_fs::{Fs, Kind, ROOT};
 use secrecy::SecretString;
@@ -35,7 +17,6 @@ fn arg(name: &str) -> Option<String> {
     None
 }
 
-/// Deterministic incompressible bytes for file `seed`.
 fn fill(seed: u64, buf: &mut [u8]) {
     let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
     for w in buf.chunks_mut(8) {
@@ -54,7 +35,6 @@ fn write_bytes_proc() -> u64 {
         .unwrap_or(0)
 }
 
-/// Creates `src/<count>x<size>/f<i>.bin` once (kept for later runs).
 fn ensure_src(src: &Path, count: usize, size: usize) -> PathBuf {
     let d = src.join(format!("{count}x{size}"));
     let done = d.join(".complete");
@@ -102,7 +82,6 @@ fn main() {
     let _ = std::fs::remove_file(&vol);
 
     let src = if mode == "api" { None } else { Some(ensure_src(&src_dir, count, size)) };
-    // Get the source into the page cache so the run measures the destination.
     if let Some(s) = &src {
         let _ = Command::new("cat").arg("--").args(std::fs::read_dir(s).unwrap().map(|e| e.unwrap().path())).stdout(std::process::Stdio::null()).status();
     }
@@ -117,13 +96,12 @@ fn main() {
             let v = match fixed {
                 Some(cap) => {
                     let v = Vault::create_fixed_as(&vol, &pw, KdfPreset::Fast, cap, !side).unwrap();
-                    (c0, t0) = (io_counters(), Instant::now()); // (preallocating is not part of the copy)
+                    (c0, t0) = (io_counters(), Instant::now());
                     v
                 }
                 None => Vault::create(&vol, &pw, KdfPreset::Fast).unwrap(),
             };
             if single {
-                // the one-time upgrade is not part of the copy (a fresh v1 volume has its own setup cost too)
                 v.upgrade_format().unwrap();
                 (c0, t0) = (io_counters(), Instant::now());
             }
@@ -173,7 +151,6 @@ fn main() {
         "fuse" => {
             let v = Arc::new(Vault::create(&vol, &pw, KdfPreset::Fast).unwrap());
             if single {
-                // the one-time upgrade is not part of the copy (a fresh v1 volume has its own setup cost too)
                 v.upgrade_format().unwrap();
                 (c0, t0) = (io_counters(), Instant::now());
             }
@@ -190,7 +167,6 @@ fn main() {
         "plain" => {
             let dst = vol_dir.join("plain");
             let _ = std::fs::remove_dir_all(&dst);
-            // --reflink=never: a btrfs/xfs clone would copy nothing.
             let st = Command::new("cp").arg("-r").arg("--reflink=never").arg(src.as_ref().unwrap()).arg(&dst).status().unwrap();
             assert!(st.success());
             t_copy = t0.elapsed().as_secs_f64();

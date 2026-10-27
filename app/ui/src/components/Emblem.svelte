@@ -1,12 +1,3 @@
-<!--
-  The volume's emblem: the big mark on its document, printed, never pasted.
-    initial  an engraved Newsreader monogram (hatched, outlined, raised in intaglio)
-    icon     the lucide glyph cut as an engraving: a double hairline with hatching
-    image    the user's picture as a security engraving (a line screen in the ink)
-    hidden   opted out while locked: a neutral rosette, no initial
-  finish: intaglio (ink on paper, the default), foil (stamped on the cover cloth),
-  flat (tiny sizes). Hooks: .emblem[data-kind], [data-finish].
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { iconLabel, imageSrc, initialOf, viewOf, type EmblemIconId, type EmblemView } from '../lib/emblem';
@@ -26,10 +17,8 @@
     finish = 'intaglio',
   }: {
     emblem: EmblemView | null | undefined;
-    /** volume name (for the initial and the label) */
     name: string;
     size?: number;
-    /** true when a visible label next to it already names the volume */
     decorative?: boolean;
     finish?: Finish;
   } = $props();
@@ -45,9 +34,7 @@
           : m.emblem_initial({ letter: initialOf(name) }),
   );
 
-  // the source glyph of an icon emblem (read as geometry, never shown)
   let src: HTMLSpanElement | undefined = $state();
-  // the decoded picture of an image emblem
   let tone = $state<ToneMap | null>(null);
   $effect(() => {
     const view = v;
@@ -62,7 +49,6 @@
     };
   });
 
-  /** hatching: fine parallel lines over the whole mark, kept only where `keep` paints */
   function hatch(m: CanvasRenderingContext2D, w: number, h: number, gap: number, width: number, angle = 0) {
     m.save();
     m.lineWidth = width;
@@ -97,10 +83,8 @@
         const asc = mt.actualBoundingBoxAscent || fs * 0.7;
         const desc = mt.actualBoundingBoxDescent || 0;
         const y = h / 2 + (asc - desc) / 2;
-        // optical centre: the letter's ink box, not its advance width
         const x = w / 2 + (mt.actualBoundingBoxRight ? ((mt.actualBoundingBoxLeft || 0) - mt.actualBoundingBoxRight) / 2 : 0);
         if (fine && finish === 'intaglio') {
-          // hatched body, cut by a hairline outline
           hatch(c, w, h, Math.max(1.3, S / 62), hw * 0.95);
           c.globalCompositeOperation = 'destination-in';
           c.fillText(letter, x, y);
@@ -116,7 +100,6 @@
       if (!svg) return;
       const geo = glyphPath(svg);
       const k = (S * (fine ? 0.64 : 0.7)) / 24;
-      // optical centre: the glyph's own geometry, not its 24 grid, sits on the centre
       const gc = glyphCentre(svg);
       const ox = w / 2 - gc.x * k;
       const oy = h / 2 - gc.y * k;
@@ -128,7 +111,6 @@
         c.lineWidth = outer;
         c.stroke(geo);
         if (fine && finish === 'intaglio') {
-          // hollow the stroke to two hairlines, then hatch the channel between them
           const inner = outer - (2 * hw * 1.05) / k;
           c.globalCompositeOperation = 'destination-out';
           c.lineWidth = inner;
@@ -173,7 +155,6 @@
         }
       });
     } else {
-      // hidden: a neutral rosette, nothing that names the volume
       m = mask(env, w, h, (c) => {
         const R = S / 2 - 0.5;
         const p = new Path2D();
@@ -185,7 +166,6 @@
         c.stroke(p);
       });
     }
-    // a line screen is too dense for relief: it prints flat; everything else stands in intaglio
     if (m) printMask(ctx, m, env, w, h, view.kind === 'image' && finish === 'intaglio' ? 'flat' : finish);
   }
 </script>
@@ -218,7 +198,6 @@
     width: 100%;
     height: 100%;
   }
-  /* rendered but invisible: its geometry is measured (glyphCentre) */
   .src {
     position: absolute;
     left: 0;

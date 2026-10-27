@@ -1,12 +1,3 @@
-//! Diagnostic log for Windows, so a user can send what happened before a failure or crash:
-//! `%LOCALAPPDATA%\NiceVault\logs\nicevault.log`.
-//!
-//! Records `log` messages (info and up from NiceVault's crates: mount steps, WinFsp
-//! detection; warnings and up from everything else), panics (release builds abort on panic,
-//! so the hook is the only trace) and native crashes (unhandled SEH exceptions: code, address,
-//! module). No file names, volume names or contents are logged by the mount path.
-//! Over 1 MiB at start, the file is moved to `nicevault.old.log`.
-
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -14,7 +5,6 @@ use std::sync::Mutex;
 
 const MAX: u64 = 1 << 20;
 
-/// `%LOCALAPPDATA%\NiceVault\logs\nicevault.log` (Windows only; elsewhere `None`).
 pub fn path() -> Option<PathBuf> {
     if !cfg!(windows) {
         return None;
@@ -30,7 +20,6 @@ fn stamp() -> String {
     let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
     let s = d.as_secs();
     let (h, m, sec) = ((s / 3600) % 24, (s / 60) % 60, s % 60);
-    // days since 1970 -> civil date (UTC)
     let z = (s / 86_400) as i64 + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -73,7 +62,6 @@ impl log::Log for FileLog {
     }
 }
 
-/// Append one line straight to the file (panic hook, crash filter: no logger lock).
 fn emergency(msg: &str) {
     if let Some(p) = path()
         && let Some(mut f) = open(&p)
@@ -83,8 +71,6 @@ fn emergency(msg: &str) {
     }
 }
 
-/// Install the logger, the panic hook and the crash filter. Windows only; never fails (no log
-/// directory = no log).
 pub fn init() {
     let Some(p) = path() else { return };
     let Some(dir) = p.parent() else { return };
@@ -147,10 +133,8 @@ mod seh {
     const FROM_ADDRESS: u32 = 0x4;
     const UNCHANGED_REFCOUNT: u32 = 0x2;
 
-    /// Which module `addr` is in, and the offset into it.
     fn module_of(addr: *const c_void) -> String {
         let mut m = std::ptr::null_mut();
-        // SAFETY: flags ask for no refcount change; buffers sized as given.
         unsafe {
             if GetModuleHandleExW(FROM_ADDRESS | UNCHANGED_REFCOUNT, addr, &mut m) == 0 || m.is_null() {
                 return "unknown module".into();
@@ -164,7 +148,6 @@ mod seh {
     }
 
     unsafe extern "system" fn filter(p: *const ExceptionPointers) -> i32 {
-        // SAFETY: the OS passes valid pointers to the filter.
         let (code, addr, info) = unsafe {
             match p.as_ref().and_then(|p| p.record.as_ref()) {
                 Some(r) => (r.code, r.address, if r.n_params >= 2 { (r.params[0], r.params[1]) } else { (0, 0) }),
@@ -181,11 +164,10 @@ mod seh {
             module_of(addr),
             std::thread::current().name().unwrap_or("?")
         ));
-        0 // EXCEPTION_CONTINUE_SEARCH: the default handling (WER) still runs
+        0
     }
 
     pub fn install() {
-        // SAFETY: plain registration of a process-wide filter.
         unsafe { SetUnhandledExceptionFilter(Some(filter)) };
     }
 }

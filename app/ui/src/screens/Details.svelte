@@ -1,9 +1,3 @@
-<!--
-  Dettagli / Sicurezza: volume stats, emblem, keyslots (passwords and the self-destruct one),
-  auto-lock (minutes or never, sleep, screen lock, scope), mount backends, appearance (this
-  volume's theme, ink, and whether its look shows while it is locked).
-  Switches: ?screen=details&dialog=add-password|change-password|remove-slot|emblem|add-duress|add-duress-2|remove-duress|rotate-key
--->
 <script lang="ts">
   import { KeyRound, Plus, RotateCcwKey, ShieldAlert } from '@lucide/svelte';
   import * as api from '../lib/api';
@@ -39,12 +33,10 @@
 
   const active = $derived(vaults.active);
   let stats = $state<VaultStats | null>(null);
-  /** when the volume was made (its root's creation, unix ms; null = not recorded) */
   let created = $state<number | null>(null);
   let slots = $state<SlotInfo[]>([]);
   let settings = $state<Settings | null>(null);
 
-  // dialog state
   let dialog = $state<DialogKind | null>(null);
   let slotTarget = $state<SlotInfo | null>(null);
   let pwOld = $state('');
@@ -57,7 +49,6 @@
   let emblemOpen = $state(false);
   let rotateOpen = $state(false);
   let resizeOpen = $state(false);
-  // self-destruct: 1 = the warning and its confirmation, 2 = the password
   let duressStep = $state<1 | 2>(1);
   let duressUnderstood = $state(false);
 
@@ -77,7 +68,6 @@
     { id: 'light', label: m.theme_light },
     { id: 'dark', label: m.theme_dark },
   ];
-  // whether the volume's look (ink + emblem) can be seen while it is locked
   const LOOKS: { id: Visibility; label: () => string; hint: () => string }[] = [
     { id: 'visible', label: m.look_visible, hint: m.look_visible_hint },
     { id: 'encrypted', label: m.look_encrypted, hint: m.look_encrypted_hint },
@@ -96,7 +86,7 @@
     if (!v) return;
     void load(v.id);
   });
-  $effect(() => void (active && vaults.browser?.changes && api.vaultStats(active.id).then((s) => (stats = s), () => {}))); // live refresh: fs-changed
+  $effect(() => void (active && vaults.browser?.changes && api.vaultStats(active.id).then((s) => (stats = s), () => {})));
 
   async function load(id: string) {
     try {
@@ -184,7 +174,6 @@
     }
   }
 
-  /** Patch this volume's auto-lock settings (optimistic; rolled back on error). */
   async function setAutoLock(patch: Partial<Settings>) {
     if (!settings) return;
     const prev = settings;
@@ -206,12 +195,10 @@
   };
   const slotKindLabel = (s: SlotInfo) => KIND_LABEL[s.kind]();
   const kdfText = (s: SlotInfo) => (s.kdf && s.kind !== 'duress' ? `Argon2id · ${Math.round(s.kdf.m_kib / 1024)} MiB · t=${s.kdf.t} · p=${s.kdf.p}` : '');
-  /** keys that open the volume (a self-destruct password never does) */
   const openers = $derived(slots.filter((s) => s.kind !== 'duress'));
   const onlyOne = $derived(openers.length <= 1);
   const canRemove = (s: SlotInfo) => s.kind === 'duress' || !onlyOne;
   const minutes = $derived(settings?.auto_lock_minutes ?? 15);
-  // the data page's machine-readable zone: what the volume holds, with real check digits
   const mrz = $derived(
     active ? mrzInside(active, { created, files: stats?.file_count ?? null, changed: stats?.modified_ms || null, keys: slots.length || null }) : null,
   );
@@ -235,7 +222,6 @@
       </div>
     </header>
   </div>
-  <!-- the band runs edge to edge of the page, through its margins -->
   <Band />
   <div class="page body-page">
     <div class="sections">
@@ -310,7 +296,6 @@
         <button type="button" class="btn sm ghost duress-add" disabled={slots.length >= 8} onclick={() => openDialog('add-duress')} data-testid="add-duress">
           <ShieldAlert size={14} aria-hidden="true" /> {m.duress_add()}
         </button>
-        <!-- the volume's own key: renewed by encrypting everything again -->
         <div class="rotate">
           <div class="rotate-text">
             <p class="rotate-title">{m.det_rotate()}</p>
@@ -485,7 +470,6 @@
   {/snippet}
 </Dialog>
 
-<!-- self-destruct: first the honest limit and a confirmation, then the password -->
 <Dialog open={dialog === 'add-duress'} title={m.duress_title()} variant="danger" onclose={closeDialog} describedby="duress-what">
   <form class="dialog-form" id="duress-form" onsubmit={submitDialog} data-step={duressStep} data-testid="duress-form">
     {#if duressStep === 1}
@@ -556,7 +540,6 @@
 </Dialog>
 
 <style>
-  /* the passport's data page: a sheet of the same paper, set as an official form */
   .details {
     flex: 1;
     min-width: 0;
@@ -571,14 +554,12 @@
     padding-top: var(--space-6);
     padding-bottom: 0;
   }
-  /* the machine-readable zone of the data page: two lines of 44, set in the mono */
   .mrz {
     display: flex;
     flex-direction: column;
     gap: 2px;
     margin-top: 12px;
     font-family: var(--font-mono);
-    /* 44 characters always fit the line: the mono's advance (0.6 em) plus the spacing */
     font-size: min(11.5px, calc(100cqw / 33.8));
     font-weight: 500;
     line-height: 1.3;
@@ -586,7 +567,6 @@
     color: var(--ink-3);
     white-space: pre;
   }
-  /* too narrow to be read: the zone is left out rather than shrunk to dust */
   @container (max-width: 270px) {
     .mrz {
       display: none;
@@ -625,7 +605,6 @@
   }
 
   .sections {
-    /* columns that flow on their own: a short card (Emblema) leaves no hole beside a tall one */
     columns: 380px 2;
     column-gap: var(--space-7);
     margin-top: var(--space-2);
@@ -653,7 +632,6 @@
     max-width: 52ch;
   }
 
-  /* ---- the volume in figures: one figure leads, the rest are footnotes ---- */
   .stat-lead {
     display: flex;
     align-items: baseline;
@@ -661,7 +639,6 @@
     gap: 4px 10px;
     margin-top: 2px;
   }
-  /* a size: set in the mono, like a reading on a gauge */
   .lead-figure {
     font-family: var(--font-mono);
     font-size: 34px;
@@ -697,14 +674,12 @@
     display: grid;
     flex: none;
   }
-  /* wraps beside the seal, never runs past the card */
   .emblem-row .hint {
     flex: 1;
     min-width: 0;
     overflow-wrap: break-word;
   }
 
-  /* ---- keys: a ruled ledger ----------------------------------------------- */
   .slot-list,
   .backend-list {
     list-style: none;
@@ -764,7 +739,6 @@
     align-items: center;
     gap: 7px;
   }
-  /* each theme shows its material: anthracite suede, ivory paper, or whichever the OS asks for */
   .chip {
     flex: none;
     width: 12px;
@@ -784,7 +758,6 @@
     background: linear-gradient(135deg, #f6f1e7 50%, #262523 50%);
   }
 
-  /* ---- mount backends ---------------------------------------------------- */
   .backend {
     display: flex;
     align-items: baseline;
@@ -818,7 +791,6 @@
     transform: rotate(-45deg);
   }
 
-  /* ---- inks: each preset shown as a rosette printed in that ink --------------- */
   .sub-title {
     margin-top: var(--space-4);
   }
@@ -877,7 +849,6 @@
     gap: var(--space-3);
   }
 
-  /* ---- self-destruct ------------------------------------------------------ */
   .slot[data-kind='duress'] .slot-glyph {
     color: var(--danger);
   }
@@ -886,8 +857,6 @@
     margin-top: var(--space-1);
     color: var(--ink-3);
   }
-  /* rotating the volume's key: its own line under the keys, ruled off */
-  /* Estendi / Riduci: a key its own size, under the figures it changes */
   .resize-key {
     align-self: flex-start;
     margin-top: var(--space-3);
@@ -932,7 +901,6 @@
     margin-top: 2px;
   }
 
-  /* ---- auto-lock options -------------------------------------------------- */
   .autolock .switch-row:first-of-type {
     margin-top: var(--space-2);
   }

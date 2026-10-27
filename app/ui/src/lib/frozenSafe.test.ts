@@ -1,6 +1,3 @@
-// The real zxcvbn, in a child Node with Object.prototype frozen exactly as Tauri's
-// freezePrototype does: without frozenSafe the factory throws (the create wizard's strength
-// meter never resolved in the real app); with it every estimate resolves.
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 

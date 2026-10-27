@@ -1,7 +1,3 @@
-// The camera-roll import on a phone (api.mobileImportPhotos, mobile-pick-progress): what the
-// photo sheet (PhotoImportSheet.svelte) shows — "Scarico da iCloud… N di M", Annulla, then
-// what could not be imported with the reason and "Riprova questi". The import itself is also
-// an ordinary job of the tray (jobs.track).
 import * as api from '../api';
 import { m } from '../../paraglide/messages.js';
 import type { JobId, NodeId, PickFailure, PickProgress, VaultId } from '../types';
@@ -24,12 +20,10 @@ export interface PhotoRun {
   failures: PickFailure[];
 }
 
-/** a run that ended with everything imported closes itself after this long */
 export const PHOTOS_DONE_MS = 1800;
 
 class Photos {
   run = $state<PhotoRun | null>(null);
-  /** events of a job whose id the command has not returned yet */
   private early = new Map<JobId, PickProgress>();
   private unlisten: (() => void) | null = null;
   private closer: ReturnType<typeof setTimeout> | null = null;
@@ -38,7 +32,6 @@ class Photos {
     if (!this.unlisten) this.unlisten = await api.onPickProgress((p) => this.event(p));
   }
 
-  /** The picker, then the import into `parent` (`retry`: the indices of the last pick's failures). */
   async start(vault: VaultId, parent: NodeId, folder: string, retry?: number[]): Promise<void> {
     await this.listen();
     let r;
@@ -85,7 +78,6 @@ class Photos {
     if (this.run && !this.run.finished) void jobs.cancel(this.run.job);
   }
 
-  /** "Riprova questi": the failed items of this pick, again (no picker). */
   async retry() {
     const run = this.run;
     if (!run || !run.finished || run.failures.length === 0) return;
@@ -94,11 +86,10 @@ class Photos {
 
   close() {
     this.clearCloser();
-    if (this.run && !this.run.finished) return; // Annulla first
+    if (this.run && !this.run.finished) return;
     this.run = null;
   }
 
-  /** the volume was locked: nothing of it stays on screen */
   dropVault(vault: VaultId) {
     if (this.run?.vault === vault) {
       this.clearCloser();

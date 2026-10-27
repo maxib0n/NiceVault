@@ -1,9 +1,3 @@
-<!--
-  Idle-time warm-up (lib/warm.ts): the printed ornaments Impostazioni opens with, engraved once
-  out of sight so the page's first opening copies them back (InkCanvas cache) instead of cutting
-  14 ink chips in the frame it appears. Invisible, inert, no text, no test ids; unmounted as soon
-  as it has drawn.
--->
 <script lang="ts">
   import { ACCENTS } from '../lib/accents';
   import InkChip from './InkChip.svelte';

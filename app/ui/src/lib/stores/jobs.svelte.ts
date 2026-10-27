@@ -1,6 +1,3 @@
-// Import/export/delete jobs, fed by backend events (job-progress / job-done).
-// Events may arrive before the command that started the job resolves, so
-// unknown job ids are buffered and merged when track() is called.
 import * as api from '../api';
 import type { DeleteOutcome, JobDone, JobId, JobProgress, VaultId } from '../types';
 import { errorText } from '../errors';
@@ -12,7 +9,6 @@ import { toasts } from './toasts.svelte';
 
 export type JobKind = 'import' | 'export' | 'delete';
 
-/** A delete shows in the tray only once it has run this long (a quick one is just its toast). */
 export const DELETE_SHOW_AFTER_MS = 400;
 export type JobStatus = 'running' | 'done' | 'error' | 'cancelled';
 
@@ -20,31 +16,24 @@ export interface Job {
   id: JobId;
   kind: JobKind;
   vault: VaultId;
-  /** what is being moved: "3 elementi", "Foto" */
   label: string;
-  /** destination (export) or parent folder name (import) */
   target?: string;
   done_bytes: number;
   total_bytes: number;
   current: string;
-  /** delete jobs: items removed / in all */
   done_items: number;
   total_items: number;
-  /** delete jobs: what job-done reported */
   outcome: DeleteOutcome | null;
-  /** not in the tray yet (a delete in its first DELETE_SHOW_AFTER_MS) */
   hidden: boolean;
   status: JobStatus;
   error: string | null;
   startedAt: number;
-  /** smoothed speed: bytes/s (deletes: items/s), see jobSpeed.ts */
   rate: Rate;
   finishedAt: number | null;
 }
 
 type FinishedHandler = (job: Job) => void;
 
-/** "a.jpg, b.jpg, c.jpg…": what a delete could not remove, and why for one */
 function leftNames(o: DeleteOutcome): string {
   const names = o.errors.slice(0, 3).map((e) => e.name);
   const more = o.errors.length > 3 ? '…' : '';
@@ -54,13 +43,10 @@ function leftNames(o: DeleteOutcome): string {
 
 class Jobs {
   items = $state<Job[]>([]);
-  /** tray expanded */
   open = $state(false);
 
-  /** what the tray lists */
   shown = $derived(this.items.filter((j) => !j.hidden));
   running = $derived(this.shown.filter((j) => j.status === 'running'));
-  /** overall progress of running jobs 0..1 (null when nothing runs); deletes count by items */
   progress = $derived.by(() => {
     const r = this.running;
     if (r.length === 0) return null;
@@ -163,25 +149,18 @@ class Jobs {
     j.finishedAt = Date.now();
     if (j.status === 'error') j.hidden = false;
     if (j.status === 'done') play(j.kind === 'delete' ? 'delete' : 'done');
-    // a delete that went well says so in its toast and leaves the tray (as a quick one never entered it)
     if (j.kind === 'delete' && j.status !== 'error') this.items = this.items.filter((x) => x.id !== j.id);
     const snapshot = { ...j };
     for (const h of this.finishedHandlers) h(snapshot);
     if (isMobile) this.settlePhone();
   }
 
-  /**
-   * Phones: once nothing runs, the slip does not stay over the page. What went well goes, and a
-   * toast says so (the done sound already played); what failed stays in the slip, folded, its
-   * head the way to the details.
-   */
   private settlePhone() {
     if (this.items.some((j) => j.status === 'running')) return;
     const failed = this.items.filter((j) => j.status === 'error');
     const shown = this.shown.length > 0;
     this.items = failed;
     this.open = false;
-    // (a delete that never entered the slip has its own toast)
     if (failed.length === 0 && shown) toasts.push(m.jobs_done(), 'success');
   }
 
@@ -189,7 +168,6 @@ class Jobs {
     try {
       await api.jobCancel(id);
     } catch {
-      /* already finished */
     }
   }
 
@@ -201,7 +179,6 @@ class Jobs {
     this.items = this.items.filter((j) => j.status === 'running');
   }
 
-  /** forget jobs of a vault that got locked */
   dropVault(vault: VaultId) {
     this.items = this.items.filter((j) => j.vault !== vault || j.status === 'running');
   }

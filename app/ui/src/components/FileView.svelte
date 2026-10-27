@@ -1,14 +1,3 @@
-<!--
-  The file listbox (grid or list). Keyboard:
-    arrows move (shift extends, ctrl/cmd moves cursor only) · Home/End
-    Enter open · Alt+Enter properties · Backspace / Alt+↑ up · Delete remove · F2 rename · Space quick look
-    Ctrl+Space toggle · Ctrl/Cmd+A select all · Esc clear · Shift+F10 / Menu key context menu
-    Ctrl/Cmd+Shift+N new folder · type letters to jump by name
-    (history: mouse back/forward, Alt+←/→, Cmd+[ / ] — FileBrowserView)
-  Big folders (VIRTUAL_MIN items and more) are virtualised: only the rows in view (plus a margin)
-  exist, on rows of one measured pitch (grid rows are as tall as a two-line name); the rendered
-  window moves in steps of rows, so most scroll frames touch no DOM.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { isMobile } from '../lib/platform';
@@ -27,29 +16,20 @@
 
   let { browser, view = $bindable() }: { browser: FileBrowser; view?: HTMLDivElement } = $props();
 
-  // search results are always a list: each hit shows where it is
   const results = $derived(browser.resultsMode);
   const layout = $derived(results ? 'list' : prefs.view);
-  // results never decode from glyphs (they follow typing): their key is spent before it is used
   // svelte-ignore state_referenced_locally
   const SEARCH_KEY = `search:${browser.vault.id}`;
   firstTime(SEARCH_KEY);
-  // this volume's view size (Settings.grid_size / list_density): toolbar, Ctrl+wheel, Ctrl+= / - / 0
   const gridSize = $derived(viewSize.grid(browser.vault.id));
   const density = $derived(viewSize.density(browser.vault.id));
   const row = $derived(ROW[density]);
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
-  // The files decode from glyphs: inside the unlock ceremony (as Sblocca dissolves over them),
-  // else the first time each folder is shown in this session, in a stagger quick enough
-  // (the whole folder ~300 ms) never to be waited for. Never after a key press other than Enter.
-  // (read when the listing lands: by then the ceremony, if any, has started)
   const reveal = $derived.by(() => {
     const folder = `${browser.vault.id}:${browser.cwd}`;
     const common = { ready: browser.loaded, selector: '.items', items: '.file-item', fades: '[data-ascii="fade"]' };
     if (results) return { ...common, key: SEARCH_KEY, pointerOnly: true };
-    // right after an unlock: inside the ceremony (whether or not its transition has started yet:
-    // the listing may land before the screens swap)
     const c = browser.loaded ? ceremony() : null;
     const sinceUnlock = performance.now() - vaults.unlockedAt;
     const slow = c?.slow ?? 1;
@@ -62,25 +42,18 @@
   let typeahead = '';
   let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // ---------------- virtual window (big folders) ----------------
-  /** folders with at least this many entries render only the rows in view */
   const VIRTUAL_MIN = 150;
-  /** before the first measurement: enough items to fill a window */
   const FIRST = 72;
-  /** rows rendered above / below the view */
   const OVERSCAN = 3;
-  /** the window moves in steps of this many rows */
   const STEP = 3;
   let itemsEl: HTMLDivElement | undefined = $state();
   let viewH = $state(0);
   let viewW = $state(0);
-  /** measured: tiles per row, row pitch (px), the tile height a two-line name needs (grid) */
   let cols = $state(1);
   let pitch = $state(0);
   let tileH = $state(0);
   let firstRow = $state(0);
   let measure: CanvasRenderingContext2D | null = null;
-  // webfonts that arrive late change the rows' line height: measure again
   let fontsTick = $state(0);
   if (typeof document !== 'undefined' && document.fonts) void document.fonts.ready.then(() => fontsTick++);
   const total = $derived(browser.sorted.length);
@@ -92,9 +65,6 @@
   const toRow = $derived(Math.min(rowsTotal, firstRow + STEP + spanRows + OVERSCAN));
   const shown = $derived(!big ? browser.sorted : virtual ? browser.sorted.slice(fromRow * cols, toRow * cols) : browser.sorted.slice(0, FIRST));
 
-  /** where the items start inside the scroller's content (its padding, the list's top). From the
-      boxes on screen, not offsetTop: on a phone the scroller is its own offsetParent (a
-      positioned head / sheet), and offsetTop then counted the head twice (rows missing at the top) */
   const itemsTop = () =>
     itemsEl && view ? itemsEl.getBoundingClientRect().top - view.getBoundingClientRect().top + view.scrollTop : 0;
 
@@ -107,8 +77,6 @@
     if (f !== firstRow) firstRow = f;
   }
 
-  // measure the rows once the first items are laid out (and again when the width, the layout
-  // or the interface size changes: the ResizeObserver below bumps viewW)
   $effect(() => {
     void viewW;
     void fontsTick;
@@ -126,7 +94,6 @@
     const name = first.querySelector<HTMLElement>('.name');
     const ncs = name ? getComputedStyle(name) : null;
     const lh = ncs ? parseFloat(ncs.lineHeight) || 0 : 0;
-    // rows as tall as the folder's longest name needs (names wrap to their line clamp at most)
     let lines = 1;
     const clamp = ncs ? parseInt(ncs.getPropertyValue('-webkit-line-clamp'), 10) || 2 : 1;
     const ctx = ncs && name && clamp > 1 ? (measure ??= document.createElement('canvas').getContext('2d')) : null;
@@ -143,7 +110,6 @@
       tileH = h;
       pitch = h + gap;
     } else {
-      // a row: its padding round the taller of the picture and the name, at least its min-height
       const fcs = getComputedStyle(first);
       const px = (v: string) => parseFloat(v) || 0;
       const padY = px(fcs.paddingTop) + px(fcs.paddingBottom) + px(fcs.borderTopWidth) + px(fcs.borderBottomWidth);
@@ -156,9 +122,6 @@
     untrack(onScroll);
   });
 
-  // the window follows the scroller whatever moved it: a new listing (another folder, a sort, a
-  // filter), a new pitch or height, a scroll the OS clamped without a scroll event (iOS, when the
-  // content shrinks under a momentum scroll). Next frame, after the layout.
   $effect(() => {
     void browser.sorted;
     void pitch;
@@ -171,7 +134,6 @@
     return () => cancelAnimationFrame(id);
   });
 
-  /** Scrolls so item `index` (of browser.sorted) is in view, when it isn't rendered. */
   function scrollToIndex(index: number) {
     if (!view || !virtual) return;
     const y = itemsTop() + Math.floor(index / cols) * pitch;
@@ -180,7 +142,6 @@
     onScroll();
   }
 
-  /** number of tiles per row in grid layout, measured from the DOM */
   function columns(): number {
     if (virtual) return cols;
     if (layout === 'list' || !view) return 1;
@@ -202,7 +163,6 @@
     return Math.max(1, Math.floor(view.clientHeight / h)) * columns();
   }
 
-  // history (back / forward): the listing comes back where it was scrolled
   $effect(() => {
     const to = browser.scrollRestore;
     if (to === null || !browser.loaded || !view) return;
@@ -213,15 +173,11 @@
     });
   });
 
-  // keep the keyboard cursor in view
   $effect(() => {
     const f = browser.sel.focus;
     if (f === null || !view) return;
     const el = view.querySelector(`#item-${f}`);
     if (el && pointerLast()) {
-      // clicked: it is under the pointer. Checked on the next frame, after the layout that frame
-      // makes anyway (a scrollIntoView here forced a layout of the whole grid in the click's task,
-      // then the menu or the selection laid it out again)
       const v = view;
       requestAnimationFrame(() => {
         if (!el.isConnected) return;
@@ -241,7 +197,7 @@
     let handled = true;
     switch (e.key) {
       case 'ArrowRight':
-        if (e.altKey) handled = false; // history: FileBrowserView
+        if (e.altKey) handled = false;
         else if (layout === 'grid') browser.move(1, mods);
         else handled = false;
         break;
@@ -270,7 +226,6 @@
         browser.move(-pageSize(), mods);
         break;
       case 'Enter':
-        // Alt+Enter: Proprietà (of the selection, else of the folder on screen)
         if (e.altKey) browser.showProps(browser.selectedIds.length ? browser.selectedIds : browser.focused ? [browser.focused.id] : []);
         else if (browser.sel.focus !== null) void browser.activate(browser.sel.focus);
         break;
@@ -289,7 +244,6 @@
         else browser.toggleQuickLook();
         break;
       case 'Escape':
-        // results with nothing selected: back to the folder
         if (results && browser.sel.selected.size === 0) browser.closeSearch();
         else browser.clearSelection();
         break;
@@ -319,13 +273,12 @@
     }
   }
 
-  /** Ctrl/Cmd + wheel over the files: one size step per notch (trackpads: per ~80 px). */
   function ctrlWheel(el: HTMLElement) {
     let acc = 0;
     let last = 0;
     const wheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
-      e.preventDefault(); // never the webview's own zoom
+      e.preventDefault();
       const now = performance.now();
       if (now - last > 400) acc = 0;
       last = now;
@@ -360,7 +313,6 @@
 
   function backgroundMenu(e: MouseEvent) {
     e.preventDefault();
-    // anywhere but on an item or a control: the gaps, an empty folder's notice
     if (!(e.target as HTMLElement).closest('[role="option"], button, a, input')) {
       browser.clearSelection();
       browser.openMenu(e.clientX, e.clientY, null);
@@ -373,7 +325,6 @@
   }
 
   const COLS: SortKey[] = ['name', 'size', 'mtime', 'type'];
-  // results: name, where it is, size, date (sorted by the backend; relevance until a column is chosen)
   const RESULT_COLS: (SortKey | 'place')[] = ['name', 'place', 'size', 'mtime'];
   function sortResultsBy(key: SortKey) {
     const cur = browser.resultSort;
@@ -395,7 +346,6 @@
   style:--row-vis-w="{row.w}px"
   style:--row-vis-h="{row.vis}px"
 >
-  <!-- (no column heads over an empty folder or no results: nothing to sort) -->
   {#if browser.loaded && browser.entries.length === 0}
     <!-- the empty state speaks alone -->
   {:else if results}
@@ -472,7 +422,6 @@
       <div class="loading nv-enter" data-state="loading" data-layout={layout}>
         <span class="visually-hidden">{m.fv_reading()}</span>
         {#if layout === 'grid'}
-          <!-- shaped like the tiles that will decode in their place: a piece and its name -->
           <span class="items tile-skeletons" data-layout="grid" aria-hidden="true">
             {#each { length: 10 } as _, i (i)}
               <span class="tile-skeleton">
@@ -545,16 +494,13 @@
 </div>
 
 <style>
-  /* list columns are shared by the header and every row */
   .file-view-wrap {
-    /* picture, name, its tags, size, date, type */
     --list-cols: var(--row-vis-w, 30px) minmax(0, 1fr) auto 96px 136px 120px;
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
   }
-  /* results: picture, name, its tags, where it is, size, date */
   .file-view-wrap[data-results] {
     --list-cols: var(--row-vis-w, 30px) minmax(0, 1fr) auto minmax(0, 30%) 96px 136px;
   }
@@ -573,7 +519,6 @@
   .file-view {
     flex: 1;
     min-height: 0;
-    /* the track is always reserved, so the header columns stay aligned */
     overflow-y: scroll;
     overflow-x: hidden;
     padding: var(--space-4) var(--space-3) var(--space-6) var(--space-5);
@@ -594,7 +539,6 @@
     display: flex;
     flex-direction: column;
   }
-  /* virtualised: every row one measured pitch (rows are placed by arithmetic) */
   .items[data-virtual][data-layout='list'] > :global(.file-item) {
     height: var(--vrow);
     flex: none;
@@ -633,7 +577,6 @@
   .col:active {
     background: color-mix(in oklab, var(--ink) 9%, transparent);
   }
-  /* the date column steps away from the sizes so the two figures never read as one */
   .col[data-col='mtime'] {
     margin-left: 12px;
   }
@@ -644,8 +587,6 @@
     color: var(--accent);
   }
 
-  /* the quiet states. Loading: a field of glyphs with a scan running through it,
-     shown only if the listing takes longer than a blink */
   .loading {
     padding: var(--space-4) var(--space-2) 0 0;
     animation: nv-enter 1ms linear 320ms backwards;
@@ -656,7 +597,6 @@
     font-size: 13px;
     --ascii-skeleton: var(--ink-4);
   }
-  /* grid: one ghost per tile, on the tiles' own grid and padding */
   .loading[data-layout='grid'] {
     padding: 0;
   }
@@ -679,7 +619,6 @@
     font-size: 11px;
     text-align: center;
   }
-  /* empty: an envelope with nothing in it */
   .empty {
     height: 100%;
     min-height: 240px;
@@ -711,7 +650,6 @@
       0 3px 6px -3px rgb(var(--cast) / 0.35),
       var(--env-glow);
   }
-  /* its flap, open: the inside printed with the security tint */
   .ee-body::before {
     content: '';
     position: absolute;

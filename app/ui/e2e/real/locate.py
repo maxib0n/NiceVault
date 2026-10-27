@@ -12,7 +12,6 @@ from PIL import Image
 
 scr = np.asarray(Image.open(sys.argv[1]).convert('L'), dtype=np.float32)
 pg = Image.open(sys.argv[2]).convert('L')
-# a frame captured at a fraction of the screen (capture-kwin.py): the page scaled to match
 sk = int(sys.argv[3]) if len(sys.argv) > 3 else 1
 pg = np.asarray(pg.resize((pg.width // sk, pg.height // sk)), dtype=np.float32)
 k = 2
@@ -26,7 +25,6 @@ for y in range(0, s.shape[0] - ph + 1):
         if d < best[0]:
             best = (d, x, y)
 _, bx, by = best
-# refine at full resolution around the coarse match
 best = (1e18, bx * k, by * k)
 for y in range(max(0, by * k - k), min(scr.shape[0] - pg.shape[0], by * k + k) + 1):
     for x in range(max(0, bx * k - k), min(scr.shape[1] - pg.shape[1], bx * k + k) + 1):

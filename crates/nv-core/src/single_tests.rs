@@ -1,7 +1,3 @@
-//! Single-file journal (single.rs, `Vault::upgrade_format`): one file at every instant, big
-//! transactions, crash injection during writes and during the migration (child processes that
-//! abort at the n-th write / sync, optionally undoing unsynced writes like a power cut).
-
 use super::*;
 use crate::header::STORE_AT;
 use crate::single::{self, Map, crash};
@@ -37,12 +33,10 @@ fn read_file(v: &Vault, id: NodeId) -> Vec<u8> {
     out
 }
 
-/// Root files: name -> content.
 fn snapshot(v: &Vault) -> BTreeMap<String, Vec<u8>> {
     v.readdir(ROOT).unwrap().into_iter().filter(|n| n.kind == Kind::File).map(|n| (n.name.clone(), read_file(v, n.id))).collect()
 }
 
-/// Every file in `dir` but `keep` (side files, leftovers).
 fn others(dir: &Path, keep: &str) -> Vec<String> {
     std::fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n != keep).collect()
 }
@@ -67,8 +61,6 @@ fn put(v: &Vault, name: &str, data: &[u8]) -> NodeId {
     f.id
 }
 
-/// Small page cache: SQLite writes database pages (after syncing the journal) in the middle of a
-/// transaction, as it does with real-size transactions.
 fn small_cache(v: &Vault) {
     v.with(|i| i.conn.execute_batch("PRAGMA cache_size = 4").map_err(dberr)).unwrap();
 }
@@ -86,7 +78,7 @@ fn single_file_volume_is_one_file() {
     put(&v, "b", &pat(2, 100_000));
     v.flush().unwrap();
     assert_eq!(others(dir.path(), "one.nvault"), Vec::<String>::new(), "while open");
-    put(&v, "b", &pat(3, 2_000_000)); // overwrite: journaled
+    put(&v, "b", &pat(3, 2_000_000));
     v.remove(fa).unwrap();
     v.flush().unwrap();
     assert_eq!(others(dir.path(), "one.nvault"), Vec::<String>::new());
@@ -103,8 +95,6 @@ fn nv_core_peek_ok(path: &Path) -> bool {
     crate::peek(path).is_ok()
 }
 
-/// A transaction whose journal outgrows the region continues past the end of the database
-/// (tail), moves the tail when the database grows into it, and gives it back after the commit.
 #[test]
 fn big_transactions_use_the_tail_and_give_it_back() {
     let dir = tempfile::tempdir().unwrap();
@@ -116,8 +106,8 @@ fn big_transactions_use_the_tail_and_give_it_back() {
     let c0 = io_counters();
     let moves0 = crash::MOVES.load(SeqCst);
     small_cache(&v);
-    put(&v, "old", &pat(2, 3 << 20)); // ~3 MiB of journal (region holds 64 KiB)
-    put(&v, "new", &pat(3, 2 << 20)); // the database grows past the tail: moved
+    put(&v, "old", &pat(2, 3 << 20));
+    put(&v, "new", &pat(3, 2 << 20));
     v.flush().unwrap();
     let c = io_counters().since(&c0);
     assert!(c.write_bytes[FileKind::Journal as usize] > 2 << 20, "{c:?}");
@@ -131,7 +121,6 @@ fn big_transactions_use_the_tail_and_give_it_back() {
     let v = Vault::open(&path, &pw()).unwrap();
     assert_eq!(snapshot(&v), BTreeMap::from([("new".to_owned(), pat(3, 2 << 20)), ("old".to_owned(), pat(2, 3 << 20))]));
     v.check_integrity().unwrap();
-    // deleting a big file journals a lot too
     v.remove(v.lookup(ROOT, "old").unwrap().id).unwrap();
     v.flush().unwrap();
     v.close().unwrap();
@@ -156,7 +145,6 @@ fn upgrade_in_place_small_and_large() {
         assert!(v.upgrade_format_with(region).unwrap());
         let took = t.elapsed();
         assert!(v.is_single_file());
-        // the session goes on
         assert_eq!(snapshot(&v)["f"], pat(4, data));
         put(&v, "g", &pat(5, 500_000));
         v.flush().unwrap();
@@ -200,8 +188,6 @@ fn rotate_master_keeps_a_single_file_volume_single() {
     v.check_integrity().unwrap();
 }
 
-/// `Vault::create` makes single-file volumes (format v2), `Vault::create_fixed`
-/// too; v1 volumes (made with the old path) stay v1 until upgraded.
 #[test]
 fn new_volumes_are_single_file() {
     const { assert!(NEW_VOLUMES_SINGLE_FILE) };
@@ -231,19 +217,13 @@ fn new_volumes_are_single_file() {
     assert_eq!(header_of(&old).body.version, header::VERSION);
 }
 
-// ---------------- fixed-size single-file volumes ----------------
-
 fn create_fixed_side(path: &Path, cap: u64) -> Vault {
     Vault::create_fixed_as(path, &pw(), KdfPreset::Fast, cap, false).unwrap()
 }
 
-/// A fixed-size volume with the side-file journal (as made before) is upgraded in place: the
-/// file keeps its length, the region takes the footer region's place, the displaced database
-/// bytes go to its free room; small or large database, small or large volume.
 #[test]
 fn fixed_volumes_upgrade_in_place() {
     const MIB: u64 = 1 << 20;
-    // (capacity, data, region it gets)
     for (cap, data, region) in [(24 * MIB, 300_000usize, 2 * MIB), (24 * MIB, 6 << 20, 2 * MIB), (64 * MIB, 9 << 20, single::DEFAULT_REGION), (6 * MIB, 1 << 20, 512 << 10)] {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("fx.nvault");
@@ -277,8 +257,6 @@ fn fixed_volumes_upgrade_in_place() {
     }
 }
 
-/// A fixed-size volume too full for the region: not offered, refused with nothing changed; once
-/// extended it upgrades.
 #[test]
 fn full_fixed_volume_upgrades_after_extending() {
     let dir = tempfile::tempdir().unwrap();
@@ -300,9 +278,6 @@ fn full_fixed_volume_upgrades_after_extending() {
     v.close().unwrap();
 }
 
-/// A transaction whose journal does not fit the region nor the free room of a nearly full fixed
-/// volume (deleting a big file journals all its pages) goes past the capacity for the time of the
-/// transaction; the file is cut back to its capacity after the commit.
 #[test]
 fn fixed_volume_big_delete_when_nearly_full() {
     let dir = tempfile::tempdir().unwrap();
@@ -326,7 +301,6 @@ fn fixed_volume_big_delete_when_nearly_full() {
     v.check_integrity().unwrap();
 }
 
-/// Key rotation keeps a fixed-size single-file volume fixed-size and single-file.
 #[test]
 fn rotate_master_keeps_a_fixed_single_file_volume() {
     let dir = tempfile::tempdir().unwrap();
@@ -348,9 +322,6 @@ fn rotate_master_keeps_a_fixed_single_file_volume() {
     v.check_integrity().unwrap();
 }
 
-// ---------------- crash injection ----------------
-
-/// States the crash workload commits, in order (root files).
 fn states() -> [BTreeMap<String, Vec<u8>>; 3] {
     let a = BTreeMap::from([("a".to_owned(), pat(10, 300_000)), ("b".to_owned(), pat(11, 200_000))]);
     let b = BTreeMap::from([("a".to_owned(), pat(12, 300_000)), ("c".to_owned(), pat(13, 600_000))]);
@@ -360,8 +331,6 @@ fn states() -> [BTreeMap<String, Vec<u8>>; 3] {
     [a, b, c]
 }
 
-/// The workload: from state A to B (overwrite, append, delete) to C (truncate, write, rename),
-/// each committed by a flush. Region 128 KiB: the journal uses the tail, which moves.
 fn workload(v: &Vault) {
     small_cache(v);
     put(v, "a", &pat(12, 300_000));
@@ -386,7 +355,6 @@ fn base_single(dir: &Path) -> PathBuf {
     p
 }
 
-/// Child: runs the workload (or the migration) on NV_CRASH_VOL; prints the ticks used.
 #[test]
 fn crash_child() {
     let Ok(path) = std::env::var("NV_CRASH_VOL") else { return };
@@ -407,7 +375,6 @@ fn crash_child() {
             v.flush().unwrap();
         }
         Ok("resize") => {
-            // grow, shrink in place, shrink with compaction (the content stays the same)
             let cap = v.capacity().unwrap();
             v.resize(cap + (8 << 20), &|_| {}).unwrap();
             let info = v.resize_info().unwrap();
@@ -424,7 +391,6 @@ fn crash_child() {
     println!("TICKS={} OUTSIDE={}", crash::TICKS.load(SeqCst), crash::OUTSIDE.load(SeqCst));
 }
 
-/// Runs the child on `vol`; `at`: crash point (None = full run). Returns the ticks a full run used.
 fn run_child(vol: &Path, job: &str, at: Option<u64>, lose: Option<u64>) -> Option<u64> {
     let mut c = Command::new(std::env::current_exe().unwrap());
     c.args(["single_tests::crash_child", "--exact", "--nocapture", "--test-threads=1"])
@@ -448,7 +414,7 @@ fn run_child(vol: &Path, job: &str, at: Option<u64>, lose: Option<u64>) -> Optio
         }
         Some(_) => {
             if out.status.success() {
-                None // past the end: the job finished
+                None
             } else {
                 Some(0)
             }
@@ -463,7 +429,6 @@ fn check_state(vol: &Path, allowed: &[BTreeMap<String, Vec<u8>>], what: &str) ->
     let i = allowed.iter().position(|s| *s == got).unwrap_or_else(|| {
         panic!("{what}: state is none of the committed ones: {:?}", got.iter().map(|(k, d)| (k, d.len())).collect::<Vec<_>>())
     });
-    // and it keeps working
     put(&v, "z", b"after the crash");
     v.flush().unwrap();
     v.close().unwrap();
@@ -485,8 +450,6 @@ fn crash_matrix(job: &str, base: &Path, allowed: &[BTreeMap<String, Vec<u8>>], o
             std::fs::copy(base, &vol).unwrap();
             let what = format!("{job} crash at {n}/{total} lose={lose:?}");
             if run_child(&vol, job, Some(n), lose).is_none() {
-                // (the count varies a little from run to run: the background durability point
-                // commits on a timer, so under load a run may take a few writes fewer)
                 assert!(n + 1 + total / 10 >= total, "{what}: the child finished early");
             }
             let name = vol.file_name().unwrap().to_string_lossy().into_owned();
@@ -503,10 +466,6 @@ fn crash_matrix(job: &str, base: &Path, allowed: &[BTreeMap<String, Vec<u8>>], o
     assert!(seen.iter().filter(|&&s| s > 0).count() >= 2, "{seen:?}");
 }
 
-/// Crash (process abort, and power cut: unsynced writes undone at random) at points all along a
-/// workload of overwrites, appends, deletes, truncates and renames on a single-file volume whose
-/// journal spills to the tail and moves: the volume always opens consistent, in one of the
-/// committed states, as one file.
 #[test]
 fn crash_during_writes() {
     let dir = tempfile::tempdir().unwrap();
@@ -514,9 +473,6 @@ fn crash_during_writes() {
     crash_matrix("write", &base, &states(), true);
 }
 
-/// Crash at every step of the migration (and in the first transaction after it): the volume
-/// opens with its content, in the old or the new format; while the old header copy is still the
-/// readable one for an older build, the old store is intact under it too.
 #[test]
 fn crash_during_migration() {
     for size in [200_000usize, 1_500_000] {
@@ -537,8 +493,6 @@ fn crash_during_migration() {
             std::fs::copy(&base, &vol).unwrap();
             run_child(&vol, "migrate", Some(n), None);
             let what = format!("migration {size} crash at {n}/{total}");
-            // An older build reads whichever copy it understands: every v1 copy left must still
-            // sit on an intact v1 store (checked with this build on a file holding only that copy).
             let raw = std::fs::read(&vol).unwrap();
             for c in 0..2 {
                 if let Ok(h) = header::decode_copy(&raw[c * COPY_LEN..(c + 1) * COPY_LEN])
@@ -562,11 +516,6 @@ fn crash_during_migration() {
     }
 }
 
-// ---------------- crash injection: fixed-size single-file volumes ----------------
-
-/// A fixed-size single-file volume (region 128 KiB: its journal spills to the tail) with the
-/// first committed state; `tight`: a big file in a sub-folder (outside the states) fills it so
-/// the tail cannot stay in its free room and goes past the capacity.
 fn base_fixed(dir: &Path, cap: u64, tight: bool) -> PathBuf {
     let p = dir.join("base.nvault");
     let v = Vault::create_full(&p, &pw(), KdfPreset::Fast, Some(DEFAULT_LAYOUT), Some(Fixed { capacity: cap }), JOURNAL, Some(JournalRegion::MIN)).unwrap();
@@ -574,14 +523,12 @@ fn base_fixed(dir: &Path, cap: u64, tight: bool) -> PathBuf {
         put(&v, k, d);
     }
     if tight {
-        // the store reaches almost to the capacity, with 2.5 MB of freed pages for the data: the
-        // journal tail has no room left inside
         let sub = v.create(ROOT, "pieno", Kind::Dir).unwrap();
         let room = v.stats().unwrap().free_bytes;
         let f1 = v.create(sub.id, "liberato", Kind::File).unwrap();
         v.write(f1.id, 0, &pat(50, 2_500_000)).unwrap();
         let f2 = v.create(sub.id, "riempitivo", Kind::File).unwrap();
-        v.write(f2.id, 0, &pat(51, ((room - 2_500_000) * 15 / 16 - (400 << 10)) as usize)).unwrap(); // (chunks take ~1/16 more)
+        v.write(f2.id, 0, &pat(51, ((room - 2_500_000) * 15 / 16 - (400 << 10)) as usize)).unwrap();
         v.flush().unwrap();
         v.remove(f1.id).unwrap();
     }
@@ -590,15 +537,11 @@ fn base_fixed(dir: &Path, cap: u64, tight: bool) -> PathBuf {
     p
 }
 
-/// The crash matrix of `crash_during_writes` on fixed-size single-file volumes, roomy and nearly
-/// full (the journal tail past the capacity): always one file of its capacity, consistent, in a
-/// committed state.
 #[test]
 fn crash_during_writes_fixed() {
     for (cap, tight) in [(24u64 << 20, false), (6 << 20, true)] {
         let dir = tempfile::tempdir().unwrap();
         let base = base_fixed(dir.path(), cap, tight);
-        // the nearly full one really puts its journal past the capacity
         let p = dir.path().join("outside.nvault");
         std::fs::copy(&base, &p).unwrap();
         let out = Command::new(std::env::current_exe().unwrap())
@@ -619,9 +562,6 @@ fn crash_during_writes_fixed() {
     }
 }
 
-/// Crash at every n-th write / sync of `Vault::create_fixed` (and its first write and close):
-/// whatever is left is one file, and it either opens as a consistent (empty or written) volume or
-/// is refused cleanly — never half-trusted.
 #[test]
 fn crash_during_create_fixed() {
     let dir = tempfile::tempdir().unwrap();
@@ -661,10 +601,6 @@ fn crash_during_create_fixed() {
     assert!(opened > 0 && refused > 0);
 }
 
-/// Crash at every n-th write / sync during "Aggiorna formato" of a fixed-size volume with the
-/// side-file journal (and the first transaction after it), with and without a power cut: the
-/// volume opens with its content at its capacity, in the old or the new format; while a header
-/// copy without the journal section is still there, the old store under it is intact too.
 #[test]
 fn crash_during_fixed_migration() {
     for size in [200_000usize, 1_500_000] {
@@ -715,9 +651,6 @@ fn crash_during_fixed_migration() {
     }
 }
 
-/// Crash at every n-th write / sync of a grow, a shrink in place and a compacting shrink of a
-/// fixed-size single-file volume (power cut included): it opens with all its content, as one
-/// file whose length is the capacity its header names, and keeps working.
 #[test]
 fn crash_during_fixed_resize() {
     let dir = tempfile::tempdir().unwrap();
@@ -737,8 +670,6 @@ fn crash_during_fixed_resize() {
     let total = run_child(&probe, "resize", None, None).unwrap();
     let step = (total / 60).max(1);
     let mut caps = std::collections::BTreeSet::new();
-    // every point of the grow and the shrink in place (the first ones), then along the compaction,
-    // then its end (rename, reopen)
     let points: std::collections::BTreeSet<u64> = (0..80).chain((80..total).step_by(step as usize)).chain(total.saturating_sub(12)..=total + 1).collect();
     for n in points {
         for lose in [None, Some(n * 11 + 5)] {
@@ -765,16 +696,10 @@ fn crash_during_fixed_resize() {
     assert!(caps.len() >= 4, "grown, shrunk in place, compacted: {caps:?}");
 }
 
-// ---------------- fixture: a single-file volume left with a hot in-file journal ----------------
-
-/// Committed content of the `interrotto.nvault` fixture.
 pub(crate) fn interrupted_committed() -> BTreeMap<String, Vec<u8>> {
     BTreeMap::from([("tenuto.bin".to_owned(), pat(40, 700_000)), ("piccolo.txt".to_owned(), b"resta com'era\n".to_vec())])
 }
 
-/// Child of `gen_interrupted_fixture`: commits [`interrupted_committed`], then overwrites and
-/// appends in a transaction whose journal (region 128 KiB: tail in use) is hot and whose pages
-/// are partly in the file already, and dies.
 #[test]
 fn interrupted_child() {
     let Ok(path) = std::env::var("NV_INTERRUPTED_CHILD") else { return };
@@ -790,11 +715,9 @@ fn interrupted_child() {
     let rec = single::read_record(&File::open(&path).unwrap()).unwrap();
     assert!(rec.tail != 0 && rec.jsize > Map::new(JournalRegion::fresh(JournalRegion::MIN), None).jbase(), "{rec:?}");
     println!("HOT-JOURNAL");
-    std::process::exit(134); // simulated crash: no core dump, so no DrKonqi/abrt popup on the desktop
+    std::process::exit(134);
 }
 
-/// Writes `interrotto.nvault` to NV_INTERRUPTED_OUT (used by app/src-tauri/tests/compat_gen.rs
-/// for the 2026-10-25 fixture set) and checks it rolls back.
 #[test]
 #[ignore = "fixture generator"]
 fn gen_interrupted_fixture() {
@@ -815,7 +738,6 @@ fn gen_interrupted_fixture() {
     v.check_integrity().unwrap();
 }
 
-/// The same scenario, always run: the crashed volume rolls back to its committed content.
 #[test]
 fn hot_in_file_journal_rolls_back() {
     let dir = tempfile::tempdir().unwrap();
@@ -836,9 +758,6 @@ fn hot_in_file_journal_rolls_back() {
     assert_eq!((rec.tail, rec.jsize), (0, 0), "{rec:?}");
 }
 
-// ---------------- fixture: a fixed-size single-file volume left with a hot journal past its capacity ----------------
-
-/// Committed content of the `fisso-interrotto.nvault` fixture (root files and `pieno/`).
 pub(crate) fn interrupted_fixed_committed() -> BTreeMap<String, Vec<u8>> {
     BTreeMap::from([
         ("tenuto.bin".to_owned(), pat(40, 700_000)),
@@ -847,7 +766,6 @@ pub(crate) fn interrupted_fixed_committed() -> BTreeMap<String, Vec<u8>> {
     ])
 }
 
-/// Every file of `v` by path (one folder level, as the fixture has).
 fn snapshot_deep(v: &Vault) -> BTreeMap<String, Vec<u8>> {
     let mut out = BTreeMap::new();
     for n in v.readdir(ROOT).unwrap() {
@@ -865,10 +783,6 @@ fn snapshot_deep(v: &Vault) -> BTreeMap<String, Vec<u8>> {
     out
 }
 
-/// Child of `gen_interrupted_fixed_fixture` / `hot_tail_past_the_capacity_rolls_back`: a 6 MiB
-/// fixed-size single-file volume (region 128 KiB) whose store reaches almost to its capacity
-/// (1 MB of freed pages inside), commits [`interrupted_fixed_committed`], then overwrites and
-/// appends in a transaction whose hot journal's tail lies past the capacity, and dies.
 #[test]
 fn interrupted_fixed_child() {
     let Ok(path) = std::env::var("NV_INTERRUPTED_FIXED_CHILD") else { return };
@@ -902,7 +816,7 @@ fn interrupted_fixed_child() {
     let len = std::fs::metadata(&path).unwrap().len();
     assert!(rec.tail >= cap && len > cap && rec.cap == cap, "{rec:?} {len}");
     println!("HOT-JOURNAL-PAST-CAPACITY");
-    std::process::exit(134); // simulated crash: no core dump, so no DrKonqi/abrt popup on the desktop
+    std::process::exit(134);
 }
 
 fn make_interrupted_fixed(out: &Path) {
@@ -919,8 +833,6 @@ fn make_interrupted_fixed(out: &Path) {
     );
 }
 
-/// Writes `fisso-interrotto.nvault` to NV_INTERRUPTED_FIXED_OUT (app/src-tauri/tests/compat_gen.rs,
-/// fixture set 2026-10-25-fixed) and checks it rolls back.
 #[test]
 #[ignore = "fixture generator"]
 fn gen_interrupted_fixed_fixture() {
@@ -935,8 +847,6 @@ fn gen_interrupted_fixed_fixture() {
     v.check_integrity().unwrap();
 }
 
-/// The same scenario, always run: the volume (a file longer than its capacity, the journal's
-/// tail past it) rolls back to its committed content and is cut back to its capacity.
 #[test]
 fn hot_tail_past_the_capacity_rolls_back() {
     let dir = tempfile::tempdir().unwrap();
@@ -955,9 +865,6 @@ fn hot_tail_past_the_capacity_rolls_back() {
     assert_eq!(snapshot_deep(&v).len(), 4);
 }
 
-/// The freshness records (fresh.rs: `nv.commit_seq`, `nv.appearance`) survive "Aggiorna formato"
-/// of a fixed-size volume, a grow, a shrink in place and a compacting shrink: the commit count
-/// never goes back and the appearance still matches its header at every reopen.
 #[test]
 fn freshness_records_survive_fixed_upgrade_and_resize() {
     let dir = tempfile::tempdir().unwrap();

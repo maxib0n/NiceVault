@@ -1,8 +1,3 @@
-<!--
-  "Working": an engraved rosette whose two lathes turn against each other, slowly (the same
-  plates as the unlock's rosette, ornament/Rosette.svelte). Transform-only animation on three
-  pre-drawn canvases: the compositor turns them, nothing is redrawn. Reduced motion: still.
--->
 <script lang="ts">
   import Rosette from '../../ornament/Rosette.svelte';
 
@@ -23,7 +18,6 @@
   .lathes :global(.lathe-b) {
     animation: lathe-b 4.8s linear infinite;
   }
-  /* the small mark has only one lathe: it turns a little faster so it reads as moving */
   .lathes[data-kind='mark'] :global(.lathe-a) {
     animation-duration: 2.4s;
   }

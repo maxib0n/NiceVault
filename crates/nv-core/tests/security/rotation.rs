@@ -1,6 +1,3 @@
-//! Key rotation. After `rotate_master`, an old copy of the header and its password no
-//! longer decrypt anything written since, even with the attacker's own tools.
-
 use crate::common::*;
 use nv_core::{Identity, KdfPreset, OpenError, Vault};
 use nv_core::passwords::{EntryPatch, Secret};
@@ -25,7 +22,6 @@ fn rotation_revokes_old_headers_and_keeps_the_data() {
     assert!(matches!(v.rotate_master(0, &pw("wrong")), Err(nv_core::SlotError::WrongPassword)));
     let dropped = v.rotate_master(0, &pw("pw")).unwrap();
     assert_eq!(dropped, vec![1, 2, 3]);
-    // The session keeps working on the new key, mid-write included.
     assert_eq!(read_all(&v, a).unwrap(), vec![b'A'; 4096]);
     let f = v.create(ROOT, "after-rotation", Kind::File).unwrap();
     v.write(f.id, 0, b"fresh").unwrap();
@@ -42,7 +38,6 @@ fn rotation_revokes_old_headers_and_keeps_the_data() {
     }
     assert!(Vault::open(&p, &pw("pw")).is_ok(), "duress slot was dropped, not triggered");
 
-    // The attacker's old header: even its genuine master no longer opens the database.
     write_at(&p, 0, &old_header);
     let r = Vault::open(&p, &pw("pw"));
     assert!(matches!(r, Err(OpenError::Corrupt(_))), "{:?}", r.err());
@@ -55,7 +50,6 @@ fn rekey_leftover(p: &std::path::Path) -> bool {
     std::path::Path::new(&s).exists()
 }
 
-/// A crash before the rename leaves the old volume intact; its leftover goes at the next open.
 #[test]
 fn rotation_leftover_is_harmless() {
     let t = tempfile::tempdir().unwrap();

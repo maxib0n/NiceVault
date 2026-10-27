@@ -1,10 +1,3 @@
-<!--
-  Compact app-update notice for Benvenuto and the sidebar: shown only while an update is
-  pending (available / downloading / installing / ready / saved / failed after one was found).
-  The full controls (check now, "Controlla all'avvio", notes, status) live in Impostazioni,
-  section settings-updates; Dettagli opens it.
-  on: 'paper' (Benvenuto) | 'cloth' (sidebar) picks the ink. Hook: .update-notice[data-phase].
--->
 <script lang="ts">
   import { app } from '../lib/stores/app.svelte';
   import { update } from '../lib/stores/update.svelte';
@@ -18,7 +11,6 @@
 </script>
 
 {#if show}
-  <!-- a slip: the mark, what is new (the version in the mono), and what to do -->
   <section class="update-notice" data-phase={update.phase} data-on={on} aria-live="polite" aria-label={m.set_updates()} data-testid="update-notice">
     <span class="mark" aria-hidden="true"><CircleArrowUp size={17} strokeWidth={1.6} /></span>
     <div class="text">
@@ -54,7 +46,6 @@
     font-size: var(--text-sm);
     color: var(--ink-2);
   }
-  /* on the board: a slip lying on it */
   .update-notice[data-on='paper'] {
     align-self: flex-start;
     margin-top: var(--space-3);
@@ -66,7 +57,6 @@
       inset 0 0 0 1px var(--key-edge),
       var(--lift-key);
   }
-  /* on the cover: a slot pressed into the lining */
   .update-notice[data-on='cloth'] {
     padding: 9px 10px 10px 9px;
     border-radius: var(--radius-md);

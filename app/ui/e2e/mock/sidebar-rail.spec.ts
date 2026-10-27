@@ -1,6 +1,3 @@
-// The sidebar folds to a rail (toggle + Ctrl/Cmd+B, remembered); phones have no
-// interface size; list rows show what a folder holds; an empty folder is a closed, sealed
-// envelope at every size; a phone's finished transfers are a toast, not a slip that stays.
 import { boot, dropFiles, expect, expectScreen, fileList, item, jobTray, listed, modKey, test, toasts } from './helpers';
 
 const BUSTE = 'screen=vault&dir=Personale/Buste';
@@ -13,7 +10,6 @@ test.describe('sidebar rail', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    // the rail: the sections as icons with their names, the clasp, Impostazioni, all in a slim strip
     await expect(async () => {
       for (const id of ['nav-files', 'nav-passwords', 'nav-details', 'open-settings']) {
         const b = (await page.getByTestId(id).boundingBox())!;
@@ -28,7 +24,6 @@ test.describe('sidebar rail', () => {
     await page.getByTestId('nav-files').click();
     await listed(page);
 
-    // remembered: lock, unlock, still a rail
     await page.getByRole('button', { name: 'Blocca' }).click();
     await expectScreen(page, 'unlock');
     await page.getByRole('textbox', { name: 'Password' }).fill('demo');
@@ -36,7 +31,6 @@ test.describe('sidebar rail', () => {
     await expectScreen(page, 'vault');
     await expect(page.getByTestId('sidebar-toggle')).toHaveAttribute('aria-expanded', 'false');
 
-    // the keyboard: Ctrl/Cmd+B unfolds it, and folds it again
     await fileList(page).focus();
     const mod = await modKey(page);
     await page.keyboard.press(`${mod}+b`);
@@ -53,7 +47,6 @@ test.describe('sidebar rail', () => {
     await page.getByTestId('sidebar-toggle').click();
     await expect(async () => {
       const s = (await page.getByTestId('open-settings').boundingBox())!;
-      // zoomed 150%: boxes are in CSS px of the zoomed root, still inside the window
       expect(s.y).toBeGreaterThan(0);
       const files = (await page.getByTestId('nav-files').boundingBox())!;
       expect(files.x).toBeGreaterThanOrEqual(0);
@@ -68,7 +61,6 @@ test.describe('phones', () => {
   test('no interface size control, and no rail toggle', async ({ page }) => {
     await boot(page, 'screen=settings&platform=mobile&scale=150');
     await expect(page.getByTestId('app-scale')).toHaveCount(0);
-    // the saved size is not worn on a phone
     expect(await page.evaluate(() => document.documentElement.style.zoom || '1')).toBe('1');
     await boot(page, 'screen=vault&platform=mobile');
     await listed(page);
@@ -95,14 +87,12 @@ test.describe('phones', () => {
   test('finished transfers: a toast, nothing left over the page', async ({ page }) => {
     await boot(page, 'screen=vault&platform=mobile');
     await listed(page);
-    // onto a file row: the list's own centre may sit on a folder tile, which would take the file into that folder
     const file = item(page, 'Leggimi.txt');
     await file.scrollIntoViewIfNeeded();
     await dropFiles(file, [{ name: 'Nota del telefono.txt', content: 'ciao' }]);
     await expect(toasts(page)).toContainText('Operazioni completate');
     await expect(jobTray(page)).toHaveCount(0);
     await expect(page.locator('dialog[open]')).toHaveCount(0);
-    // the phone's list is virtual: walk it (from the top) until the new row is drawn
     await fileList(page).evaluate((el) => el.scrollTo(0, 0));
     for (let i = 0; i < 20 && !(await item(page, 'Nota del telefono.txt').count()); i++) {
       await fileList(page).evaluate((el) => el.scrollBy(0, el.clientHeight * 0.8));
@@ -121,7 +111,6 @@ test.describe('envelopes', () => {
     const empty = item(page, 'Vuota');
     await expect(empty.locator('[data-envelope][data-closed]')).toHaveCount(1);
     await expect(empty.locator('[data-seal]')).toHaveCount(1);
-    // open envelopes carry no wax
     await expect(fileList(page).locator('[data-seal]')).toHaveCount(1);
   });
 
@@ -139,8 +128,6 @@ test.describe('envelopes', () => {
 });
 
 test.describe('passports on Benvenuto', () => {
-  // one grid for every passport: the header's top, the seal's centre (on the cover's visual
-  // centre: between the stitches, or the impression's own centre when the volume is missing)
   const VARIANTS = ['', 'frame=laurel', 'frame=rope', 'frame=meander', 'frame=starburst', 'frame=hairline', 'emblem=image', 'emblem=initial', 'emblem=icon', 'emblem=hidden'];
   test('header, seal and name share one grid across every kind of passport', async ({ page }) => {
     test.slow();
@@ -154,7 +141,6 @@ test.describe('passports on Benvenuto', () => {
           const c = r('.cover');
           const stitch = p.querySelector('.cover .stitch');
           const st = stitch && stitch.getClientRects().length ? stitch.getBoundingClientRect() : null;
-          // stitched: the panel inside the thread (inset 20 at the spine, 6 at the fore-edge)
           const mid = st && st.width ? c.left + (20 + (c.width - 6)) / 2 : c.left + c.width / 2;
           const is = r('.issuer');
           const se = r('.mark .rosette');
@@ -184,8 +170,6 @@ test.describe('passports on Benvenuto', () => {
 });
 
 test.describe('emblem inside its seal', () => {
-  // the mark (initial, icon, picture, the hidden rosette) sits on the seal's centre, in every
-  // frame and at every size: Benvenuto, the cover in the sidebar, Sblocca, Dettagli
   for (const q of ['screen=welcome', 'screen=welcome&frame=laurel', 'screen=welcome&emblem=icon', 'screen=welcome&emblem=image', 'screen=vault', 'screen=unlock', 'screen=details&frame=starburst']) {
     test(`centred (${q})`, async ({ page }) => {
       await boot(page, q);

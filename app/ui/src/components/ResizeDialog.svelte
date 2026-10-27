@@ -1,10 +1,3 @@
-<!--
-  Estendi / Riduci (Dettagli): a fixed-size volume gets a new capacity. Shows the size facts, says
-  what the typed size will do before asking (grow: free space on the drive; shrink in place; shrink
-  with compaction: the new size free on the drive; too small / too large), then progress from
-  vault-resize events, then done or the error. A growable volume only shows its size facts.
-  Switch: ?screen=details&dialog=resize (&fixed for fixed-size mock volumes, &resize_fail=io).
--->
 <script lang="ts">
   import * as api from '../lib/api';
   import { errorCode, errorText } from '../lib/errors';
@@ -25,9 +18,7 @@
     open: boolean;
     vault: VaultId;
     onclose: () => void;
-    /** after a successful resize (the caller refreshes its stats) */
     onresized?: (info: ResizeInfo) => void;
-    /** a size (bytes) to start from instead of the current one (the import that did not fit) */
     suggest?: number;
   } = $props();
 
@@ -38,7 +29,6 @@
   let value = $state(0);
   let progress = $state<ResizeProgress | null>(null);
   let error = $state<string | null>(null);
-  // the native dialog closes on Esc even while a resize runs: shown again at once
   let bounce = $state(false);
 
   $effect(() => {
@@ -65,7 +55,7 @@
   const target = $derived(toBytes(value, unit));
   const what = $derived<ResizePlan>(info ? plan(info, target) : 'invalid');
   const canSubmit = $derived(stage === 'edit' && (what === 'grow' || what === 'shrink' || what === 'compact'));
-  const STEP = 1024 * 1024; // the slider moves in MB
+  const STEP = 1024 * 1024;
 
   function planText(p: ResizePlan, i: ResizeInfo): string {
     const cap = i.capacity ?? 0;

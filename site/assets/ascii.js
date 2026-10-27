@@ -1,7 +1,3 @@
-// The hero emblem: ciphertext is a field of random hex, and what is inside only shows
-// where a key is applied. A lens (your pointer, or a slow idle path) turns the hex under
-// it into the names of files. It pauses off-screen and in a hidden tab; with
-// prefers-reduced-motion it draws one still frame. (Text and picture decodes: reveal.js.)
 (() => {
   'use strict';
 
@@ -20,7 +16,6 @@
       : Promise.resolve();
   }
 
-  // ------------------------------------------------------------------ hero
   function hero(canvas) {
     const host = canvas.parentElement;
     const ctx = canvas.getContext('2d');
@@ -51,7 +46,6 @@
       if (still) frame(start + 5000, true);
     }
 
-    // the seal, per cell: distance from the cell centre to rings and guilloche bands
     function field(t) {
       const R = Math.min(gw, gh) / 2;
       const cx = gw / 2, cy = gh / 2;
@@ -85,7 +79,6 @@
       const R = Math.min(gw, gh) / 2;
       field(once ? 0 : t);
 
-      // the lens
       if (once) { lens.x = gw / 2; lens.y = gh / 2; lens.r = R * 0.22; }
       else {
         const idle = !lens.user || now - lens.moved > 1800;
@@ -114,7 +107,6 @@
           const cd = Math.hypot(px - gw / 2, py - gh / 2) / maxD;
           const settled = cd < intro * 0.9;
           const a = ink[i];
-          // glyph churn: fast while unresolved, slow shimmer once settled
           if (!once && Math.random() < (settled ? (a > 0.1 ? 0.018 : 0.006) : 0.45)) glyph[i] = (Math.random() * 16) | 0;
           const lf = 1 - smooth(lens.r * 0.62, lens.r, Math.hypot(px - lens.x, py - lens.y));
           let ch1 = a > 0.5 && settled ? DENSE[glyph[i] & 7] : HEX[glyph[i]], col, alpha;
@@ -137,7 +129,6 @@
         }
       }
       ctx.globalAlpha = 1;
-      // the lens edge, drawn once as a hairline
       if (intro > 1.2) {
         ctx.strokeStyle = 'rgba(242,104,115,0.32)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(ox + lens.x, oy + lens.y, lens.r * 1.02, 0, 6.2832); ctx.stroke();

@@ -1,5 +1,3 @@
-//! The contract between nv-core (implements), nv-mount and the app (consume).
-
 use serde::Serialize;
 
 pub type NodeId = u64;
@@ -15,18 +13,18 @@ pub enum Kind {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Node {
     pub id: NodeId,
-    pub parent: NodeId, // root's parent is ROOT
-    pub name: String,   // root's name is ""
+    pub parent: NodeId,
+    pub name: String,
     pub kind: Kind,
-    pub size: u64,  // 0 for dirs
-    pub mtime: i64, // unix ns
+    pub size: u64,
+    pub mtime: i64,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Stats {
-    pub total_bytes: u64, // capacity of the host drive holding the volume
+    pub total_bytes: u64,
     pub free_bytes: u64,
-    pub used_bytes: u64, // sum of file sizes
+    pub used_bytes: u64,
     pub files: u64,
 }
 
@@ -55,8 +53,6 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Checked on create and rename only: names already stored stay readable. Portable on
-/// every host: no Windows path syntax, reserved device names or trailing dot/space.
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty() && name.len() <= 255 && name != "." && name != ".." && !name.contains(bad_char) && !name.ends_with(['.', ' ']) && !reserved(name)
 }
@@ -71,8 +67,6 @@ fn reserved(name: &str) -> bool {
         || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && matches!(stem.as_bytes()[3], b'1'..=b'9'))
 }
 
-/// `name` as one safe host path component (for names stored before `valid_name` got
-/// strict, or coming from the host): unsafe characters become `_`.
 pub fn host_name(name: &str) -> String {
     let mut s: String = name.chars().map(|c| if bad_char(c) { '_' } else { c }).collect();
     let keep = s.trim_end_matches(['.', ' ']).len();
@@ -84,25 +78,17 @@ pub fn host_name(name: &str) -> String {
     s
 }
 
-/// Filesystem view of an unlocked vault. Every method is thread-safe.
 pub trait Fs: Send + Sync {
     fn getattr(&self, id: NodeId) -> Result<Node>;
     fn lookup(&self, parent: NodeId, name: &str) -> Result<Node>;
     fn readdir(&self, dir: NodeId) -> Result<Vec<Node>>;
     fn create(&self, parent: NodeId, name: &str, kind: Kind) -> Result<Node>;
-    /// Short read only at EOF.
     fn read(&self, id: NodeId, offset: u64, buf: &mut [u8]) -> Result<usize>;
-    /// Writing past EOF zero-fills the gap.
     fn write(&self, id: NodeId, offset: u64, data: &[u8]) -> Result<usize>;
     fn set_size(&self, id: NodeId, size: u64) -> Result<()>;
     fn set_mtime(&self, id: NodeId, mtime: i64) -> Result<()>;
-    /// POSIX semantics: replaces an existing target file or empty dir; Err(Exists) for a non-empty dir target.
     fn rename(&self, id: NodeId, new_parent: NodeId, new_name: &str) -> Result<()>;
-    /// File or empty dir.
     fn remove(&self, id: NodeId) -> Result<()>;
-    /// Durability point: everything done so far survives a crash or power loss once this
-    /// returns. Backends call it for fsync(2) / FlushFileBuffers and on unmount — not on every
-    /// close (an implementation makes its changes durable by itself within a few seconds).
     fn flush(&self) -> Result<()>;
     fn stats(&self) -> Result<Stats>;
 }

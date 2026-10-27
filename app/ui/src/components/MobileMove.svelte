@@ -1,9 +1,3 @@
-<!--
-  Move on a phone / tablet (an item's sheet → Sposta…): a page of its own over the volume to
-  walk its folders (up, into a folder), make a new one there, and "Sposta qui". The files go
-  through the same fs_rename as a drag & drop on the desktop (FileBrowser.moveInto). The folders
-  being moved are not offered (no folder goes into itself).
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { flushSync, onMount } from 'svelte';

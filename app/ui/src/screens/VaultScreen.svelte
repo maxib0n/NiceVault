@@ -1,4 +1,3 @@
-<!-- Volume aperto / Password / Dettagli: the open passport. The cover (sidebar) on the left, the page on the right, the job tray. -->
 <script lang="ts">
   import FileBrowserView from '../components/FileBrowserView.svelte';
   import JobTray from '../components/JobTray.svelte';
@@ -13,8 +12,6 @@
   import Stitch from '../ornament/Stitch.svelte';
   import { sidebar } from '../lib/stores/sidebar.svelte';
 
-  // folding / unfolding the sidebar: the page, the gutter and the seam slide from where they
-  // were (a transform, transform-only motion), the cover slides with them (Sidebar.svelte)
   let slide = $state<'fold' | 'open' | undefined>();
   let was = sidebar.rail;
   let slideTimer: ReturnType<typeof setTimeout> | undefined;
@@ -27,7 +24,6 @@
     slideTimer = setTimeout(() => (slide = undefined), 400);
   });
 
-  /** Impostazioni is open over it: kept as it is (not re-mounted on Indietro), not rendered, inert */
   let { covered = false }: { covered?: boolean } = $props();
 </script>
 
@@ -62,7 +58,6 @@
     display: flex;
     background-color: var(--paper);
   }
-  /* the page curls into the binding beside the cover */
   .gutter {
     position: absolute;
     top: 0;
@@ -73,24 +68,18 @@
     pointer-events: none;
     background: linear-gradient(90deg, rgb(var(--cast) / 0.13), rgb(var(--cast) / 0.04) 40%, transparent);
   }
-  /* where the lining meets the binding: a saddle-stitched seam (only where the theme stitches) */
-  /* it runs the cover's whole height: the seam goes on past the window's edges, as on a real
-     cover the stitching is not cut short by what is laid on the page */
   .seam {
     position: absolute;
     top: 0;
     bottom: 0;
-    /* a strip 8 px wide centred on the seam's line, 8 px inside the cover's edge */
     left: calc(var(--sidebar-w) - 12px);
     width: 8px;
     z-index: 3;
     pointer-events: none;
   }
-  /* the unlock ceremony (ceremony.ts): the cover and the page's head wait for their glyphs */
   .vault-screen:global([data-compose='wait'] :is(.sidebar, .folder-head, .details, .passwords) > *) {
     opacity: 0;
   }
-  /* under Impostazioni: its layout and state are kept, nothing of it is rendered */
   .vault-screen.covered {
     content-visibility: hidden;
     visibility: hidden;

@@ -1,8 +1,3 @@
-<!--
-  "Mancano i programmi per …" on a finished device (made offline, or a file failed) with
-  "Scarica ora": device_fetch_missing downloads just those programs (release packs opened and
-  signatures verified by the backend) and adds them to the stick. The outcome is bound back.
--->
 <script lang="ts">
   import { m } from '../../paraglide/messages.js';
   import * as dev from '../../lib/device';

@@ -1,7 +1,3 @@
-//! "Open with the default app": decrypt one file into a private temp dir, poll it for
-//! changes and write them back into the vault, wipe it (overwrite + delete) when the vault
-//! locks or the app exits.
-
 use crate::error::{ApiError, ApiResult};
 use crate::jobs::BLOCK;
 use crate::state::{AppState, lock_or_recover, random_id};
@@ -23,13 +19,8 @@ struct Entry {
     pending: Option<Stamp>,
 }
 
-/// Our temp root is `<temp>/nicevault-<16 hex>`; `<root>/.lock` is held (OS file lock) for as
-/// long as this process uses it, which is how a later start tells a crashed run's leftovers
-/// from another running instance's live folder.
 const BASE_PREFIX: &str = "nicevault-";
 const LOCK_NAME: &str = ".lock";
-/// A matching folder without a lock file is only considered stale after this long
-/// (it may be one another instance created a moment ago and is about to lock).
 const UNLOCKED_GRACE: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
@@ -37,8 +28,6 @@ struct Inner {
     base: Option<PathBuf>,
     base_lock: Option<File>,
     files: Vec<Entry>,
-    /// Copy folders whose wipe failed (file held open by another app): retried every tick
-    /// and at exit.
     pending_wipe: Vec<PathBuf>,
     watcher: bool,
 }
@@ -60,7 +49,6 @@ fn private_dir(p: &Path) -> std::io::Result<()> {
     b.create(p)
 }
 
-/// Overwrite with zeros, sync, delete. Best effort (the other app may still hold it open).
 pub fn wipe_file(p: &Path) {
     if let Ok(m) = std::fs::symlink_metadata(p)
         && m.is_file()
@@ -90,7 +78,6 @@ fn wipe_tree(dir: &Path) {
     let _ = std::fs::remove_dir(dir);
 }
 
-/// Wipes the copy and its folder; the folder if something is left of it.
 fn wipe_entry(e: &Entry) -> Option<PathBuf> {
     wipe_file(&e.path);
     let d = e.path.parent()?;
@@ -105,12 +92,10 @@ fn retry_wipes(inner: &mut Inner) {
     });
 }
 
-/// Do the copies go to memory (Linux `$XDG_RUNTIME_DIR`, a per-user tmpfs) rather than a disk?
 pub fn copies_in_memory() -> bool {
     cfg!(target_os = "linux") && std::env::var_os("XDG_RUNTIME_DIR").is_some_and(|d| temp_root() == Path::new(&d))
 }
 
-/// Where the copies go: `$XDG_RUNTIME_DIR` on Linux (tmpfs, per user, 0700), else the temp dir.
 pub fn temp_root() -> PathBuf {
     #[cfg(target_os = "linux")]
     if let Some(d) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).filter(|d| d.is_absolute() && d.is_dir()) {
@@ -119,8 +104,6 @@ pub fn temp_root() -> PathBuf {
     std::env::temp_dir()
 }
 
-/// Write the host copy back into the node.
-/// Never through a symlink put in place of the copy.
 fn reimport(v: &Vault, node: NodeId, src: &Path) -> ApiResult<()> {
     if !std::fs::symlink_metadata(src)?.is_file() {
         return Err(ApiError::io("the copy is not a regular file"));
@@ -165,7 +148,6 @@ impl External {
         Ok(b)
     }
 
-    /// Decrypt `node` to a private temp file and return its path; starts the change watcher.
     pub fn extract(&self, state: &Arc<AppState>, vault_id: &str, v: &Vault, node: NodeId) -> ApiResult<PathBuf> {
         let n = v.getattr(node)?;
         if n.kind != Kind::File {
@@ -210,12 +192,11 @@ impl External {
         Ok(path)
     }
 
-    /// One polling pass. A change is written back once it has been stable for one tick.
     pub fn poll(&self, state: &AppState) {
         let mut g = lock_or_recover(&self.inner);
         let mut gone = Vec::new();
         for (i, e) in g.files.iter_mut().enumerate() {
-            let Some(now) = stamp(&e.path) else { continue }; // editors may delete + recreate
+            let Some(now) = stamp(&e.path) else { continue };
             if now == e.seen {
                 e.pending = None;
                 continue;
@@ -230,8 +211,8 @@ impl External {
                     e.seen = now;
                     e.pending = None;
                 }
-                Err(err) if err.code == "not_found" => gone.push(i), // deleted in the vault
-                Err(_) => {}                                           // retry next tick
+                Err(err) if err.code == "not_found" => gone.push(i),
+                Err(_) => {}
             }
         }
         for i in gone.into_iter().rev() {
@@ -241,7 +222,6 @@ impl External {
         retry_wipes(&mut g);
     }
 
-    /// Final write-back (when `v` is given) and wipe of every copy from this vault.
     pub fn close_vault(&self, vault_id: &str, v: Option<&Vault>) {
         let mut g = lock_or_recover(&self.inner);
         let (mine, rest): (Vec<Entry>, Vec<Entry>) = std::mem::take(&mut g.files).into_iter().partition(|e| e.vault == vault_id);
@@ -271,13 +251,12 @@ impl External {
             g.pending_wipe.extend(wipe_entry(&e));
         }
         retry_wipes(&mut g);
-        drop(g.base_lock.take()); // unlock first: Windows cannot delete an open file
+        drop(g.base_lock.take());
         if let Some(b) = g.base.take() {
             wipe_tree(&b);
         }
     }
 
-    /// Paths of the decrypted copies currently tracked.
     pub fn tracked(&self) -> Vec<PathBuf> {
         lock_or_recover(&self.inner).files.iter().map(|e| e.path.clone()).collect()
     }
@@ -287,9 +266,6 @@ fn is_our_base_name(name: &str) -> bool {
     name.strip_prefix(BASE_PREFIX).is_some_and(|id| id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
-/// Startup cleanup: wipes (overwrite + delete) every `nicevault-<16 hex>` folder directly in
-/// `temp_root` that a crashed run left behind — owned by us, a real directory (not a
-/// symlink), and not locked by a live instance. Returns how many were wiped.
 pub fn cleanup_stale(temp_root: &Path) -> usize {
     let Ok(rd) = std::fs::read_dir(temp_root) else { return 0 };
     let mut wiped = 0;
@@ -305,7 +281,6 @@ pub fn cleanup_stale(temp_root: &Path) -> usize {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            // SAFETY: geteuid has no preconditions.
             if meta.uid() != unsafe { libc::geteuid() } {
                 continue;
             }
@@ -313,8 +288,8 @@ pub fn cleanup_stale(temp_root: &Path) -> usize {
         let lock_path = dir.join(LOCK_NAME);
         match File::options().write(true).open(&lock_path) {
             Ok(f) => match f.try_lock() {
-                Ok(()) => drop(f), // nobody holds it: its holder is gone
-                Err(_) => continue, // live instance (or can't tell): leave it alone
+                Ok(()) => drop(f),
+                Err(_) => continue,
             },
             Err(_) => {
                 let young = meta.modified().ok().and_then(|m| m.elapsed().ok()).is_none_or(|age| age < UNLOCKED_GRACE);

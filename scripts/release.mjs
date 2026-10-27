@@ -1,43 +1,3 @@
-// NiceVault releases (modelled on Latente's scripts/release.mjs).
-//
-//   node scripts/release.mjs [--pre beta|rc] [--version X.Y.Z] [--dry-run]
-//       cut: next version from the `Change: none|patch|minor|major` trailers since the last tag
-//       (missing trailer = patch), the version files, CHANGELOG.md, a "release X.Y.Z" commit,
-//       tag vX.Y.Z, and a draft of the user notes in release-notes/vX.Y.Z.json (it + en).
-//       --dry-run prints all that and writes nothing.
-//
-//   node scripts/release.mjs publish [--dry-run] [--skip-build]
-//       for the current version: scripts/build-all.sh, sign every dist/ artefact with
-//       ~/.config/nicevault/updater-secret.key (app/src-tauri/examples/sign_update.rs -> .sig,
-//       trusted comment binds version + platforms; the updater refuses anything else), write
-//       dist/release/ (the assets, their .sig, SHA256SUMS, latest.json) and
-//       `gh release create vX.Y.Z ...` on the public releases repo, with the owner's own `gh`
-//       login. Nothing secret is embedded in the app and nothing is encrypted: the release is
-//       public, plain files that any browser can download. --dry-run does everything except the
-//       upload (and prints it).
-//
-//   node scripts/release.mjs bridge [--dry-run]
-//       ONE-TIME migration for the 0.2.x apps that still read the old PRIVATE repo with an
-//       embedded token and expect encrypted `.nvpack` assets there. After `publish`, this
-//       repacks the already signed raw builds in dist/ in that old format
-//       (dist/release-legacy/) and creates the same version's release on LEGACY_REPO, so those
-//       apps update to the first build that reads the public repo. Needs
-//       app/src-tauri/release-pack.key's old home, scripts/legacy/release-pack.key.
-//
-// Assets of a release (the website links to the first four by these exact names):
-//   NiceVault-linux-x86_64.AppImage    Linux, self-contained (bundles WebKitGTK); also what the stick carries
-//   NiceVault-linux-x86_64.tar.gz      Linux, the bare binary (needs the system WebKitGTK)
-//   NiceVault-windows-x86_64.zip       Windows, NiceVault.exe
-//   NiceVault-macos-universal.zip      macOS, NiceVault.app
-//   NiceVault-linux-x86_64             the bare binary, what the bare-binary Linux build updates from
-//   NiceVault-windows-x86_64.exe       the bare exe, what the Windows build updates from and the stick carries
-//   <each>.sig, SHA256SUMS, latest.json
-//
-// Where releases live: the ONE place is app/src-tauri/tauri.conf.json `plugins.updater.endpoints[0]`
-// (the app fetches latest.json from there). A GitHub URL
-//   https://github.com/<owner>/<repo>/releases/latest/download/latest.json
-// publishes to <owner>/<repo> with gh; any other HTTPS URL is a static host: assets are expected
-// at <same folder>/v<version>/<file> and the upload is left to you (printed).
 import { execFileSync } from "node:child_process";
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
 import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -49,13 +9,8 @@ const root = new URL("../", import.meta.url);
 const ROOT = fileURLToPath(root);
 const KEY_DIR = `${homedir()}/.config/nicevault`;
 const SECRET_KEY = `${KEY_DIR}/updater-secret.key`;
-// The release-pack secret the 0.2.x apps embed: only the one-time `bridge` uses it.
 const PACK_SECRET_FILE = new URL("scripts/legacy/release-pack.key", root);
-// The old private releases repo the 0.2.x apps read; only `bridge` publishes there.
 export const LEGACY_REPO = "maxib0n/NiceVault-releases";
-
-// ---------------------------------------------------------------------------------------------
-// pure parts (scripts/release.test.mjs)
 
 const LEVELS = ["none", "patch", "minor", "major"];
 const VALID = new Set(LEVELS);
@@ -141,7 +96,6 @@ export function buildNotesTemplate(groups) {
   };
 }
 
-/** Notes file -> {it, en}; refuses the untouched draft. */
 export function readyNotes(notes) {
   const { it, en } = notes;
   if (typeof it !== "string" || typeof en !== "string" || !it.trim() || !en.trim()) {
@@ -153,7 +107,6 @@ export function readyNotes(notes) {
   return { it, en };
 }
 
-/** Where releases go, from tauri.conf.json's updater endpoint. */
 export function releaseTarget(endpoint) {
   const gh = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/latest\/download\/latest\.json$/.exec(endpoint);
   if (gh) {
@@ -167,12 +120,6 @@ export function releaseTarget(endpoint) {
   return { kind: "static", repo: null, assetBase: (v) => `${dir}/v${v}` };
 }
 
-/**
- * dist/ file -> the latest.json platform keys it serves. `linux-x86_64-appimage` is Tauri's
- * convention for the AppImage build (the app picks it when it runs from an AppImage, and the
- * stick takes it); plain `linux-x86_64` stays the bare binary, so 0.2.x apps and bare-binary
- * installs keep getting what they can run.
- */
 export function platformKeysFor(filename) {
   if (filename === "NiceVault-linux-x86_64.AppImage") return ["linux-x86_64-appimage"];
   if (filename === "NiceVault-linux-x86_64") return ["linux-x86_64"];
@@ -181,18 +128,15 @@ export function platformKeysFor(filename) {
   return [];
 }
 
-/** Everything signed and uploaded, from dist/. The first four are the website's downloads. */
 export const SITE_ASSETS = [
   "NiceVault-linux-x86_64.AppImage",
   "NiceVault-linux-x86_64.tar.gz",
   "NiceVault-windows-x86_64.zip",
   "NiceVault-macos-universal.zip",
 ];
-/** Served only to the app's updater (and the stick). */
 export const UPDATER_ASSETS = ["NiceVault-linux-x86_64", "NiceVault-windows-x86_64.exe"];
 export const ARTEFACTS = [...SITE_ASSETS, ...UPDATER_ASSETS];
 
-/** The platforms a signature binds: the manifest's keys, or (archives) what the archive holds. */
 export function signedPlatformsFor(filename) {
   const keys = platformKeysFor(filename);
   if (keys.length > 0) return keys;
@@ -201,10 +145,8 @@ export function signedPlatformsFor(filename) {
   return [];
 }
 
-/** dist/ name -> asset name in the old private repo, for the one-time `bridge`. */
 export const LEGACY_ASSETS = ["NiceVault-linux-x86_64", "NiceVault-windows-x86_64.exe", "NiceVault-macos-universal.zip"];
 
-/** `pack` = { salt: base64 } when the assets are release packs (`published` = `<name>.nvpack`). */
 export function buildLatestJson({ version, notes, pubDate, assets, assetBase, pack = null }) {
   const platforms = {};
   for (const { filename, signature, published } of assets) {
@@ -217,7 +159,6 @@ export function buildLatestJson({ version, notes, pubDate, assets, assetBase, pa
   return m;
 }
 
-/** The gh invocation that publishes (argv, no shell). */
 export function ghReleaseArgs({ repo, version, files, notesFile }) {
   return [
     "release", "create", `v${version}`, ...files,
@@ -225,16 +166,12 @@ export function ghReleaseArgs({ repo, version, files, notesFile }) {
   ];
 }
 
-// ---------------------------------------------------------------------------------------------
-// release packs (mirror of app/src-tauri/src/release_pack.rs; cross-checked by a shared vector)
-
 export const PACK_MAGIC = Buffer.from("NVPACK\x00\x01", "latin1");
 export const PACK_INFO = "NiceVault release pack v1";
 export const PACK_EXT = ".nvpack";
 const NONCE_LEN = 12;
 const TAG_LEN = 16;
 
-/** release-pack.key text (64 hex chars) -> 32 bytes. */
 export function parsePackSecret(text) {
   const hex = text.trim();
   if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error("release-pack.key must be 64 hex characters");
@@ -253,7 +190,6 @@ export function seal(key, plain, nonce = randomBytes(NONCE_LEN)) {
   return Buffer.concat([header, body, c.getAuthTag()]);
 }
 
-/** The plaintext, or throws (not a pack, wrong key, tampered). */
 export function openPack(key, packed) {
   const h = PACK_MAGIC.length + NONCE_LEN;
   if (packed.length < h + TAG_LEN || !packed.subarray(0, PACK_MAGIC.length).equals(PACK_MAGIC)) {
@@ -266,7 +202,6 @@ export function openPack(key, packed) {
   return Buffer.concat([d.update(packed.subarray(h, packed.length - TAG_LEN)), d.final()]);
 }
 
-/** README.txt uploaded with the bridge release (the old private repo's only explanation). */
 export function releaseReadme(version) {
   return [
     `NiceVault ${version}`,
@@ -283,9 +218,6 @@ export function releaseReadme(version) {
     "",
   ].join("\n");
 }
-
-// ---------------------------------------------------------------------------------------------
-// side effects
 
 function git(args) {
   return execFileSync("git", args, { cwd: ROOT }).toString();
@@ -378,7 +310,6 @@ function cut(args) {
   }
 
   writeVersion(next);
-  // refresh the workspace versions in Cargo.lock (no network)
   execFileSync("cargo", ["metadata", "--format-version", "1", "--offline", "--no-deps"], { cwd: ROOT, stdio: "ignore" });
 
   const changelogPath = new URL("CHANGELOG.md", root);
@@ -414,7 +345,6 @@ function sign(file, version) {
   return readFileSync(`${file}.sig`, "utf8").trim();
 }
 
-/** The text of the release page (English, the repo's language): the notes, then what each download is. */
 export function releaseBody(notes) {
   return [
     notes.en,
@@ -455,7 +385,6 @@ function ghCreate(repo, version, files, bodyFile, dryRun) {
   } catch {
     throw new Error(`tag v${version} does not exist here: cut the release first`);
   }
-  // uses the owner's own `gh auth login`; nothing is read or printed here
   execFileSync("gh", gh, { cwd: ROOT, stdio: "inherit" });
   console.log(`published v${version} on ${repo}`);
   console.log(`check: gh release view v${version} --repo ${repo}`);
@@ -477,7 +406,6 @@ function publish(args) {
   const missing = ARTEFACTS.filter((f) => !present.includes(f));
   if (missing.length > 0) throw new Error(`missing in ${dist}: ${missing.join(", ")}`);
 
-  // public, plain files: sign each one, list them, point latest.json at them
   const out = `${dist}/release`;
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
@@ -508,7 +436,6 @@ function publish(args) {
   }
 }
 
-/** One-time: the same version in the old private repo, in the old encrypted layout, for the 0.2.x apps. */
 function bridge(args) {
   const { version, notes, dist } = releaseContext(args);
   const missing = LEGACY_ASSETS.flatMap((f) => [f, `${f}.sig`]).filter((f) => !existsSync(`${dist}/${f}`));

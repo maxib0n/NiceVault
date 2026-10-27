@@ -1,7 +1,3 @@
-//! Password manager end to end through the same AppState methods the `pm_*` commands call:
-//! create -> list/get (no secrets) -> reveal -> copy + clipboard auto-clear -> TOTP -> generator
-//! -> imports (Bitwarden file, CSV data, KeePass base64 with wrong/right password) -> lock -> reopen.
-
 use nicevault_app::passwords::Clipboard;
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events};
@@ -76,7 +72,6 @@ fn password_manager_end_to_end() {
     let vol = tmp.path().join("Chiavi.nvault");
     let id = st.vault_create(vol.to_str().unwrap(), pw("segreto"), Some("fast")).unwrap().id;
 
-    // create (the UI sends exactly this JSON shape)
     let e = st
         .pm_create(
             &id,
@@ -107,7 +102,6 @@ fn password_manager_end_to_end() {
     assert_eq!(st.pm_search(&id, "mail lavoro").unwrap().len(), 1);
     assert!(st.pm_search(&id, "nessuno").unwrap().is_empty());
 
-    // reveal
     assert_eq!(&*st.pm_reveal(&id, &eid, "password").unwrap(), "Pw-Segreta-123");
     assert_eq!(&*st.pm_reveal(&id, &eid, "field:0").unwrap(), "9876");
     assert_eq!(st.pm_reveal(&id, &eid, "bogus").unwrap_err().code, "invalid_field");
@@ -115,7 +109,6 @@ fn password_manager_end_to_end() {
     assert_eq!(st.pm_create(&id, patch(json!({ "title": "x", "totp": "otpauth://hotp/x?secret=AA" }))).unwrap_err().code, "invalid_totp");
     assert_eq!(st.pm_create(&id, patch(json!({ "title": " " }))).unwrap_err().code, "invalid_entry");
 
-    // copy: cleared after the delay only while the clipboard still holds the value
     let clip = Arc::new(FakeClip::default());
     let c = st.pm_copy(clip.clone(), &id, &eid, "password", Some(1)).unwrap();
     assert_eq!(c.clear_after, 1);
@@ -129,7 +122,6 @@ fn password_manager_end_to_end() {
     assert_eq!(st.pm_copy(clip.clone(), &id, &eid, "totp_code", None).unwrap().clear_after, 30);
     assert_eq!(clip.read().unwrap().len(), 6);
 
-    // TOTP
     let code = serde_json::to_value(st.pm_totp(&id, &eid).unwrap()).unwrap();
     assert_eq!(code["code"].as_str().unwrap().len(), 6);
     assert_eq!(code["period"], 30);
@@ -137,14 +129,12 @@ fn password_manager_end_to_end() {
     assert_eq!((chk["digits"].as_u64(), chk["algorithm"].as_str()), (Some(6), Some("SHA1")));
     assert_eq!(st.pm_totp_check("nope://").unwrap_err().code, "invalid_totp");
 
-    // update + history
     st.pm_update(&id, &eid, patch(json!({ "password": "Nuova-456", "fields": [{ "name": "PIN", "hidden": true }] }))).unwrap();
     let h = st.pm_history(&id, &eid).unwrap();
     assert_eq!(h.len(), 1);
     assert_eq!(&*st.pm_reveal(&id, &eid, "history:0").unwrap(), "Pw-Segreta-123");
     assert_eq!(&*st.pm_reveal(&id, &eid, "field:0").unwrap(), "9876", "kept with value: null");
 
-    // generator
     let g = st.pm_generate(serde_json::from_value(json!({ "kind": "random", "length": 24 })).unwrap()).unwrap();
     assert_eq!(g.value.chars().count(), 24);
     assert!(g.entropy_bits > 140.0);
@@ -152,7 +142,6 @@ fn password_manager_end_to_end() {
     assert_eq!(g.value.split('-').count(), 4);
     assert_eq!(st.pm_generate(serde_json::from_value(json!({ "kind": "random", "length": 2 })).unwrap()).unwrap_err().code, "invalid_options");
 
-    // imports
     use nicevault_app::passwords::ImportKind;
     let job = st.pm_import(&id, ImportKind::Bitwarden, Some(fixture("bitwarden.json").to_string_lossy().into()), None, None, None).unwrap();
     let done = rec.job_done(&job);
@@ -181,7 +170,6 @@ fn password_manager_end_to_end() {
     assert_eq!(st.pm_list(&id).unwrap().len(), total);
     assert!(st.pm_list(&id).unwrap().iter().any(|e| e.folder == "General/Subgroup"));
 
-    // lock: everything refused; reopen: everything back
     st.vault_lock(&id, "user").unwrap();
     assert_eq!(st.pm_list(&id).unwrap_err().code, "locked");
     assert_eq!(st.pm_reveal(&id, &eid, "password").unwrap_err().code, "locked");
@@ -192,7 +180,6 @@ fn password_manager_end_to_end() {
     assert_eq!(st.pm_get(&id, &eid).unwrap_err().code, "not_found");
     st.vault_lock(&id, "user").unwrap();
 
-    // nothing readable in the raw file
     let raw = std::fs::read(&vol).unwrap();
     for needle in ["Nuova-456", "anna@example.com", "bw-current-pass-1", "pw-csv", "Sample Entry"] {
         assert!(!raw.windows(needle.len()).any(|w| w == needle.as_bytes()), "{needle} in clear");

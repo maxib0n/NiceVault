@@ -1,8 +1,3 @@
-//! "Crea dispositivo" end to end with the fake disk backend (partitions are folders) and a
-//! local update server with signed builds: download + verify, copy + verify, marker last,
-//! refusals, confirmation, an unplug midway and "Completa", a fixed-size first volume.
-//! Nothing here touches a real disk or asks for any privilege.
-
 use base64::Engine;
 use nicevault_app::device::backend::{Fake, FakeFile};
 use nicevault_app::device::client::Local;
@@ -78,13 +73,10 @@ fn app_zip() -> Vec<u8> {
     w.finish().unwrap().into_inner()
 }
 
-/// A local update channel at `version`, published like the real one (plain files:
-/// latest.json, signatures over the plaintext); `bad` platforms get a signature of other bytes.
 fn serve(k: &Key, version: &str, bad: &[&str]) -> String {
     serve_switch(k, version, bad, Arc::new(AtomicBool::new(true)))
 }
 
-/// The same; while `online` is false every request gets a 503 (offline).
 fn serve_switch(k: &Key, version: &str, bad: &[&str], online: Arc<AtomicBool>) -> String {
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let url = format!("http://{}", server.server_addr().to_ip().unwrap());
@@ -93,7 +85,6 @@ fn serve_switch(k: &Key, version: &str, bad: &[&str], online: Arc<AtomicBool>) -
     let mut platforms = serde_json::Map::new();
     for (key, name, bytes) in builds {
         let signed: &[u8] = if bad.contains(&key) { b"something else" } else { &bytes };
-        // Linux is published as the AppImage under Tauri's `-appimage` key
         let mkey = if key == "linux-x86_64" { "linux-x86_64-appimage" } else { key };
         let plat = if key == "darwin-aarch64" { "darwin-aarch64,darwin-x86_64" } else { mkey };
         platforms.insert(mkey.into(), serde_json::json!({ "signature": k.sign(signed, version, plat), "url": format!("{url}/v/{name}") }));
@@ -145,7 +136,6 @@ fn world(manifest: String, pubkey: String, fake: impl FnOnce(&mut FakeFile)) -> 
     let mut f = FakeFile { disks: vec![stick(&mount)], root: t.path().join("parts").to_string_lossy().into_owned(), step_ms: Some(10), ..Default::default() };
     fake(&mut f);
     std::fs::write(&file, serde_json::to_vec(&f).unwrap()).unwrap();
-    // the running "app": a Linux binary without a signature next to it
     let exe = t.path().join("bin/nicevault");
     std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
     std::fs::write(&exe, b"local linux build").unwrap();
@@ -197,7 +187,6 @@ fn creates_a_device_with_the_latest_signed_builds() {
     assert_eq!(std::fs::read(client.join("NiceVault-windows-x86_64.exe")).unwrap(), b"windows exe");
     assert!(client.join("NiceVault-windows-x86_64.exe.sig").is_file());
     assert_eq!(std::fs::read(client.join("NiceVault.app/Contents/MacOS/nicevault")).unwrap(), b"mac binary");
-    // macOS once: the app, checked against the signed zip (not kept) and recorded in the marker
     assert!(!client.join("NiceVault-macos-universal.zip").exists() && !client.join("NiceVault-macos-universal.zip.sig").exists());
     let rec = serde_json::from_slice::<device::Marker>(&std::fs::read(client.join(device::MARKER)).unwrap()).unwrap().mac_app.expect("mac record");
     assert_eq!(Some(rec.tree_sha256), device::client::tree_digest(&client.join("NiceVault.app")));
@@ -210,21 +199,17 @@ fn creates_a_device_with_the_latest_signed_builds() {
     assert_eq!(out["missing"], serde_json::json!([]));
     assert_eq!(disk_now(&w).nicevault, NvState::Complete);
     assert!(!PathBuf::from(out["data_mount"].as_str().unwrap()).join("old-file.txt").exists());
-    // the log names every step, never a password
     let log = cmd::log_text(&w.ctx, &job).unwrap();
     assert!(log.contains("\"kind\":\"plan\"") && log.contains("fake_command") && log.contains("\"kind\":\"done\""));
 
-    // a fixed-size first volume in VaultData ("Un pezzo", preallocated)
     let data = PathBuf::from(out["data_mount"].as_str().unwrap());
     let vol = data.join("Dati.nvault");
     let info = w.st.vault_create_sized(vol.to_str().unwrap(), "pw".to_owned().into(), Some("fast"), Some(32 << 20)).unwrap();
     assert_eq!(std::fs::metadata(&vol).unwrap().len(), 32 << 20);
     assert_eq!(w.st.vault_stats(&info.id).unwrap().used_bytes, 0);
     w.st.vault_lock(&info.id, "user").unwrap();
-    // "Completa" on a complete device: nothing rewritten, the outcome again (offer the volume)
     let j2 = cmd::resume(&w.ctx, &w.st, "/dev/fake1").unwrap();
     assert!(w.rec.done(&j2)["error"].is_null());
-    // eject
     cmd::eject(&w.ctx, "/dev/fake1").unwrap();
     assert!(cmd::candidates(&w.ctx, &w.st).is_empty());
 }
@@ -232,7 +217,6 @@ fn creates_a_device_with_the_latest_signed_builds() {
 #[test]
 fn bad_signature_and_old_channel_fall_back_to_local_copies() {
     let k = Key::new();
-    // Windows' signature is for other bytes: not copied; Linux comes from the channel
     let w = world(serve(&k, "0.2.0", &["windows-x86_64"]), k.pubkey_b64(), |_| {});
     let p = cmd::make_plan(&w.ctx, &w.st, &opts()).unwrap();
     let job = cmd::create(&w.ctx, &w.st, &p.id, "SanDisk Ultra").unwrap();
@@ -243,7 +227,6 @@ fn bad_signature_and_old_channel_fall_back_to_local_copies() {
     assert_eq!(done["outcome"]["missing"], serde_json::json!(["windows"]));
     assert!(std::fs::read_to_string(client.join("README.txt")).unwrap().contains("programs for Windows are missing"));
 
-    // a channel older than this app (0.0.9 < 0.1.0) is never used: local copies only
     let w = world(serve(&k, "0.0.9", &[]), k.pubkey_b64(), |_| {});
     let p = cmd::make_plan(&w.ctx, &w.st, &opts()).unwrap();
     let job = cmd::create(&w.ctx, &w.st, &p.id, "SanDisk Ultra").unwrap();
@@ -253,7 +236,6 @@ fn bad_signature_and_old_channel_fall_back_to_local_copies() {
     assert!(!client.join("NiceVault-linux-x86_64.sig").exists(), "the unsigned running build gets no .sig");
     assert_eq!(done["outcome"]["missing"], serde_json::json!(["windows", "macos"]));
 
-    // offline (nothing listens): same
     let w = world("http://127.0.0.1:9/latest.json".into(), k.pubkey_b64(), |_| {});
     let p = cmd::make_plan(&w.ctx, &w.st, &opts()).unwrap();
     let done = w.rec.done(&cmd::create(&w.ctx, &w.st, &p.id, "SanDisk Ultra").unwrap());
@@ -261,8 +243,6 @@ fn bad_signature_and_old_channel_fall_back_to_local_copies() {
     assert_eq!(done["outcome"]["missing"], serde_json::json!(["windows", "macos"]));
 }
 
-/// The offline case: made offline, so Windows and macOS are missing; "Scarica ora" once online
-/// adds just them (opened from the release packs, verified), then the READMEs and the marker.
 #[test]
 fn download_now_adds_the_missing_programs() {
     let k = Key::new();
@@ -276,7 +256,6 @@ fn download_now_adds_the_missing_programs() {
     let client = PathBuf::from(done["outcome"]["client_mount"].as_str().unwrap());
     assert!(std::fs::read_to_string(client.join("LEGGIMI.txt")).unwrap().contains("Scarica ora"));
 
-    // still offline: an error, nothing changed
     let e = cmd::fetch_missing(&w.ctx, &job).unwrap_err();
     assert_eq!(e.code, "device_download");
     assert!(!client.join("NiceVault-windows-x86_64.exe").exists());
@@ -293,7 +272,6 @@ fn download_now_adds_the_missing_programs() {
     assert_eq!(m.clients.get("windows").cloned().flatten().as_deref(), Some("0.2.0"));
     assert_eq!(m.clients.get("macos").cloned().flatten().as_deref(), Some("0.2.0"));
     assert_eq!(cmd::outcome(&w.ctx, &job).unwrap().missing, vec![]);
-    // nothing missing any more: a no-op
     assert!(cmd::fetch_missing(&w.ctx, &job).unwrap().missing.is_empty());
     assert_eq!(cmd::fetch_missing(&w.ctx, "nope").unwrap_err().code, "not_found");
 }
@@ -306,7 +284,6 @@ fn refused_elevation_changes_nothing() {
     let done = w.rec.done(&cmd::create(&w.ctx, &w.st, &p.id, "SanDisk Ultra").unwrap());
     assert_eq!(done["error"]["code"], "elevation_denied");
     assert_eq!(disk_now(&w).partitions[0].label, "STICK", "not formatted");
-    // the plan is used up; a new one is needed
     assert_eq!(cmd::create(&w.ctx, &w.st, &p.id, "SanDisk Ultra").unwrap_err().code, "not_found");
 }
 
@@ -323,7 +300,6 @@ fn unplugged_midway_then_completa() {
     let d = disk_now(&w);
     assert_eq!(device::resume_action(&d, Some(false)), device::Resume::Complete);
     assert_eq!(cmd::candidates(&w.ctx, &w.st)[0].disk.nicevault, NvState::Incomplete);
-    // replugged: the fault is gone
     let mut f: FakeFile = serde_json::from_slice(&std::fs::read(&w.file).unwrap()).unwrap();
     f.fail = None;
     std::fs::write(&w.file, serde_json::to_vec(&f).unwrap()).unwrap();
@@ -370,9 +346,7 @@ fn the_plan_lists_the_nicevault_volumes_the_erase_destroys() {
     assert_eq!(names, ["Archivio.NVAULT", "SH2RE.nvault"], "top level and one folder down, files only");
     assert!(p.volumes.iter().all(|v| !v.open));
     assert_eq!(serde_json::to_value(&p).unwrap()["volumes"][1]["path"], mount.join("SH2RE.nvault").to_string_lossy().as_ref());
-    // nothing was touched by the scan
     assert_eq!(std::fs::read(mount.join("SH2RE.nvault")).unwrap(), b"v");
-    // an empty stick: no warning
     for f in ["SH2RE.nvault", "Lavoro/Archivio.NVAULT"] {
         std::fs::remove_file(mount.join(f)).unwrap();
     }
@@ -388,7 +362,6 @@ fn volume_scan_marks_open_volumes_and_is_capped() {
     let v = device::volumes_on(&d, &open);
     assert_eq!(v.len(), 1, "a volume open in the app is listed wherever it is on the drive");
     assert!(v[0].open && v[0].name == "Aperto.nvault");
-    // many entries: the walk stops at the cap (no stall), whatever is found before it is kept
     for i in 0..(device::SCAN_CAP + 50) {
         std::fs::write(t.path().join(format!("f{i:05}.txt")), b"").unwrap();
     }
@@ -399,9 +372,6 @@ fn volume_scan_marks_open_volumes_and_is_capped() {
     assert!(device::volumes_on(&d, &[]).is_empty(), "unmounted partitions are not read");
 }
 
-/// The DryRun wrapper (`NICEVAULT_DEVICE_DRY_RUN=1`) over a backend that records every call:
-/// a whole create, "Completa" and eject reach the inner backend only for read-only
-/// enumeration; copy, verify and the marker land in the dry run's temp folders.
 #[test]
 fn dry_run_never_reaches_the_real_backend() {
     use nicevault_app::device::backend::{DiskOps, DryRun};
@@ -461,7 +431,6 @@ fn dry_run_never_reaches_the_real_backend() {
     let tmp = std::env::temp_dir().join("nicevault-dry-run");
     assert!(client.starts_with(&tmp) && data.starts_with(&tmp), "{client:?} {data:?}");
     assert!(client.join(device::MARKER).is_file() && client.join("NiceVault-linux-x86_64").is_file());
-    // the drive: same files, same bytes, nothing new
     let after: Vec<_> = std::fs::read_dir(&mount).unwrap().flatten().map(|e| e.file_name()).collect();
     assert_eq!(before, after);
     assert_eq!(std::fs::read(mount.join("SH2RE.nvault")).unwrap(), b"a user volume");

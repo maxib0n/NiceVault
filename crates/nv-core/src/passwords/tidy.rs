@@ -1,41 +1,19 @@
-//! Known bookkeeping fields of other password managers' exports, mapped onto the entry instead
-//! of being kept as custom fields: website lists (`AUTOFILLURLS` = `[{"url":…,"mode":0}]`,
-//! NordPass `additional_urls`, RoboForm `MatchUrl`…) become websites, creation / modification
-//! times (Proton Pass `createTime` / `modifyTime`, KeePassXC `Created` / `Last Modified`,
-//! Firefox `timeCreated` / `timePasswordChanged`…, unix s / ms / µs or ISO 8601) become the
-//! entry's own times, a TOTP secret column (Dashlane `otpSecret`) becomes the 2FA code, card /
-//! PIN fields are hidden, and pure noise (KeePass icon numbers, KeePassHttp settings) is dropped.
-//!
-//! Used by every importer (on the custom fields it would keep) and by the one-shot repair of
-//! entries imported before this mapping existed ([`super::repair_imported`]). A value that does
-//! not parse as what its name promises is kept as a custom field: nothing is ever lost.
-
 use super::totp::Totp;
 
-/// What a field name means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Known {
-    /// One or more websites (JSON list of strings / {url|uri|href}, or URLs separated by
-    /// whitespace / commas).
     Urls,
-    /// Creation time.
     Created,
-    /// Last modification time.
     Updated,
-    /// A TOTP secret or otpauth URI.
     Totp,
-    /// A sensitive value that must be hidden (card number, CVC, PIN).
     Hide,
-    /// Exporter noise, dropped when its value has the expected shape.
     Noise,
 }
 
-/// Lowercase ASCII letters and digits only: "Last Modified" -> "lastmodified".
 pub fn norm(name: &str) -> String {
     name.trim().trim_start_matches('\u{feff}').to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
-/// Meaning of a field / column name, `None` = an ordinary custom field.
 pub fn classify(name: &str) -> Option<Known> {
     let n = norm(name);
     Some(match n.as_str() {
@@ -54,8 +32,6 @@ pub fn classify(name: &str) -> Option<Known> {
     })
 }
 
-/// Unix seconds / ms / µs / ns (by magnitude) or ISO 8601 (`2024-01-31[T ]12:34:56[.123][Z]`,
-/// or a date alone) -> unix ms. Only 1990..2200 is believed.
 pub fn parse_time(s: &str) -> Option<i64> {
     let s = s.trim();
     let ms = if let Ok(n) = s.parse::<i64>() {
@@ -83,9 +59,6 @@ pub fn parse_time(s: &str) -> Option<i64> {
     (631_152_000_000..7_258_118_400_000).contains(&ms).then_some(ms)
 }
 
-/// Websites in a value: a JSON array of strings or of objects with `url` / `uri` / `href`, a JSON
-/// string, or http(s) URLs separated by whitespace / commas / semicolons. `None` when the value
-/// is not (only) that.
 pub fn parse_urls(s: &str) -> Option<Vec<String>> {
     let s = s.trim();
     if s.is_empty() {
@@ -127,28 +100,21 @@ pub fn parse_urls(s: &str) -> Option<Vec<String>> {
     Some(out)
 }
 
-/// What [`field`] found for one entry.
 #[derive(Debug, Default)]
 pub struct Found {
     pub urls: Vec<String>,
     pub created: Option<i64>,
     pub updated: Option<i64>,
-    /// a valid TOTP input (otpauth URI or base32 secret)
     pub totp: Option<String>,
 }
 
-/// What to do with one custom field.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Act {
     Keep,
-    /// keep it, hidden
     Hide,
-    /// its value went into `found` (or was noise)
     Drop,
 }
 
-/// Looks at one custom field. `has_totp`: the entry already has a 2FA code (a second one is kept
-/// as a field).
 pub fn field(name: &str, value: &str, has_totp: bool, found: &mut Found) -> Act {
     let Some(k) = classify(name) else { return Act::Keep };
     let v = value.trim();
@@ -180,7 +146,6 @@ pub fn field(name: &str, value: &str, has_totp: bool, found: &mut Found) -> Act 
         Known::Totp => Act::Hide,
         Known::Hide => Act::Hide,
         Known::Noise => {
-            // icon / mode are noise only as the small numbers exporters write
             let numbers_only = matches!(norm(name).as_str(), "icon" | "iconid" | "mode");
             if !numbers_only || v.chars().all(|c| c.is_ascii_digit()) { Act::Drop } else { Act::Keep }
         }

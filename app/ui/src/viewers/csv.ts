@@ -1,6 +1,3 @@
-// CSV/TSV for the table view: RFC 4180 quoting, the delimiter guessed from the first line
-// (`,` `;` or tab) when not given. Capped: a viewer, not a spreadsheet.
-
 export const CSV_MAX_ROWS = 2000;
 export const CSV_MAX_COLS = 60;
 

@@ -1,4 +1,3 @@
-<!-- The maker's mark: a small rosette in the volume's ink, "Nice" in the grotesk, "Vault" in Bodoni italic. -->
 <script lang="ts">
   import Rosette from '../ornament/Rosette.svelte';
 
@@ -11,8 +10,6 @@
 </span>
 
 <style>
-  /* one lockup: both words on one baseline, cap heights matched (Plex Sans caps = 0.71 em,
-     Bodoni Moda italic caps = 0.75 em, so 15 px and 14.2 px), the mark centred on the cap band */
   .brand {
     display: inline-flex;
     align-items: baseline;
@@ -22,8 +19,6 @@
   }
   .brand > :global(.rosette) {
     align-self: baseline;
-    /* baseline-aligned, its bottom edge sits on the baseline: lower it by half its overhang
-       of the cap band so its centre is the caps' centre */
     position: relative;
     top: calc((var(--mark) - 10.65px) / 2);
   }

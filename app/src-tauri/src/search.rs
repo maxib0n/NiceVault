@@ -1,16 +1,3 @@
-//! Search, filters and tags (nv_core search.rs):
-//!
-//!  - `fs_search { vault, query, filters?, sort?, desc?, limit?, cursor? }` -> SearchResult: one
-//!    page of matches with their folder path, highlights and tags. When the volume's stored index
-//!    has names to fill (a volume from before search, or many new / renamed nodes), a background
-//!    job persists them with `search-index { vault, done, total }` (~10/s, then one with
-//!    done = total); results are complete meanwhile (missing names are folded in memory).
-//!  - `fs_list { vault, dir, filters? }`: the folder listing (unchanged without filters) with each
-//!    node's `tags` (omitted when none).
-//!  - `tags_list / tags_create / tags_update / tags_delete / tags_assign / tags_unassign / tags_of`;
-//!    every change emits `tags-changed { vault, nodes, dirs }` (nodes whose tags changed and their
-//!    folders, like fs-changed; both empty for a new / renamed / recoloured tag).
-
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, Job, lock_or_recover, random_id};
 use nv_core::{Filters, Hit, SearchQuery, Sort, Tag, TagError, TagId, Vault};
@@ -24,7 +11,6 @@ use std::time::{Duration, Instant};
 
 pub const DEFAULT_LIMIT: usize = 100;
 pub const MAX_LIMIT: usize = 1000;
-/// Names persisted per step of the index job (one short hold of the store lock each).
 const INDEX_STEP: usize = 2000;
 const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
@@ -32,13 +18,10 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 pub struct SearchResult {
     pub hits: Vec<Hit>,
     pub total: usize,
-    /// Pass back as `cursor` for the next page; null = no more.
     pub next_cursor: Option<String>,
-    /// Names the stored index still has to fill (0 = up to date); informational only.
     pub pending: u64,
 }
 
-/// A folder listing entry: the node plus its tags.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct ListedNode {
     #[serde(flatten)]
@@ -74,7 +57,6 @@ fn parse_sort(s: Option<&str>) -> ApiResult<Sort> {
     })
 }
 
-/// Cursors are opaque to the UI: "o<offset>".
 fn parse_cursor(c: Option<&str>) -> ApiResult<usize> {
     match c {
         None | Some("") => Ok(0),
@@ -82,7 +64,6 @@ fn parse_cursor(c: Option<&str>) -> ApiResult<usize> {
     }
 }
 
-/// Volumes whose index job is running (one per volume).
 fn indexing() -> &'static Mutex<HashSet<String>> {
     static S: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     S.get_or_init(Mutex::default)
@@ -119,8 +100,6 @@ impl AppState {
         Ok(SearchResult { hits: page.hits, total: page.total, next_cursor: page.next_offset.map(|o| format!("o{o}")), pending: page.pending })
     }
 
-    /// Persists the volume's missing / queued names in the background (one job per volume,
-    /// cancelled by lock). Crash-safe: every step is atomic and what is left is recomputed.
     fn start_index_job(&self, vault: &str, v: Arc<Vault>, pending: u64) {
         if !lock_or_recover(indexing()).insert(vault.to_owned()) {
             return;
@@ -143,7 +122,7 @@ impl AppState {
                 stuck = if now >= left { stuck + 1 } else { 0 };
                 left = now;
                 if stuck >= 3 {
-                    break; // writes outpace the job (a big copy): the next search starts it again
+                    break;
                 }
                 if last.elapsed() >= PROGRESS_EVERY {
                     last = Instant::now();
@@ -160,7 +139,6 @@ impl AppState {
         }
     }
 
-    /// `fs_list` with tags, optionally filtered (`within` is ignored here).
     pub fn fs_list_tagged(&self, vault: &str, dir: NodeId, filters: Option<Filters>) -> ApiResult<Vec<ListedNode>> {
         let nodes = self.fs_list(vault, dir)?;
         let v = self.vault(vault)?;
@@ -174,8 +152,6 @@ impl AppState {
             .filter(|l| filters.as_ref().is_none_or(|f| f.matches_node(&l.node, &l.tags)))
             .collect())
     }
-
-    // ---------------- tags ----------------
 
     fn tags_changed(&self, vault: &str, v: &Vault, nodes: &[NodeId]) {
         let dirs: BTreeSet<NodeId> = nodes.iter().filter_map(|&n| v.getattr(n).ok().map(|a| a.parent)).collect();
@@ -210,7 +186,6 @@ impl AppState {
         Ok(())
     }
 
-    /// Adds (`on`) or removes `tags` on `nodes`; returns every tag with its new count.
     pub fn tags_set(&self, vault: &str, tags: &[TagId], nodes: &[NodeId], on: bool) -> ApiResult<Vec<Tag>> {
         if nodes.len() > 1_000_000 || tags.len() > nv_core::MAX_TAGS {
             return Err(ApiError::new("invalid_query", "Too many items."));

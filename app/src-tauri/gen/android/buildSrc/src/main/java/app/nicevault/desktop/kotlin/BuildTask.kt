@@ -28,7 +28,6 @@ abstract class BuildTask : DefaultTask() {
             runTauriCli(executable)
         } catch (e: Exception) {
             if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-                // Try different Windows-specific extensions
                 val fallbacks = listOf(
                     "$executable.exe",
                     "$executable.cmd",
@@ -55,7 +54,6 @@ abstract class BuildTask : DefaultTask() {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        // the CLI installed in app/ui (workingDir is app/src-tauri); `tauri android init` wrote "tauri" here
         val args = listOf("../ui/node_modules/@tauri-apps/cli/tauri.js", "android", "android-studio-script");
 
         execOperations.exec {

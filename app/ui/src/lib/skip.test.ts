@@ -9,6 +9,6 @@ describe('skipper', () => {
     expect(s(10 * 200 + 2000)).toBe(10);
     s(5000);
     expect(s(5100)).toBe(10);
-    expect(s(5200, -1)).toBe(10); // turning back starts over
+    expect(s(5200, -1)).toBe(10);
   });
 });

@@ -1,4 +1,3 @@
-// Open volumes, the unlock flow, lock handling and mount state.
 import { m } from '../../paraglide/messages.js';
 import { SvelteMap } from 'svelte/reactivity';
 import * as api from '../api';
@@ -17,14 +16,10 @@ export type UnlockPhase = 'idle' | 'unlocking' | 'error' | 'success';
 
 export interface UnlockState {
   phase: UnlockPhase;
-  /** performance.now() when key derivation started */
   startedAt: number;
-  /** expected duration of the key derivation in ms (from the last unlock of this volume) */
   expectedMs: number;
-  /** measured duration of the last finished attempt */
   tookMs: number | null;
   error: string | null;
-  /** increments on every failed attempt (key for a one-shot shake animation) */
   errorSeq: number;
 }
 
@@ -43,7 +38,6 @@ class Vaults {
     errorSeq: 0,
   });
   backends = $state<Backend[]>([]);
-  /** performance.now() of the last successful unlock (the file view decodes inside its ceremony) */
   unlockedAt = -1e9;
   mountBusy = $state(false);
 
@@ -65,7 +59,6 @@ class Vaults {
     void this.loadBackends();
   }
 
-  /** Unlock flow for Sblocca. Resolves true on success (screen switches to the vault). */
   async unlockVault(target: RecentEntry, password: string): Promise<boolean> {
     if (this.unlock.phase === 'unlocking') return false;
     const t0 = performance.now();
@@ -105,7 +98,6 @@ class Vaults {
     this.unlock = { ...this.unlock, phase: 'idle', error: null };
   }
 
-  /** Create + open a new volume. */
   async createVault(path: string, password: string, fixedSize?: number | null): Promise<VaultInfo> {
     const info = await api.vaultCreate(path, password, 'strong', fixedSize);
     this.adopt(info);
@@ -129,7 +121,6 @@ class Vaults {
     }
   }
 
-  /** vault-locked event (user, idle, removed, sleep, screen). */
   handleLocked(evt: VaultLocked) {
     const info = this.open.find((v) => v.id === evt.vault);
     if (evt.reason === 'user') play('lock');
@@ -142,8 +133,6 @@ class Vaults {
     const wasActive = this.activeId === evt.vault;
     if (this.open.length === 0) {
       idle.stop();
-      // nothing is open any more: toasts like "Importato: <file name>." must not
-      // linger on the lock screen (a removed/idle lock happens unattended)
       toasts.clear();
     }
     if (!wasActive) {
@@ -168,10 +157,6 @@ class Vaults {
     void app.loadRecents();
   }
 
-  /**
-   * Store the emblem inside the volume; showWhenLocked = visibility "visible" (the header gets
-   * accent + a small copy of the emblem, made here for images). Refreshes the open info and Benvenuto.
-   */
   async setEmblem(id: VaultId, emblem: Emblem, showWhenLocked: boolean, frame?: string): Promise<boolean> {
     try {
       const locked = emblem.kind === 'image' ? await lockedImageOf(emblem.data_base64) : null;
@@ -191,7 +176,6 @@ class Vaults {
     }
   }
 
-  /** "Aspetto visibile da chiuso" (visible) / "Aspetto cifrato" (encrypted) for a volume. */
   async setVisibility(id: VaultId, visibility: Visibility): Promise<boolean> {
     try {
       const st = await api.vaultAppearanceSet(id, { visibility });
@@ -239,7 +223,5 @@ class Vaults {
 
 export const vaults = new Vaults();
 
-// settingsGet()/settingsSet() act on the volume on screen.
 api.bindActiveVault(() => vaults.activeId);
-// the idle clock that user input bumps is the one of the volume on screen
 idle.bindActive(() => vaults.activeId);

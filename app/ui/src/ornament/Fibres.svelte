@@ -1,8 +1,3 @@
-<!--
-  Security fibres embedded in the paper: a few visible red and blue fibres in
-  daylight, sparse, and kept off the areas that carry text (`quiet`, fractions of
-  the box). Suede has none (--fibre-alpha 0): nothing is drawn.
--->
 <script lang="ts">
   import InkCanvas, { type InkEnv } from './InkCanvas.svelte';
   import { fibres } from './lathe';
@@ -24,7 +19,6 @@
     for (let i = 0; i < list.length; i++) {
       const f = list[i];
       const [x0, y0] = f.pts[0];
-      // no fibre lands on the text: the quiet areas (grown by a fibre's reach) stay clean
       const m = 12;
       const inQuiet = quiet.some((q) => x0 >= q.x * w - m && x0 <= (q.x + q.w) * w + m && y0 >= q.y * h - m && y0 <= (q.y + q.h) * h + m);
       if (inQuiet) continue;

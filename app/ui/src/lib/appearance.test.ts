@@ -1,4 +1,3 @@
-// Per-volume appearance (visible / encrypted header copy) and per-volume settings, mock backend.
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as api from './api';
 import { lockedAccent, lockedView } from './emblem';
@@ -26,7 +25,6 @@ describe('appearance (mock backend)', () => {
     expect(lockedAccent(byName(r, 'Diario'))).toBeNull();
     expect(lockedView(byName(r, 'Diario'))).toEqual({ kind: 'hidden' });
     expect(lockedAccent(byName(r, 'Archivio fiscale'))).toBe('prussia');
-    // inside, the encrypted volume still has its look
     const info = await api.vaultOpen(DIA, MOCK_PASSWORD);
     expect([info.visibility, info.show_when_locked, info.settings?.accent, info.emblem]).toEqual(['encrypted', false, 'bottiglia', { kind: 'icon', id: 'book-open' }]);
     expect(await api.vaultAppearanceGet(info.id)).toEqual({ accent: 'bottiglia', emblem: { kind: 'icon', id: 'book-open' }, emblem_frame: 'guilloche', visibility: 'encrypted', tampered: false });
@@ -52,9 +50,8 @@ describe('appearance (mock backend)', () => {
     expect([a.visibility, a.accent]).toEqual(['visible', 'ottanio']);
     r = byName(await api.recentList(), 'Documenti');
     expect([r.accent, r.emblem]).toEqual(['ottanio', { kind: 'image', data_base64: MOCK_EMBLEM_WEBP }]);
-    expect((await api.settingsGet(info.id)).accent).toBe('ottanio'); // accent = the volume setting
+    expect((await api.settingsGet(info.id)).accent).toBe('ottanio');
 
-    // vault_emblem_set: show_when_locked maps onto visibility; the small copy is what Benvenuto shows
     await api.vaultEmblemSet(info.id, { kind: 'image', data_base64: MOCK_EMBLEM_WEBP }, true, PNG_B64);
     expect(byName(await api.recentList(), 'Documenti').emblem).toEqual({ kind: 'image', data_base64: PNG_B64 });
     expect((await api.vaultEmblemGet(info.id)).emblem).toEqual({ kind: 'image', data_base64: MOCK_EMBLEM_WEBP });
@@ -77,19 +74,18 @@ describe('appearance (mock backend)', () => {
   it('settings are per volume; no vault = the active one (bindActiveVault), none open = session defaults', async () => {
     const d = await api.settingsGet();
     expect(d).toEqual({ auto_lock_minutes: 15, accent: 'velluto', theme: 'dark', lock_on_sleep: true, lock_on_screen_lock: true, lock_scope: 'volume', grid_size: 'm', list_density: 'normal' });
-    expect((await api.settingsSet({ accent: 'seppia' })).accent).toBe('seppia'); // session default
-    // "Come l'app" (on by default): new volumes wear the app's theme and ink
+    expect((await api.settingsSet({ accent: 'seppia' })).accent).toBe('seppia');
     await api.appSettingsSet({ app_accent: 'ottanio', app_theme: 'light' });
     const like = await api.vaultCreate(`${STICK}/Come app.nvault`, 'pw-lunga-123');
     expect([like.settings?.accent, like.settings?.theme]).toEqual(['ottanio', 'light']);
     await api.vaultLock(like.id);
     await api.appSettingsSet({ new_like_app: false });
     const created = await api.vaultCreate(`${STICK}/Nuovo.nvault`, 'pw-lunga-123');
-    expect(created.settings?.accent).toBe('seppia'); // otherwise from the defaults
+    expect(created.settings?.accent).toBe('seppia');
 
     const doc = await api.vaultOpen(DOC, MOCK_PASSWORD);
     const arc = await api.vaultOpen(ARC, MOCK_PASSWORD);
-    expect((await api.settingsGet()).accent).toBe('prussia'); // no binding: the most recently opened
+    expect((await api.settingsGet()).accent).toBe('prussia');
     let active = doc.id;
     api.bindActiveVault(() => active);
     const seen: [string | null, Partial<Settings>][] = [];
@@ -98,13 +94,13 @@ describe('appearance (mock backend)', () => {
     expect((await api.settingsGet(arc.id)).theme).toBe('dark');
     active = arc.id;
     expect((await api.settingsGet()).accent).toBe('prussia');
-    expect((await api.settingsSet({ theme: 'neon' as never })).theme).toBe('dark'); // unknown ignored
+    expect((await api.settingsSet({ theme: 'neon' as never })).theme).toBe('dark');
     off();
     expect(seen.map(([v, s]) => [v, s.theme])).toEqual([[doc.id, 'light'], [arc.id, 'dark']]);
 
     await api.vaultLock(doc.id);
     await expect(api.settingsGet(doc.id)).rejects.toMatchObject({ code: 'locked' });
     const again = await api.vaultOpen(DOC, MOCK_PASSWORD);
-    expect(again.settings).toMatchObject({ auto_lock_minutes: 5, accent: 'velluto', theme: 'light' }); // kept inside the volume
+    expect(again.settings).toMatchObject({ auto_lock_minutes: 5, accent: 'velluto', theme: 'light' });
   });
 });

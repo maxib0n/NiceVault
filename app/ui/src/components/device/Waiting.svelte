@@ -1,8 +1,3 @@
-<!--
-  The status line of a step the wizard is waiting on (DeviceWizard.svelte, in its footer, so it
-  is always on screen): turning lathes + what is happening; after HINT_MS the seconds and a
-  reassurance; after `stuckMs` Annulla / Riprova (when the step can be abandoned safely).
--->
 <script lang="ts">
   import { m } from '../../paraglide/messages.js';
   import { HINT_MS } from '../../lib/device';

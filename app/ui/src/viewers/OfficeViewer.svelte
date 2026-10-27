@@ -1,8 +1,3 @@
-<!--
-  Word/Writer, Excel/Calc and PowerPoint/Impress files, read-only: the document's properties
-  and its words (paragraphs and headings, the first sheet as a table, slide by slide). The
-  layout is not reproduced — "Apri con app esterna" (mounted) or Esporta for that.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { skeleton } from '../lib/reveal';
@@ -32,7 +27,6 @@
     return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
   };
   const width = $derived(doc?.body.kind === 'sheet' ? Math.max(1, ...doc.body.rows.map((r) => r.length)) : 1);
-  /** A, B, … Z, AA, AB … */
   const colName = (k: number): string => (k >= 26 ? colName(Math.floor(k / 26) - 1) : '') + String.fromCharCode(65 + (k % 26));
   const isEmpty = $derived(
     doc !== null &&

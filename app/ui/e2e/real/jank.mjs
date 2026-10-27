@@ -1,33 +1,3 @@
-// Frame-time ("jank") measurement of NiceVault's animated moments, in the real app (Tauri,
-// WebKitGTK, real backend) or in Chromium against the mock UI (with a performance trace and a
-// JS CPU profile per scenario). Measures, does not assert: it prints one line per scenario and
-// writes OUT/jank-<label>.json, so a fix can be checked against a baseline.
-//
-//   real app:  NICEVAULT_TEST_RECENTS_DELAY_MS=600 NV_E2E_SCRIPT=jank.mjs pnpm e2e:real
-//              (the delay keeps Benvenuto waiting for its volumes long enough for the probe to be
-//              injected after the reload, so the boot decode is measured too)
-//   Chromium:  node e2e/real/jank.mjs --chromium      (starts vite on NV_JANK_PORT, default 5296)
-//
-// Env:
-//   NV_JANK_LABEL=<name>     names the run (default "real" / "chromium"); add WebKit env variants
-//                            (WEBKIT_DISABLE_COMPOSITING_MODE=1, WEBKIT_SKIA_ENABLE_CPU_RENDERING=1,
-//                            GDK_SCALE=2, ...) to the command line and label them
-//   NV_JANK_TOGGLES=a,b      switches something off for the whole run, to attribute cost:
-//                            noblend nofilter noshadow notex noreveal nocanvas notransition, and two that
-//                            model fixes: cv (content-visibility on rows/tiles), fmtcache (cached Intl formatters);
-//                            apicensus times and counts DOM/canvas calls per scenario (attribution, adds overhead)
-//   NV_JANK_ONLY=a,b         run only these scenarios (setup and navigation still happen)
-//   NV_JANK_TRACE=0          Chromium: skip the trace + profile (faster)
-//   NV_JANK_DPR=2            Chromium: device scale factor (default 1)
-//   NV_JANK_REPEAT=n         repeat the run n times in one session where possible (default 1)
-//
-// Per scenario: frames, "drop" (vsyncs missed at 60 Hz: round(frame / 16.67) - 1 per frame, as a share of
-// all vsyncs), p50/p95/p99/max frame (ms, from requestAnimationFrame timestamps), share of frames over
-// 16.7 ms (>17.5 ms, to absorb jitter), 25 ms and 33.4 ms, the
-// rAF callbacks' own JS time per frame, long tasks (where the engine reports them) and the five
-// longest frames with what was animating then (window.__nvReveal decisions and scenario marks), each split
-// into `render` (its rendering update, rAF to a posted message) and `tasks` (main thread blocked outside it,
-// from a 4 ms timer heartbeat): what is neither was the compositor / GPU.
 import { execFileSync, spawn } from 'node:child_process';
 import { loadavg } from 'node:os';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -47,9 +17,6 @@ const PASSWORD = CHROMIUM ? 'demo' : 'cavallo batteria graffetta corretta';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync(OUT, { recursive: true });
 
-// ---------------------------------------------------------------------------------------------
-// the in-page probe: rAF timestamps, rAF callback time, long tasks, marks
-
 const CSS_TOGGLES = {
   noblend: '*,*::before,*::after{mix-blend-mode:normal!important;background-blend-mode:normal!important}',
   nofilter: '*,*::before,*::after{filter:none!important;backdrop-filter:none!important}',
@@ -57,7 +24,6 @@ const CSS_TOGGLES = {
   notex: '.sheet::before,.ground::before,.cloth::before{display:none!important}.foil{background-image:none!important;color:currentColor!important;-webkit-background-clip:border-box!important;background-clip:border-box!important}',
   nocanvas: 'canvas{display:none!important}',
   notransition: '*,*::before,*::after{transition:none!important;animation-duration:0s!important;animation-delay:0s!important}',
-  // models a fix: off-screen rows skip style/layout/paint (virtualisation-lite)
   cv: '[data-testid=pm-entry]{content-visibility:auto;contain-intrinsic-size:auto 50px}.file-item{content-visibility:auto;contain-intrinsic-size:auto 190px}[data-layout=list] .file-item{contain-intrinsic-size:auto 40px}',
 };
 
@@ -164,8 +130,6 @@ const PROBE = (toggles, autostart) => `(() => {
   return 'ok';
 })()`;
 
-// the long frame [a, b): rendering updates that started in it ("render"), the main thread blocked outside
-// them ("tasks", from the heartbeat's gaps), the rest is waiting (vsync, compositor, GPU)
 function phases(r, a, b) {
   const ph = (r.ph ?? []).filter(([t]) => t >= a - 1 && t < b - 1);
   const render = ph.reduce((s, [, d]) => s + d, 0);
@@ -182,13 +146,11 @@ function stats(r) {
   const dur = r.frames.length ? r.frames.at(-1)[0] - r.frames[0][0] + d[0] : 0;
   const hist = { '<=17.5': 0, '17.5-25': 0, '25-33.4': 0, '33.4-50': 0, '50-100': 0, '>100': 0 };
   for (const x of d) hist[x <= 17.5 ? '<=17.5' : x <= 25 ? '17.5-25' : x <= 33.4 ? '25-33.4' : x <= 50 ? '33.4-50' : x <= 100 ? '50-100' : '>100']++;
-  // what was going on around each of the longest frames (marks within 400 ms before it)
   const worst = r.frames
     .map((f) => f)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([t, dt, j]) => ({ at: Math.round(t), ms: dt, rafJs: j, ...phases(r, t - dt, t), during: [...new Set(r.marks.filter(([mt]) => mt <= t && mt >= t - dt - 400).map(([, m]) => m.replace(/:[0-9a-f]{8,}.*$/, ':…')))].slice(-3) }));
-  // vsyncs missed: a 50 ms frame is 2 missed at 60 Hz; jitter (17-24 ms) is not a miss
   const missed = d.reduce((a, x) => a + Math.max(0, Math.round(x / 16.67) - 1), 0);
   return {
     frames: d.length,
@@ -216,9 +178,6 @@ function stats(r) {
     heldOffscreenMax: Math.max(0, ...(r.samples ?? []).map((x) => x[3])),
   };
 }
-
-// ---------------------------------------------------------------------------------------------
-// drivers: one interface over WebDriver (real app) and Playwright (Chromium)
 
 let D;
 const results = [];
@@ -259,7 +218,6 @@ async function realDriver() {
     },
     reload: async () => {
       await wd.exec('location.reload()');
-      // re-inject as soon as the new document answers (the app waits on recent_list meanwhile)
       for (let i = 0; i < 400; i++) {
         try {
           const r = await wd.exec(`return document.readyState !== 'loading' || !!document.documentElement ? ${PROBE(TOGGLES, 'boot')} : null`);
@@ -280,7 +238,6 @@ async function chromiumDriver() {
   const { chromium } = await import('playwright');
   const up = async () => fetch(`http://127.0.0.1:${PORT}/`).then((r) => r.ok, () => false);
   if (await up()) throw new Error(`port ${PORT} is busy (someone else's server?): set NV_JANK_PORT`);
-  // a production build (unminified: readable profiles) that keeps the mock's sample files
   const dist = join(process.env.TMPDIR ?? '/tmp', `nv-jank-dist-${PORT}`);
   execFileSync('pnpm', ['exec', 'vite', 'build', '--minify', 'false', '--outDir', dist, '--emptyOutDir'], { cwd: UI, stdio: 'ignore', env: { ...process.env, NV_KEEP_MOCK: '1' } });
   const vite = spawn('pnpm', ['exec', 'vite', 'preview', '--outDir', dist, '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], { cwd: UI, stdio: 'ignore', detached: true });
@@ -294,7 +251,7 @@ async function chromiumDriver() {
   await cdp.send('Profiler.setSamplingInterval', { interval: 200 });
   await page.addInitScript({ content: PROBE(TOGGLES, 'boot') });
   const loc = (css) => page.locator(css).first();
-  const handle = async (ref) => ref; // Playwright: refs are ElementHandles
+  const handle = async (ref) => ref;
   D = {
     page,
     exec: (body, ...args) => page.evaluate(([b, a]) => new Function(b)(...a), [body, args]),
@@ -307,7 +264,6 @@ async function chromiumDriver() {
     typeInto: (css, text, delay) => loc(css).pressSequentially(text, { delay }),
     key: (k) => page.keyboard.press(k),
     wheel: async (css, dy) => {
-      // the box is looked up once per scroll: a locator per tick would itself query a 7,000-node DOM
       if (D.wheelAt?.css !== css) {
         const b = await loc(css).boundingBox();
         D.wheelAt = { css, x: b.x + b.width / 2, y: b.y + Math.min(b.height / 2, 200) };
@@ -340,8 +296,6 @@ async function chromiumDriver() {
   return D;
 }
 
-// Chrome trace: exclusive (self) time per event name on the renderer main thread, grouped, plus
-// the raster / compositor / GPU threads' busy time.
 const GROUP = [
   [/^CpuProfiler|^Profiler|^TracingStartedInBrowser/, 'profiler (measurement artefact)'],
   [/GC|^BlinkGC|garbage/i, 'gc'],
@@ -361,7 +315,6 @@ function analyseTrace(json) {
   const evs = json.traceEvents ?? json;
   const names = new Map();
   for (const e of evs) if (e.ph === 'M' && e.name === 'thread_name') names.set(`${e.pid}:${e.tid}`, e.args.name);
-  // the renderer main thread with the most events
   const count = new Map();
   for (const e of evs) if (names.get(`${e.pid}:${e.tid}`) === 'CrRendererMain' && e.ph === 'X') count.set(`${e.pid}:${e.tid}`, (count.get(`${e.pid}:${e.tid}`) ?? 0) + 1);
   const main = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
@@ -382,7 +335,6 @@ function analyseTrace(json) {
     groups[g] = Math.round(((groups[g] ?? 0) + us / 1000) * 10) / 10;
     byName.push([n, Math.round(us / 100) / 10]);
   }
-  // other threads: busy time of top-level events
   const threads = {};
   for (const e of evs) {
     const tn = names.get(`${e.pid}:${e.tid}`);
@@ -392,7 +344,6 @@ function analyseTrace(json) {
   }
   return { main: groups, top: byName.sort((a, b) => b[1] - a[1]).slice(0, 14), threads };
 }
-// CPU profile: self time per function (only our code and the browser's own work buckets)
 function analyseProfile(p) {
   const self = new Map();
   const byId = new Map(p.nodes.map((n) => [n.id, n]));
@@ -407,11 +358,6 @@ function analyseProfile(p) {
   return [...self.entries()].filter(([k]) => k !== '(idle)' && k !== '(program)').sort((a, b) => b[1] - a[1]).slice(0, 18).map(([k, us]) => [k, Math.round(us / 100) / 10]);
 }
 
-// In-page: 3,000 glyphs (a decode frame over a full window of items is 2-6k) drawn on a window-sized
-// canvas as the engine does it (fillText per glyph, the font set per item, the colour changing), the
-// same with one fillStyle, and from a pre-rasterised atlas (drawImage per glyph); each closed by a
-// 1-pixel readback so the GPU work is counted. Then the cost of the engine's per-item canvases: 40
-// canvases (2 per thumbnail) created, drawn and composited vs one shared canvas of the window.
 const BENCH = `
   const dpr = args[0];
   const W = innerWidth, H = innerHeight;
@@ -484,9 +430,6 @@ const BENCH = `
   return r;
 `;
 
-// ---------------------------------------------------------------------------------------------
-// helpers
-
 async function waitFor(desc, body, timeout = 15000) {
   const t0 = Date.now();
   let last;
@@ -512,7 +455,6 @@ async function measure(name, fn) {
   const prof = await D.stopTrace?.();
   const raw = await D.exec('return window.__jank.stop()');
   report(name, raw, prof);
-  // the engine's own account of the decodes that ran (vendor/ascii-reveal RunStat): setup, frame cost, how they ended
   const runs = await D.exec('const t = window.__jank.t0; return (window.__nvRevealRuns || []).filter((r) => r.t >= t)').catch(() => []);
   for (const r of runs || []) if (r.targets > 3) console.log(`      run ${r.root} ${r.dir > 0 ? 'reveal' : 'hide'} items ${r.items} targets ${r.targets} layout ${r.layout} ms, setup ${r.setup} ms (collect ${r.collect}: media ${r.media}, text ${r.text}; hold ${r.hold} [reads ${r.reads}, canvas ${r.canvas}], clear ${r.clear}), ready ${r.ready} ms, ${r.frames} frames, tick ${r.tickMean}/${r.tickMax} ms (text ${r.textMs}, media ${r.mediaMs}), ended ${r.why} at ${r.at}/${r.end} ms`);
   results.at(-1).runs = runs;
@@ -539,7 +481,6 @@ async function openItem(name, opened) {
   const ref = await itemRef(name);
   await D.dblElement(CHROMIUM ? await D.page.locator(`[role=option]:has([data-testid=item-name]:text-is(${JSON.stringify(name)}))`).first() : ref);
   if (!opened) return;
-  // a pointer double click the window did not take (focus, a frame still settling): the DOM event
   if (!(await waitFor('opened', opened, 2000).catch(() => false))) {
     console.log(`      (${name}: pointer double click not taken, dispatching dblclick)`);
     await D.exec(`[...document.querySelectorAll('[role=option]')].find((o) => o.querySelector('[data-testid=item-name]')?.textContent.trim() === ${JSON.stringify(name)}).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
@@ -553,7 +494,6 @@ const here = (name) => waitFor(`in ${name}`, `return document.querySelector('.br
 const back = () => D.exec('window.dispatchEvent(new MouseEvent("mouseup", { button: 3, bubbles: true }))');
 const decodeDone = (re, timeout = 6000) =>
   waitFor(`decode ${re}`, `const t = window.__jank.t0; return (window.__nvReveal || []).some((e) => e.t >= t && (e.what === 'done' || e.what === 'reduced') && new RegExp(${JSON.stringify(re)}).test(e.key))`, timeout).catch(() => false);
-// scrolls the scroll container of `css` with wheel ticks (100 px every 50 ms) for `ms`
 async function wheelFor(css, ms, dy = 100) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
@@ -562,10 +502,6 @@ async function wheelFor(css, ms, dy = 100) {
   }
 }
 const scrollTop = (css) => D.exec(`let e = document.querySelector(${JSON.stringify(css)}); while (e && !(e.scrollHeight > e.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; if (e) e.scrollTop = 0; return e ? e.scrollHeight : 0`);
-
-// ---------------------------------------------------------------------------------------------
-// data: a 40-item folder (20 envelopes + 20 photos, 6 of them camera-sized), a 500-item folder
-// (50 photos), 2,000 password entries
 
 function hostFixtures() {
   const WORK = process.env.NV_E2E_WORK;
@@ -634,7 +570,6 @@ async function setupReal() {
   await invoke('vault_lock', { vault: id });
 }
 
-// the mock: same folders, inside the open volume (its state lives in the page)
 async function setupMock() {
   await D.run(`
     const inv = window.__nvInvoke;
@@ -675,11 +610,8 @@ async function setupMock() {
   `, csv2000());
 }
 
-// ---------------------------------------------------------------------------------------------
-
 async function main() {
   console.log(`jank: ${LABEL}${TOGGLES.length ? ` toggles ${TOGGLES.join(',')}` : ''} ${CHROMIUM ? 'chromium (mock)' : 'real app (WebKitGTK)'}; env ${['WEBKIT_DISABLE_COMPOSITING_MODE', 'WEBKIT_DISABLE_DMABUF_RENDERER', 'WEBKIT_SKIA_ENABLE_CPU_RENDERING', 'GDK_SCALE', 'LIBGL_ALWAYS_SOFTWARE', 'GDK_BACKEND'].filter((k) => process.env[k]).map((k) => `${k}=${process.env[k]}`).join(' ')}`);
-  // 1. boot (Benvenuto's decode)
   if (CHROMIUM) {
     D = await chromiumDriver();
     await waitFor('app ready', 'return document.querySelector("[data-ready=true]") && document.querySelector(".passport .book")');
@@ -700,10 +632,8 @@ async function main() {
   }
   const info = await D.exec('return { ua: navigator.userAgent, dpr: devicePixelRatio, w: innerWidth, h: innerHeight, entryTypes: window.__jank.supported, gl: (() => { try { const c = document.createElement("canvas").getContext("webgl"); const e = c.getExtension("WEBGL_debug_renderer_info"); return e ? c.getParameter(e.UNMASKED_RENDERER_WEBGL) : c.getParameter(c.RENDERER); } catch (e) { return "no webgl"; } })() }');
   console.log(`      ${JSON.stringify(info)}`);
-  // nothing on screen moves: the floor this engine and display set for every other number
   await measure('idle-welcome', () => sleep(2000));
 
-  // 2. passport hover: on and off the book three times
   await measure('passport-hover', async (mark) => {
     for (let i = 0; i < 3; i++) {
       mark('hover-on');
@@ -715,7 +645,6 @@ async function main() {
     }
   });
 
-  // 3. unlock: Sblocca arrives (decode), password + Enter, the ceremony and the file view's decode
   await measure('unlock-arrive', async () => {
     await D.click('.passport .book');
     await waitFor('password field', 'return document.querySelector("input[type=password]")');
@@ -734,9 +663,6 @@ async function main() {
   await waitFor('Quaranta listed', 'return [...document.querySelectorAll("[data-testid=item-name]")].some((e) => e.textContent.trim() === "Quaranta")', 20000);
   await sleep(400);
   await measure('idle-vault', () => sleep(2000));
-  // NV_JANK_SIZE=s|m|l|xl: the grid size every folder below is opened at (small tiles: more items on screen)
-  // NV_JANK_WINDOW=WxH: the app window resized (a big screen: NV_E2E_SCREEN=2560x1600), so a
-  // folder shows many more items at once
   if (process.env.NV_JANK_WINDOW && D.wd) {
     const [w, h] = process.env.NV_JANK_WINDOW.split('x').map(Number);
     await D.wd.cmd('POST', '/window/rect', { x: 0, y: 0, width: w, height: h }).catch((e) => console.log(`      (window not resized: ${e.message})`));
@@ -748,7 +674,6 @@ async function main() {
     await sleep(1100);
   }
 
-  // 4. a folder of 40: 20 envelopes, 20 photos (6 camera-sized): decode + thumbnails
   await D.exec('window.__jank.census = true');
   await measure('folder-40', async (mark) => {
     mark('open');
@@ -759,7 +684,6 @@ async function main() {
   });
   await D.exec('window.__jank.census = false');
 
-  // 5. quick look x3 (first showing of each photo decodes), then the context menu x3
   await measure('quicklook', async (mark) => {
     for (const n of ['camera 01.jpg', 'foto 01.jpg', 'camera 02.jpg']) {
       mark(`open ${n}`);
@@ -782,15 +706,11 @@ async function main() {
       await sleep(400);
     }
   });
-  // a key in the last second makes the next view skip its decode (lib/reveal.ts fromKeyboard)
   await sleep(1100);
   await back();
   await waitFor('back at the root', 'return [...document.querySelectorAll("[data-testid=item-name]")].some((e) => e.textContent.trim() === "Cinquecento")');
   await sleep(400);
 
-  // 6. a folder of 500 (50 photos): open, scroll in grid, then in list
-  // the glyph decode against the number of items: folders of 10, 40, 150 and 500 (10 % photos), each
-  // opened for the first time, with the census on (canvases, held elements, off-screen held ones)
   await D.exec('window.__jank.census = true');
   for (const [folder, n] of [['Dieci', 10], ['Q40', 40], ['C150', 150], ['Cinquecento', 500]]) {
     await measure(n === 500 ? 'folder-500-open' : `decode-${n}`, async (mark) => {
@@ -821,7 +741,6 @@ async function main() {
   await D.click('.view-toggle button[aria-pressed=false]');
   await sleep(300);
 
-  // 7. the password list: 2,000 entries, scrolled, then a search typed
   await measure('pm-open', async () => {
     await D.click('[data-testid=nav-passwords]');
     await waitFor('pm list', 'return Number(document.querySelector("[data-testid=pm-list]")?.dataset.count) >= 2000 && document.querySelector("[data-testid=pm-entry]")', 20000);
@@ -843,7 +762,6 @@ async function main() {
     await sleep(600);
   });
 
-  // 8. Impostazioni and back
   await measure('settings', async (mark) => {
     mark('open');
     await D.click('[data-testid=open-settings]');
@@ -854,7 +772,6 @@ async function main() {
     await sleep(800);
   });
 
-  // 9. glyph micro-benchmarks in this engine: what one decode frame's drawing costs, three ways
   let bench = null;
   if (want('bench')) {
     bench = await D.run(BENCH, await D.exec('return devicePixelRatio'));
@@ -865,7 +782,6 @@ async function main() {
   writeFileSync(file, JSON.stringify({ label: LABEL, toggles: TOGGLES, chromium: CHROMIUM, info, bench, env: Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(WEBKIT|GDK|LIBGL|GSK|NV_JANK|WAYLAND_DISPLAY|DISPLAY)/.test(k))), results }, null, 1));
   console.log(`wrote ${file}`);
   if (!CHROMIUM && process.env.NV_JANK_GPUINFO !== '0') {
-    // WebKitGTK's own report: hardware acceleration, renderer, DMA-BUF, buffer formats
     try {
       await D.wd.cmd('POST', '/url', { url: 'webkit://gpu' });
       await sleep(800);
@@ -885,7 +801,6 @@ main().catch(async (e) => {
   try {
     await D?.quit();
   } catch {
-    /* gone */
   }
   process.exit(1);
 });

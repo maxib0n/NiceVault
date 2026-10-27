@@ -1,10 +1,3 @@
-//! Per-volume look and settings. Everything lives inside the encrypted volume (`meta`):
-//! `nicevault.settings` (accent, theme, auto-lock), `nicevault.emblem` (emblem + visibility,
-//! see emblem.rs) and `nicevault.emblem_locked` (the <= 24 KiB, <= 128 px copy of an image
-//! emblem made for the header). With visibility `visible` a copy of accent + emblem is also
-//! written to the header's plaintext appearance section (nv_core::Appearance) so the locked
-//! screens can show it; with `encrypted` that section is cleared.
-
 use crate::emblem::{Emblem, EmblemState};
 use crate::error::{ApiError, ApiResult};
 use base64::Engine;
@@ -15,45 +8,30 @@ use serde::{Deserialize, Serialize};
 pub const SETTINGS_KEY: &str = "nicevault.settings";
 pub const LOCKED_IMAGE_KEY: &str = "nicevault.emblem_locked";
 
-/// Accent colour presets (ids of `data-accent` in app/ui/src/styles/accents.css). First = default.
 pub const ACCENTS: [&str; 7] = ["velluto", "prugna", "prussia", "bottiglia", "seppia", "ardesia", "ottanio"];
 pub const THEMES: [&str; 3] = ["system", "light", "dark"];
-/// Theme of new volumes and of the session defaults ("system" stays a valid choice).
 pub const DEFAULT_THEME: &str = "dark";
 
-/// Maps a retired accent id to its replacement: "bordeaux" became "velluto" (Rosso velluto).
 pub fn migrate_accent(id: &str) -> &str {
     match id {
         "bordeaux" => "velluto",
         other => other,
     }
 }
-/// What an auto-lock of a volume locks: only it, or every open volume.
 pub const LOCK_SCOPES: [&str; 2] = ["volume", "all"];
-/// File view of this volume: grid tile size (S M L XL) and list row density. Defaults: "m", "normal".
 pub const GRID_SIZES: [&str; 4] = ["s", "m", "l", "xl"];
 pub const LIST_DENSITIES: [&str; 3] = ["compact", "normal", "comfortable"];
 
-/// Settings of one volume (stored inside it), or the session defaults when none is open.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Settings {
-    /// Idle minutes before this volume locks; 0 = never ("mai").
     pub auto_lock_minutes: u32,
-    /// One of [`ACCENTS`].
     pub accent: String,
-    /// One of [`THEMES`]; "system" = follow the OS.
     pub theme: String,
-    /// Lock (before) the system goes to sleep.
     pub lock_on_sleep: bool,
-    /// Lock when the session's screen is locked.
     pub lock_on_screen_lock: bool,
-    /// One of [`LOCK_SCOPES`]: when THIS volume auto-locks (idle, sleep, screen), lock only it
-    /// ("volume") or every open volume ("all"). Drive removal is always per volume.
     pub lock_scope: String,
-    /// One of [`GRID_SIZES`]: tile size of the grid view.
     pub grid_size: String,
-    /// One of [`LIST_DENSITIES`]: row height of the list view.
     pub list_density: String,
 }
 
@@ -75,22 +53,16 @@ impl Default for Settings {
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct SettingsPatch {
     pub auto_lock_minutes: Option<u32>,
-    /// Unknown ids are ignored (the current accent stays).
     pub accent: Option<String>,
-    /// Unknown values are ignored.
     pub theme: Option<String>,
     pub lock_on_sleep: Option<bool>,
     pub lock_on_screen_lock: Option<bool>,
-    /// Unknown values are ignored.
     pub lock_scope: Option<String>,
-    /// Unknown values are ignored.
     pub grid_size: Option<String>,
-    /// Unknown values are ignored.
     pub list_density: Option<String>,
 }
 
 impl Settings {
-    /// Applies the valid parts of `p`; returns the keys it set (what a stored record gets patched with).
     pub fn apply(&mut self, p: SettingsPatch) -> Vec<&'static str> {
         let mut set = vec![];
         if let Some(m) = p.auto_lock_minutes {
@@ -128,9 +100,6 @@ impl Settings {
         set
     }
 
-    /// Reads a stored record leniently: each known key with a usable value, the others take
-    /// their defaults (a key of the wrong type does not reset the rest); unknown keys are ignored
-    /// here and kept in the volume by [`patch_settings`].
     fn from_map(m: &serde_json::Map<String, serde_json::Value>) -> Settings {
         let mut s = Settings::default();
         let str_of = |k: &str| m.get(k).and_then(|v| v.as_str()).map(str::to_owned);
@@ -162,7 +131,6 @@ impl Settings {
         s.sanitized()
     }
 
-    /// Whether this volume reacts to an automatic lock trigger ("idle" is decided by the timer).
     pub fn locks_on(&self, reason: &str) -> bool {
         match reason {
             "sleep" => self.lock_on_sleep,
@@ -198,14 +166,11 @@ impl Settings {
     }
 }
 
-/// Whether the look (accent + emblem) is readable while the volume is locked.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Visibility {
-    /// Copied to the header's plaintext section: Benvenuto/Sblocca show it.
     #[default]
     Visible,
-    /// Only inside the volume: locked screens show neutral defaults.
     Encrypted,
 }
 
@@ -218,23 +183,18 @@ impl Visibility {
     }
 }
 
-/// `vault_appearance_get/set`.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct AppearanceState {
     pub accent: String,
     pub emblem: Emblem,
-    /// The frame round the emblem (emblem.rs FRAMES; kept inside the volume only).
     pub emblem_frame: String,
     pub visibility: Visibility,
-    /// The header copy failed authentication at this unlock (edited while locked); it was rewritten.
     pub tampered: bool,
 }
 
-/// `nicevault.settings` as stored.
 enum RawSettings {
     Absent,
     Object(serde_json::Map<String, serde_json::Value>),
-    /// Not a JSON object (or unreadable): shown as the defaults, never overwritten.
     Unreadable,
 }
 
@@ -256,16 +216,11 @@ pub fn load_settings(v: &Vault) -> Settings {
     }
 }
 
-/// Writes a complete record (a new volume).
 pub fn save_settings(v: &Vault, s: &Settings) -> ApiResult<()> {
     let json = serde_json::to_vec(s).map_err(|e| ApiError::new("error", e.to_string()))?;
     Ok(v.meta_set(SETTINGS_KEY, Some(&json))?)
 }
 
-/// Applies `patch` to the volume's settings and writes back only the keys it set, into the
-/// stored JSON as it is: keys this build does not know (a newer build's) and values it could
-/// not use survive. A record that is not a JSON object is refused (`unsupported_version`)
-/// instead of being replaced by defaults.
 pub fn patch_settings(v: &Vault, patch: SettingsPatch) -> ApiResult<Settings> {
     let mut m = match raw_settings(v) {
         RawSettings::Absent => serde_json::Map::new(),
@@ -290,7 +245,6 @@ pub fn patch_settings(v: &Vault, patch: SettingsPatch) -> ApiResult<Settings> {
     Ok(s)
 }
 
-/// Checks a client-made header copy of an image emblem (base64, optional `data:` prefix).
 pub fn validate_locked_image(b64: &str) -> ApiResult<Vec<u8>> {
     let raw = b64.split_once(',').filter(|(p, _)| p.starts_with("data:")).map_or(b64, |(_, d)| d);
     let bytes = B64.decode(raw.trim()).map_err(|_| ApiError::new("invalid_emblem", "Unreadable thumbnail."))?;
@@ -308,14 +262,10 @@ pub fn save_locked_image(v: &Vault, img: Option<&[u8]>) -> ApiResult<()> {
     Ok(v.meta_set(LOCKED_IMAGE_KEY, img)?)
 }
 
-/// First letter or digit of `name`, uppercased (one char): the monogram.
 pub fn initial_of(name: &str) -> String {
     name.chars().find(|c| c.is_alphanumeric()).and_then(|c| c.to_uppercase().next()).map(String::from).unwrap_or_default()
 }
 
-/// The header section for this state; `None` when the volume keeps its look encrypted.
-/// An image emblem uses the small copy (else the image itself when it already fits the
-/// header caps, else no emblem: the locked screens fall back to the initial).
 pub fn header_section(name: &str, e: &EmblemState, s: &Settings, locked_image: Option<Vec<u8>>) -> Option<Appearance> {
     if !e.show_when_locked {
         return None;
@@ -335,9 +285,6 @@ pub fn header_section(name: &str, e: &EmblemState, s: &Settings, locked_image: O
     a.validate().is_ok().then_some(a)
 }
 
-/// Rewrites the header section from what the volume holds (after unlock, after any change).
-/// Left alone when the emblem or settings record was written by a newer build in a form this
-/// one cannot read: the header then keeps whatever that build put there.
 pub fn sync_header(v: &Vault, name: &str) -> ApiResult<()> {
     let Some(e) = crate::emblem::stored(v) else { return Ok(()) };
     if matches!(raw_settings(v), RawSettings::Unreadable) {
@@ -351,7 +298,6 @@ pub fn sync_header(v: &Vault, name: &str) -> ApiResult<()> {
     })
 }
 
-/// What a locked screen may show from a header section: (accent, emblem).
 pub fn from_header(a: &Appearance) -> (Option<String>, Option<Emblem>) {
     let emblem = a.emblem.as_ref().map(|e| match e {
         LockedEmblem::Initial(_) => Emblem::Initial,
@@ -386,10 +332,8 @@ mod tests {
         });
         assert_eq!((s.accent.as_str(), s.theme.as_str()), ("ottanio", "dark"));
         assert!(!s.locks_on("sleep") && s.locks_on("screen") && s.locks_all());
-        // Settings written before the auto-lock options: they default on, scope "volume".
         let old: Settings = serde_json::from_str(r#"{"auto_lock_minutes": 5, "accent": "nope", "lock_scope": "x"}"#).unwrap();
         assert_eq!(old.sanitized(), Settings { auto_lock_minutes: 5, ..Settings::default() });
-        // "bordeaux" was retired for "velluto": stored volumes read back as velluto.
         let legacy: Settings = serde_json::from_str(r#"{"accent": "bordeaux", "theme": "system"}"#).unwrap();
         assert_eq!((legacy.sanitized().accent.as_str(), Settings::default().theme.as_str()), ("velluto", "dark"));
         let hdr = Appearance { accent: Some("bordeaux".into()), emblem: None };
@@ -408,7 +352,6 @@ mod tests {
         );
         let hidden = EmblemState { emblem: Emblem::Icon { id: "house".into() }, show_when_locked: false, emblem_frame: crate::emblem::default_frame() };
         assert_eq!(header_section("casa", &hidden, &s, None), None);
-        // A 256 px image with no small copy: section without emblem.
         let mut big = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\x01\0\0\0\x01\0".to_vec();
         big.resize(300, 0);
         let img = shown(Emblem::Image { data_base64: B64.encode(&big) });
@@ -420,7 +363,6 @@ mod tests {
         assert!(validate_locked_image(&B64.encode(&big)).is_err_and(|e| e.code == "invalid_emblem"));
     }
 
-    /// View sizes (grid tile size, list density): defaulted, validated, stored as new keys.
     #[test]
     fn view_sizes() {
         let d = Settings::default();
@@ -430,7 +372,6 @@ mod tests {
         assert_eq!(set, ["grid_size", "list_density"]);
         s.apply(SettingsPatch { grid_size: Some("huge".into()), list_density: Some("airy".into()), ..Default::default() });
         assert_eq!((s.grid_size.as_str(), s.list_density.as_str()), ("xl", "compact"), "unknown values ignored");
-        // an older record (no keys) reads the defaults; a bad value of one key does not reset the others
         let m = serde_json::json!({ "accent": "prussia", "grid_size": 3, "list_density": "comfortable" });
         let r = Settings::from_map(m.as_object().unwrap());
         assert_eq!((r.accent.as_str(), r.grid_size.as_str(), r.list_density.as_str()), ("prussia", "m", "comfortable"));

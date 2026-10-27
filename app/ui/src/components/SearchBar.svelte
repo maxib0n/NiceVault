@@ -1,9 +1,3 @@
-<!--
-  The volume toolbar's search field, always shown; focusing it (or Ctrl/Cmd+F) opens search: typing
-  searches the whole volume (or this folder: the scope switch on the filter line), one search
-  per pause. Esc clears what is typed, then closes; ↓ / Enter go to the results.
-  Hooks: [data-testid=search-field], [data-testid=search-close].
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Search, X } from '@lucide/svelte';
@@ -16,7 +10,6 @@
   const KEY = isMac ? '⌘F' : 'Ctrl+F';
   let input: HTMLInputElement | undefined = $state();
 
-  // Ctrl/Cmd+F again (or the switch): focus the field and select what is typed
   $effect(() => {
     void browser.searchFocus;
     if (!browser.searchOpen) return;
@@ -35,7 +28,6 @@
     lb.focus();
   }
 
-  /** back to the folder, the keyboard on its listing (found before the field goes) */
   function close() {
     const lb = listbox();
     browser.closeSearch();
@@ -113,12 +105,10 @@
     padding-right: 52px;
     font-size: var(--text-md);
   }
-  /* the platform's own clear key would double ours */
   .input::-webkit-search-decoration {
     -webkit-appearance: none;
     appearance: none;
   }
-  /* (WebKit still draws its ⌫ with appearance: none: only display hides it) */
   .input::-webkit-search-cancel-button {
     display: none;
   }
@@ -144,7 +134,6 @@
   .close:focus-visible {
     outline-offset: -1px;
   }
-  /* searching: a hairline of the ink runs under the text, nothing moves */
   .busy {
     position: absolute;
     left: 32px;
@@ -161,7 +150,6 @@
     inset: 0;
     width: 40%;
     background: linear-gradient(90deg, transparent, var(--accent-line), transparent);
-    /* swept on a registered property (styles/motion.css), not its transform */
     --nv-dx: -100%;
     translate: var(--nv-dx) 0;
   }

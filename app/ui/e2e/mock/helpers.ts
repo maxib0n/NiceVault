@@ -1,11 +1,7 @@
-// Shared helpers for the mock-UI suite. Everything here locates elements by
-// role / accessible name / text / data-testid / data-* state hooks — never by
-// CSS class — so the suite survives the visual redesign.
 import { test as base, expect, type Locator, type Page } from '@playwright/test';
 
 export { expect };
 
-/** Fails a test on any uncaught page error or console.error. */
 export const test = base.extend<{ consoleErrors: string[] }>({
   consoleErrors: [
     async ({ page }, use) => {
@@ -21,7 +17,6 @@ export const test = base.extend<{ consoleErrors: string[] }>({
   ],
 });
 
-/** Load the mock UI with URL switches (see src/lib/switches.ts) and wait until it is ready. */
 export async function boot(page: Page, query = ''): Promise<void> {
   await page.goto(`/?${query}`);
   await expect(page.locator('[data-ready="true"]')).toHaveCount(1);
@@ -33,10 +28,8 @@ export async function expectScreen(page: Page, s: string) {
   await expect(page.locator('[data-ready="true"]')).toHaveAttribute('data-screen', s);
 }
 
-/** The file listbox of the open folder. */
 export const fileList = (page: Page) => page.getByRole('listbox', { name: /^File in / });
 
-/** One entry (role=option) by its exact name. */
 export function item(page: Page, name: string): Locator {
   return fileList(page)
     .getByRole('option')
@@ -53,7 +46,6 @@ export async function selectedNames(page: Page): Promise<string[]> {
   );
 }
 
-/** Wait for the listing to be loaded (non-busy) */
 export async function listed(page: Page) {
   await expect(fileList(page)).toHaveAttribute('aria-busy', 'false');
 }
@@ -64,7 +56,6 @@ export async function expectFolder(page: Page, name: string) {
   await listed(page);
 }
 
-/** "Control" or "Meta", matching the UI's own isMac test (navigator.platform). */
 export async function modKey(page: Page): Promise<'Control' | 'Meta'> {
   return (await page.evaluate(() => /Mac/i.test(navigator.platform))) ? 'Meta' : 'Control';
 }
@@ -73,16 +64,10 @@ export const dropOverlay = (page: Page) => page.getByTestId('drop-overlay');
 export const jobTray = (page: Page) => page.getByRole('region', { name: 'Trasferimenti' });
 export const toasts = (page: Page) => page.getByRole('region', { name: 'Notifiche' });
 
-/** Node id of an entry (from its DOM id "item-<id>", used by aria-activedescendant). */
 export async function nodeId(page: Page, name: string): Promise<number> {
   const id = await item(page, name).getAttribute('id');
   return Number(id?.replace('item-', ''));
 }
-
-// ---------------------------------------------------------------------------
-// Synthesized drag & drop. Events are dispatched at the element the browser
-// would hit-test at the target's centre (document.elementFromPoint), so modal
-// dialogs and overlays block them exactly like a real pointer would.
 
 export interface FakeFile {
   name: string;
@@ -92,15 +77,12 @@ export interface FakeFile {
 
 export interface DragPayload {
   files?: FakeFile[];
-  /** extra string data, e.g. { 'text/plain': 'hi' } or the internal node MIME */
   data?: Record<string, string>;
-  /** pretend `types` contains "Files" while `files` is empty (some OS drags of folders) */
   emptyFiles?: boolean;
 }
 
 export type DragStep = 'dragenter' | 'dragover' | 'dragleave' | 'drop';
 
-/** Dispatch a sequence of drag events at the hit-tested element under `target`'s centre. Returns, per event, whether it was default-prevented (= "accepted"). */
 export async function dragSequence(target: Locator, payload: DragPayload, steps: DragStep[]): Promise<{ type: string; accepted: boolean; hit: string; inDialog: boolean }[]> {
   return target.evaluate(
     (el, { payload, steps }) => {
@@ -128,7 +110,6 @@ export async function dragSequence(target: Locator, payload: DragPayload, steps:
   );
 }
 
-/** Full OS-style file drop on `target`: dragenter, dragover ×2, drop. */
 export function dropFiles(target: Locator, files: FakeFile[]) {
   return dragSequence(target, { files }, ['dragenter', 'dragover', 'dragover', 'drop']);
 }

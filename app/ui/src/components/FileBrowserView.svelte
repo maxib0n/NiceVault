@@ -1,4 +1,3 @@
-<!-- The "Volume aperto" main area: toolbar, file view, context menu, delete confirm, quick look, drop zone. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import {
@@ -56,8 +55,6 @@
           browser.dragOver = false;
           return;
         }
-        // A modal (delete confirmation, quick look…) owns the window: ignore OS
-        // drops like the inert page ignores HTML5 ones, instead of importing behind it.
         if (document.querySelector('dialog[open]')) {
           browser.dragOver = false;
           return;
@@ -65,7 +62,6 @@
         if (e.type === 'enter' || e.type === 'over') browser.dragOver = true;
         else if (e.type === 'drop') {
           browser.dragOver = false;
-          // dropped on a folder tile -> into that folder, like the HTML5 path
           void browser.importSources(e.paths, folderAt(e.position) ?? browser.cwd);
         }
       })
@@ -74,8 +70,6 @@
     return () => off?.();
   });
 
-  // --- folder history: mouse back/forward buttons, Alt+←/→ (Cmd+[ / ] on macOS) ----------
-  /** -1 back, 1 forward. Quick look open: back closes it. Another dialog open: nothing. */
   function history(dir: -1 | 1): boolean {
     if (browser.quickLook !== null) {
       if (dir < 0) browser.quickLook = null;
@@ -86,7 +80,6 @@
     return true;
   }
   function mouseHistory(e: MouseEvent) {
-    // button 3 = back, 4 = forward (the side buttons); WebKitGTK reports them on mouseup
     if ((e.button !== 3 && e.button !== 4) || app.covered) return;
     e.preventDefault();
     if (e.type === 'mouseup') history(e.button === 3 ? -1 : 1);
@@ -94,7 +87,6 @@
   function keyHistory(e: KeyboardEvent) {
     if (app.covered) return;
     const t = e.target as HTMLElement | null;
-    // Ctrl/Cmd+F: the volume's search field (open, focused, what is typed selected)
     if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f' && !t?.closest('dialog[open]')) {
       e.preventDefault();
       browser.tagger = null;
@@ -103,7 +95,6 @@
       return;
     }
     if (t?.closest('input, textarea, [contenteditable="true"]')) return;
-    // view size: Ctrl/Cmd + = (or +) bigger, Ctrl/Cmd + - smaller, Ctrl/Cmd + 0 back to the default
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (mod && !e.altKey && !t?.closest('dialog[open]')) {
       const z = e.key === '=' || e.key === '+' ? 1 : e.key === '-' || e.key === '_' ? -1 : e.key === '0' ? 0 : null;
@@ -118,7 +109,6 @@
     if (dir && history(dir)) e.preventDefault();
   }
 
-  /** Folder of this listing under a viewport point (a folder tile), if any. */
   function folderAt(p?: api.DragPoint): number | null {
     if (!p) return null;
     const tile = document.elementFromPoint(p.x, p.y)?.closest<HTMLElement>('[role="option"][data-kind="dir"]');
@@ -126,7 +116,6 @@
     return Number.isFinite(id) && browser.byId.get(id)?.kind === 'dir' ? id : null;
   }
 
-  // --- HTML5 drop of OS files (browser / mock mode) ---------------------------
   const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files') && ![...e.dataTransfer.types].includes(DRAG_MIME);
 
   function dragover(e: DragEvent) {
@@ -147,7 +136,6 @@
     void browser.importSources(files);
   }
 
-  // --- context menu ---------------------------------------------------------
   const menuItems = $derived.by<MenuItem[]>(() => {
     const menu = browser.menu;
     if (!menu) return [];
@@ -171,11 +159,8 @@
     if (one && browser.resultsMode && browser.hitMeta.has(one.id)) {
       items.push({ id: 'reveal', label: m.sr_show_in_folder(), icon: FolderSearch, action: () => browser.openHitPlace(one.id) });
     }
-    // a phone: picking several starts here (a tap then picks instead of opening)
     if (isMobile && !browser.selecting) items.push({ id: 'select', label: m.menu_select(), icon: CircleCheck, action: () => browser.startSelecting(menu.target) });
-    // (flushSync: the phone's rename sheet takes the focus in the tap's own task, or iOS keeps the keyboard down)
     if (one) items.push({ id: 'rename', label: m.fb_rename(), icon: Pencil, shortcut: 'F2', action: () => (isMobile ? flushSync(() => browser.startRename(one.id)) : browser.startRename(one.id)) });
-    // a phone has no drag & drop between folders: a page to pick where (MobileMove)
     if (isMobile && !browser.resultsMode) items.push({ id: 'move', label: m.mv_action(), icon: FolderInput, action: () => (moving = [...browser.selectedIds]) });
     items.push({ id: 'tags', label: m.tag_action(), icon: TagIcon, action: () => browser.openTagger({ x: menu.x, y: menu.y }) });
     items.push({
@@ -185,7 +170,6 @@
       separatorBefore: true,
       action: () => browser.exportNodes(),
     });
-    // a phone: pictures / videos straight into the system gallery
     if (isMobile && sel.some((n) => browser.isMedia(n.id))) items.push({ id: 'gallery', label: m.gallery_action(), icon: ImageDown, action: () => browser.saveToGallery() });
     items.push({ id: 'props', label: m.fb_props(), icon: Info, shortcut: PROPS_KEY, action: () => browser.showProps() });
     items.push({
@@ -200,7 +184,6 @@
     return items;
   });
 
-  // a phone's sheet says what it acts on
   const menuTitle = $derived.by(() => {
     if (!browser.menu) return undefined;
     if (browser.menu.target === null) return browser.trail[browser.trail.length - 1]?.name;
@@ -209,8 +192,6 @@
   });
   let moving = $state<number[] | null>(null);
   const renamingNode = $derived(isMobile && browser.renaming !== null ? browser.byId.get(browser.renaming) : undefined);
-  // the drop target starts under the folder's head, whatever its height (filter line, wrapped
-  // actions): a fixed offset ran through the title's figures
   let sectionEl: HTMLElement | undefined = $state();
   const dropTop = $derived.by(() => {
     if (!browser.dragOver) return undefined;
@@ -333,14 +314,11 @@
     display: flex;
     flex-direction: column;
   }
-  /* files arriving: the page is lit round its edge in the volume's ink, four registration marks
-     (as on a print) at the corners, and a plaque at the foot says where they will land */
   .drop-overlay {
     position: absolute;
     inset: var(--drop-top, var(--page-head-h)) 14px 14px 18px;
     z-index: 5;
     display: grid;
-    /* the plaque waits at the foot of the page, so every folder stays a target */
     place-items: end center;
     padding-bottom: 18px;
     border-radius: var(--radius-lg);
@@ -378,7 +356,6 @@
     --enter-from: translateY(8px) scale(0.985);
     --enter-to: translateY(0) scale(1);
   }
-  /* the arrow sits in a bed pressed into the plaque, in the ink's foil toned toward the paper */
   .bed {
     display: grid;
     place-items: center;
@@ -410,7 +387,6 @@
     margin-top: 3px;
   }
 
-  /* what is about to go: a short ruled list */
   .delete-list {
     list-style: none;
     margin: 0;

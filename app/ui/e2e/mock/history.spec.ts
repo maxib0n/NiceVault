@@ -1,8 +1,6 @@
-// Folder history (mouse side buttons, Alt+←/→) and the ink chosen in Dettagli reaching Benvenuto.
 import type { Page } from '@playwright/test';
 import { boot, expect, expectFolder, fileList, item, listed, selectedNames, test } from './helpers';
 
-/** The side buttons of a mouse: 3 = back, 4 = forward (WebKitGTK reports them on mouseup). */
 const side = (page: Page, button: 3 | 4) =>
   page.evaluate((b) => {
     window.dispatchEvent(new MouseEvent('mousedown', { button: b, bubbles: true, cancelable: true }));
@@ -23,14 +21,14 @@ test('mouse back / forward walk the folder history; the selection comes back', a
   await side(page, 3);
   await expectFolder(page, 'Documenti');
   expect(await selectedNames(page)).toEqual(['Foto']);
-  await side(page, 3); // nothing older: stays
+  await side(page, 3);
   await expectFolder(page, 'Documenti');
 
   await side(page, 4);
   await expectFolder(page, 'Foto');
   await side(page, 4);
   await expectFolder(page, 'Vacanze 2024');
-  await side(page, 4); // nothing newer
+  await side(page, 4);
   await expectFolder(page, 'Vacanze 2024');
 });
 
@@ -49,7 +47,7 @@ test('Alt+← / Alt+→ go back and forward; a new folder drops the forward plac
   await item(page, 'Audio').dblclick();
   await expectFolder(page, 'Audio');
   await fileList(page).focus();
-  await page.keyboard.press('Alt+ArrowRight'); // forward was dropped
+  await page.keyboard.press('Alt+ArrowRight');
   await expectFolder(page, 'Audio');
 });
 
@@ -66,7 +64,6 @@ test('the ink chosen in Dettagli is the passport on Benvenuto at once', async ({
   await boot(page, 'screen=details');
   await page.getByTestId('accent-swatches').locator('[data-accent="bottiglia"]').click();
   await expect(page.locator('html')).toHaveAttribute('data-accent', 'bottiglia');
-  // the volume is still open: Benvenuto shows it
   await page.getByRole('complementary').getByRole('button', { name: /altro volume/i }).click();
   const passport = page.locator('[data-testid="passport"][data-name="Documenti"]');
   await expect(passport).toHaveAttribute('data-accent', 'bottiglia');

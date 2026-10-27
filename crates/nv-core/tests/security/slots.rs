@@ -1,13 +1,7 @@
-//! Keyslots and the duress slot, attacked through the header.
-
 use crate::common::*;
 use nv_core::{KdfPreset, OpenError, Vault};
 use std::time::{Duration, Instant};
 
-/// Slot injection: the attacker adds a password slot of their own wrapping a master key of
-/// their own, and re-MACs the header with it (the MAC key derives from whatever master the
-/// slot yields). Their password then gets past the header MAC, but the database key derives
-/// from the real master: never opens. The user's password no longer passes the MAC (DoS only).
 #[test]
 fn injected_slot_with_a_foreign_master_never_opens() {
     let t = tempfile::tempdir().unwrap();
@@ -28,8 +22,6 @@ fn injected_slot_with_a_foreign_master_never_opens() {
     assert!(Vault::open(&p, &pw("pw")).is_err());
 }
 
-/// KDF downgrade: lowering a slot's Argon2id cost changes the KEK, so the unwrap fails.
-/// There is no way to weaken a slot without the password.
 #[test]
 fn kdf_downgrade_fails_closed() {
     let t = tempfile::tempdir().unwrap();
@@ -46,8 +38,6 @@ fn kdf_downgrade_fails_closed() {
     assert_eq!(Vault::open(&p, &pw("pw")).err(), Some(OpenError::WrongPassword));
 }
 
-/// Slots moved to another position, or a slot copied from another volume with the same
-/// password: the AAD (volume_id || index || kind) refuses both.
 #[test]
 fn slot_move_and_cross_volume_copy_fail() {
     let t = tempfile::tempdir().unwrap();
@@ -70,9 +60,6 @@ fn slot_move_and_cross_volume_copy_fail() {
     assert_eq!(Vault::open(&m, &pw("pw")).err(), Some(OpenError::WrongPassword), "slot moved to index 1");
 }
 
-/// Argon2id parameters come from the unauthenticated header and are not bounded:
-/// a crafted file (t = 2^32-1, or m_kib = 4 TiB) hangs or aborts the app on the first unlock
-/// attempt. Desired: refuse parameters outside a sane envelope before running Argon2id.
 #[test]
 fn absurd_kdf_parameters_are_refused_quickly() {
     let t = tempfile::tempdir().unwrap();
@@ -95,9 +82,6 @@ fn absurd_kdf_parameters_are_refused_quickly() {
     assert!(rx.recv_timeout(Duration::from_secs(10)).is_ok(), "unlock still running after 10 s");
 }
 
-/// A duress attempt rewrites the header (two writes + fsync) while a wrong password
-/// writes nothing. Whoever watches the file (mtime, a hash, a sync client, the stick's LED)
-/// tells them apart. Desired at least: the file's mtime is the same after either attempt.
 #[test]
 fn duress_attempt_leaves_the_same_mtime_as_a_wrong_password() {
     let t = tempfile::tempdir().unwrap();
@@ -114,8 +98,6 @@ fn duress_attempt_leaves_the_same_mtime_as_a_wrong_password() {
     assert_eq!(mtime(), before, "duress attempt changed the file's mtime");
 }
 
-/// After a duress attempt no copy holds anything that unwraps with any of the passwords,
-/// the file keeps its size, and peek still shows the same slot count and KDF parameters.
 #[test]
 fn duress_destroys_every_slot_and_keeps_the_shape() {
     let t = tempfile::tempdir().unwrap();
@@ -138,7 +120,6 @@ fn duress_destroys_every_slot_and_keeps_the_shape() {
     let bytes = |h: &Header| postcard::to_allocvec(&h.body.slots).unwrap();
     for (b, a) in before.iter().zip(&after) {
         assert_eq!(bytes(b).len(), bytes(a).len(), "same encoded size");
-        // No 16-byte window of old slot material survives in the new copy.
         let old = bytes(b);
         let new = bytes(a);
         let survivors = old.windows(16).filter(|w| w.iter().any(|&x| x != 0) && new.windows(16).any(|n| n == *w)).count();

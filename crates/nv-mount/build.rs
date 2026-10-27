@@ -1,7 +1,3 @@
-//! On Windows, link WinFsp as a delay-loaded DLL so this crate's own test/example binaries
-//! start without WinFsp installed. Cargo does not forward these flags to dependents: the
-//! final executable's build.rs must emit the same two lines (or call
-//! `winfsp::build::winfsp_link_delayload()`).
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();

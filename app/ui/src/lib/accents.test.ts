@@ -1,6 +1,3 @@
-// Every ink is a whole palette (styles/accents.css over styles/tokens.css): its accent tokens,
-// its foil and, at the app root, its surfaces (board, card, levels, hairlines, inks). Each must
-// stay readable: WCAG 2.x ratios per preset, per theme, on the colours the theme really resolves to.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +8,6 @@ const read = (f: string) => readFileSync(resolve(__dirname, '../styles', f), 'ut
 type Vars = Record<string, string>;
 type Theme = 'light' | 'dark' | 'forced';
 
-/** Innermost rules of a stylesheet: [selector, declarations]. */
 function rules(css: string): [string, Vars][] {
   return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => [
     m[1].replace(/@media[^{]*$/, '').trim(),
@@ -20,7 +16,6 @@ function rules(css: string): [string, Vars][] {
 }
 const themeOf = (sel: string): Theme => (sel.includes(":not([data-theme='light'])") ? 'dark' : sel.includes("data-theme='dark'") ? 'forced' : 'light');
 
-// tokens.css: the anthracite / ivory bases (velluto's surfaces)
 const tokens = rules(read('tokens.css'));
 const merge = (pred: (s: string) => boolean) => Object.assign({}, ...tokens.filter(([s]) => pred(s)).map(([, v]) => v)) as Vars;
 const LIGHT_BASE = merge((s) => s === ':root');
@@ -30,7 +25,6 @@ const BASE: Record<Theme, Vars> = {
   forced: { ...LIGHT_BASE, ...merge((s) => s === ":root[data-theme='dark']") },
 };
 
-// accents.css: per theme, per id, the accent+foil rules (root and subtree) and the surface rules (root only)
 const sheet = { accent: {}, surface: {} } as Record<'accent' | 'surface', Record<Theme, Record<string, Vars>>>;
 for (const k of ['accent', 'surface'] as const) sheet[k] = { light: {}, dark: {}, forced: {} };
 for (const [sel, vars] of rules(read('accents.css'))) {
@@ -40,7 +34,6 @@ for (const [sel, vars] of rules(read('accents.css'))) {
   sheet[kind][t][id] = { ...sheet[kind][t][id], ...vars };
 }
 
-/** What the app root resolves to with <html data-theme=theme data-accent=id>. */
 function palette(theme: Theme, id: string): Vars {
   const p = { ...BASE[theme], ...sheet.accent.light[id], ...sheet.surface.light[id] };
   if (theme !== 'light') Object.assign(p, sheet.accent[theme][id], sheet.surface[theme][id]);
@@ -70,7 +63,6 @@ function oklab(hex: string): [number, number, number] {
 const deltaE = (a: string, b: string) => Math.hypot(...oklab(a).map((v, i) => v - oklab(b)[i]));
 
 const ACCENT_KEYS = ['accent', 'accent-deep', 'accent-ink', 'accent-line', 'accent-soft', 'foil', 'foil-hi', 'foil-lo', 'foil-mid'];
-// the surfaces every ink but velluto (= tokens.css) re-dyes, dark
 const DARK_SURFACES = ['ground', 'ground-hi', 'ground-lo', 'paper', 'paper-hi', 'paper-lo', 'paper-2', 'paper-sunk', 'paper-edge', 'paper-rule', 'paper-rule-2',
   'ink', 'ink-2', 'ink-3', 'ink-4', 'field', 'field-focus', 'field-edge', 'key-hi', 'key-lo', 'key-press', 'key-dead', 'stage', 'print-develop',
   'env-paper', 'env-paper-hi', 'env-paper-lo', 'env-paper-2', 'file-paper', 'file-fold', 'file-ink', 'lining-base', 'lining-base-hi', 'lining-base-lo'];
@@ -94,11 +86,9 @@ describe('ink presets', () => {
       const dark = sheet.surface.dark[id];
       expect(Object.keys(dark).sort(), id).toEqual([...DARK_SURFACES].sort());
       expect(sheet.surface.forced[id], `${id} forced = by OS`).toEqual(dark);
-      // dark redeclares everything light tints, so no ivory leaks into the dark case
       for (const k of Object.keys(sheet.surface.light[id])) expect(dark, `${id} dark ${k}`).toHaveProperty(k);
       for (const k of LIGHT_SURFACES) expect(sheet.surface.light[id], `${id} light ${k}`).toHaveProperty(k);
       for (const k of DARK_SURFACES) if (k !== 'ink' && !k.startsWith('ink-')) expect(dark[k], `${id} ${k} is not anthracite`).not.toBe(velluto[k]);
-      // dark stays dark: the board and the card are deep, the card under the board
       expect(lum(dark.ground), `${id} board`).toBeLessThan(0.03);
       expect(lum(dark.paper)).toBeLessThan(lum(dark.ground));
     }
@@ -130,19 +120,15 @@ describe('ink presets', () => {
         expect(ratio(p.danger, p.field), 'danger in a field').toBeGreaterThanOrEqual(4.5);
         expect(ratio(p['field-edge'], p.field), 'field edge on field').toBeGreaterThanOrEqual(3);
         expect(ratio(p['field-edge'], p.paper), 'field edge on card').toBeGreaterThanOrEqual(3);
-        // --focus is --accent (tokens.css)
         for (const c of [p.paper, p.field, p['paper-sunk']]) expect(ratio(p.accent, c), `focus ring on ${c}`).toBeGreaterThanOrEqual(3);
         expect(ratio(p['accent-ink'], p.accent), 'on-accent ink').toBeGreaterThanOrEqual(4.5);
         expect(ratio(p.accent, p['accent-soft']), 'accent on soft').toBeGreaterThanOrEqual(4.5);
         expect(ratio(p.ink, p['accent-soft']), 'body ink on soft').toBeGreaterThanOrEqual(4.5);
         expect(ratio(p['accent-line'], p.paper), 'line on card (UI)').toBeGreaterThanOrEqual(3);
-        // keys, wax and dyed covers are filled with the deep ink; their lettering must read
         const keyInk = theme === 'dark' ? '#fff6f2' : p['accent-ink'];
         expect(ratio(keyInk, p['accent-deep']), 'key ink on deep').toBeGreaterThanOrEqual(4.5);
-        // the foil is stamped on the lining (the sidebar's emblem and name) and on dyed covers
         if (theme === 'dark') expect(ratio(p.foil, p['lining-base']), 'foil on the lining').toBeGreaterThanOrEqual(4.5);
         expect(ratio(p.foil, p['accent-deep']), 'foil on the dyed cover').toBeGreaterThanOrEqual(3);
-        // an error never reads as velluto's ink
         const velluto = palette(theme, DEFAULT_ACCENT).accent;
         expect(deltaE(p.danger, velluto), 'danger apart from velluto').toBeGreaterThanOrEqual(0.05);
       });

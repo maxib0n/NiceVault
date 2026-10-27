@@ -1,7 +1,3 @@
-//! End-to-end through the same functions the Tauri commands call, without the UI:
-//! create -> import tree -> list -> preview (Range) -> export + byte compare -> FUSE mount
-//! read -> unmount -> external edit write-back -> lock -> reopen -> removal auto-lock.
-
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events};
 use nv_fs::{Kind, Node, ROOT};
@@ -40,7 +36,6 @@ impl Rec {
     }
 }
 
-/// Portable layout: `exe` is the stick's folder, no removable roots, no known list.
 fn stick_store(exe: &Path) -> Store {
     Store::new(Locations { exe_dir: Some(exe.to_path_buf()), removable: Some(vec![]), config_dir: None })
 }
@@ -98,7 +93,6 @@ fn end_to_end() {
     let st = AppState::new(stick_store(root), Box::new(rec.clone()));
     let vol = root.join("Prova.nvault");
 
-    // create
     let info = st.vault_create(vol.to_str().unwrap(), pw("segreto"), Some("fast")).unwrap();
     assert_eq!(info.name, "Prova");
     let k = info.kdf.expect("VaultInfo.kdf of the unlocking password slot");
@@ -107,7 +101,6 @@ fn end_to_end() {
     let id = info.id.clone();
     assert!(st.vault_create(vol.to_str().unwrap(), pw("x"), Some("fast")).is_err_and(|e| e.code == "exists"));
 
-    // host tree
     let src = root.join("Lavoro");
     std::fs::create_dir_all(src.join("sub/deeper")).unwrap();
     std::fs::create_dir_all(src.join("vuota")).unwrap();
@@ -117,7 +110,6 @@ fn end_to_end() {
     std::fs::write(src.join("sub/deeper/zero.dat"), b"").unwrap();
     std::fs::write(src.join("sub/deeper/foto.jpg"), pattern(70_000, 3)).unwrap();
 
-    // import
     let job = nicevault_app::jobs::fs_import(&st, &id, ROOT, vec![src.to_string_lossy().into()]).unwrap();
     let done = rec.job_done(&job);
     assert!(done["error"].is_null(), "import failed: {done}");
@@ -126,7 +118,6 @@ fn end_to_end() {
     assert_eq!(last["done_bytes"], last["total_bytes"]);
     assert_eq!(last["total_bytes"].as_u64().unwrap(), (big.len() + 15 + 70_000) as u64);
 
-    // importing again gets a numbered name
     let job2 = nicevault_app::jobs::fs_import(&st, &id, ROOT, vec![src.join("note.txt").to_string_lossy().into()]).unwrap();
     assert!(rec.job_done(&job2)["error"].is_null());
     let names: Vec<String> = st.fs_list(&id, ROOT).unwrap().into_iter().map(|n| n.name).collect();
@@ -135,7 +126,6 @@ fn end_to_end() {
     assert!(rec.job_done(&job3)["error"].is_null());
     assert!(st.fs_list(&id, ROOT).unwrap().iter().any(|n| n.name == "note (2).txt"));
 
-    // list
     let lavoro = child(&st, &id, ROOT, "Lavoro");
     assert_eq!(lavoro.kind, Kind::Dir);
     let sub = child(&st, &id, lavoro.id, "sub");
@@ -143,7 +133,6 @@ fn end_to_end() {
     assert_eq!(bigf.size, big.len() as u64);
     assert!(st.fs_list(&id, lavoro.id).unwrap().iter().any(|n| n.name == "vuota" && n.kind == Kind::Dir));
 
-    // preview with Range, both URL forms
     let r = get(&st, &format!("nvault://{id}/{}", bigf.id), Some("bytes=1000-1999"));
     assert_eq!(r.status(), StatusCode::PARTIAL_CONTENT);
     assert_eq!(r.body(), &big[1000..2000]);
@@ -161,7 +150,6 @@ fn end_to_end() {
     assert_eq!(get(&st, &format!("nvault://{id}/{}", jpg.id), None).headers()[header::CONTENT_TYPE], "image/jpeg");
     assert_eq!(get(&st, &format!("nvault://nope/{}", jpg.id), None).status(), StatusCode::NOT_FOUND);
 
-    // export + byte compare
     let out = root.join("out");
     std::fs::create_dir(&out).unwrap();
     let job = nicevault_app::jobs::fs_export(&st, &id, vec![lavoro.id], out.to_str().unwrap()).unwrap();
@@ -169,13 +157,11 @@ fn end_to_end() {
     assert!(done["error"].is_null(), "export failed: {done}");
     assert_same_tree(&src, &out.join("Lavoro"));
 
-    // cancel: a job cancelled up front reports `cancelled`
     let job = nicevault_app::jobs::fs_export(&st, &id, vec![lavoro.id], out.to_str().unwrap()).unwrap();
     st.job_cancel(&job);
     let done = rec.job_done(&job);
     assert!(done["error"].is_null() || done["error"]["code"] == "cancelled", "{done}");
 
-    // mkdir / rename / delete rules
     let d = st.fs_mkdir(&id, ROOT, " Nuova ").unwrap();
     assert_eq!(d.name, "Nuova");
     assert_eq!(st.fs_mkdir(&id, ROOT, "Nuova").unwrap_err().code, "exists");
@@ -184,12 +170,10 @@ fn end_to_end() {
     st.fs_rename(&id, d.id, lavoro.id, "Spostata").unwrap();
     st.fs_delete(&id, &[child(&st, &id, lavoro.id, "Spostata").id]).unwrap();
 
-    // stats
     let s = st.vault_stats(&id).unwrap();
     assert_eq!(s.file_count, 6);
     assert!(s.file_size_bytes > 0);
 
-    // preview memory bound: no Range on a big file -> 206 with a capped first slice
     use nicevault_app::preview::{MAX_BODY, MAX_RANGE};
     let v = st.vault(&id).unwrap();
     let video = nv_fs::Fs::create(&*v, ROOT, "film.mp4", Kind::File).unwrap();
@@ -224,7 +208,6 @@ fn end_to_end() {
     drop(r);
     st.fs_delete(&id, &[video.id, huge.id]).unwrap();
 
-    // slots: labels, KDF params, in_use, old-password check, typed errors
     let slots = st.slots_list(&id).unwrap();
     assert_eq!(slots.len(), 1);
     assert!(slots[0].in_use && slots[0].label.is_none());
@@ -255,7 +238,6 @@ fn end_to_end() {
     assert_eq!(ApiError::from(nv_core::SlotError::NotPassword).code, "invalid_slot");
     assert_eq!(ApiError::from(nv_core::SlotError::Fs(nv_fs::Error::Locked)).code, "locked");
 
-    // mount (FUSE) and read through the OS
     let backends = st.mount_available();
     assert_eq!(backends.len(), 3);
     if backends.iter().any(|b| b.id == "fuse" && b.available) {
@@ -271,7 +253,6 @@ fn end_to_end() {
         eprintln!("FUSE unavailable here: mount step skipped");
     }
 
-    // external edit: decrypt, change on host, written back, wiped on lock
     let note = child(&st, &id, lavoro.id, "note.txt");
     let ext = st.extract_external(&id, note.id).unwrap();
     assert_eq!(std::fs::read_to_string(&ext).unwrap(), "ciao NiceVault\n");
@@ -283,24 +264,22 @@ fn end_to_end() {
     }
     std::thread::sleep(Duration::from_millis(20));
     std::fs::write(&ext, "modificato dall'editor").unwrap();
-    st.poll_external(); // change seen
-    st.poll_external(); // stable -> written back
+    st.poll_external();
+    st.poll_external();
     let r = get(&st, &format!("nvault://{id}/{}", note.id), None);
     assert_eq!(r.body(), b"modificato dall'editor");
 
-    // lock
     st.vault_lock(&id, "idle").unwrap();
     let ev = rec.wait(Duration::from_secs(5), |e, v| e == "vault-locked" && v["vault"] == id.as_str());
     assert_eq!(ev["reason"], "idle");
     assert!(!ext.exists(), "external copy must be wiped on lock");
     assert_eq!(st.fs_list(&id, ROOT).unwrap_err().code, "locked");
     assert!(st.vault_list_open().is_empty());
-    st.vault_lock(&id, "user").unwrap(); // idempotent
+    st.vault_lock(&id, "user").unwrap();
     for side in ["Prova.nvault-wal", "Prova.nvault-shm"] {
         assert!(!root.join(side).exists(), "{side} left behind");
     }
 
-    // reopen
     assert_eq!(st.vault_open(vol.to_str().unwrap(), pw("sbagliata")).unwrap_err().code, "wrong_password");
     let info = st.vault_open(vol.to_str().unwrap(), pw("segreto")).unwrap();
     let id = info.id;
@@ -312,7 +291,6 @@ fn end_to_end() {
     let again = st.vault_open(vol.to_str().unwrap(), pw("segreto")).unwrap();
     assert_eq!(again.id, id, "opening an open volume returns the same session");
 
-    // recent list = scan of the exe's folder; nothing is written next to it
     let recent = st.recent_list();
     assert_eq!(recent.len(), 1);
     assert!(recent[0].exists && recent[0].unlock_ms.is_some() && recent[0].size_bytes > 0);
@@ -322,7 +300,6 @@ fn end_to_end() {
     assert_eq!(s.auto_lock_minutes, 5);
     assert!(st.recent_forget(vol.to_str().unwrap()).unwrap().is_empty());
 
-    // drive removal: move the volume's folder away -> auto-lock with "removed"
     let stick = root.join("stick");
     std::fs::create_dir(&stick).unwrap();
     let v2 = st.vault_create(stick.join("Due.nvault").to_str().unwrap(), pw("p"), Some("fast")).unwrap();
@@ -349,11 +326,11 @@ fn stale_external_temp_folders_are_wiped() {
         }
         d
     };
-    let crashed = mk("nicevault-0123456789abcdef", true); // holder died: lock file not held
+    let crashed = mk("nicevault-0123456789abcdef", true);
     let live = mk("nicevault-fedcba9876543210", true);
     let held = std::fs::File::options().write(true).open(live.join(".lock")).unwrap();
     held.try_lock().unwrap();
-    let fresh = mk("nicevault-00000000000000aa", false); // no lock yet, just created
+    let fresh = mk("nicevault-00000000000000aa", false);
     let other = mk("nicevault-notours", true);
     let foreign = mk("someone-else-0123456789abcdef", true);
     #[cfg(unix)]
@@ -374,7 +351,6 @@ fn stale_external_temp_folders_are_wiped() {
     assert_eq!(cleanup_stale(root), 1, "once released, it is stale too");
     assert!(!live.exists());
 
-    // The real temp root: this process's own live folder survives a cleanup pass.
     let st = AppState::new(stick_store(root), Box::new(Rec::default()));
     let info = st.vault_create(root.join("C.nvault").to_str().unwrap(), pw("p"), Some("fast")).unwrap();
     let n = nv_fs::Fs::create(&*st.vault(&info.id).unwrap(), ROOT, "a.txt", Kind::File).unwrap();

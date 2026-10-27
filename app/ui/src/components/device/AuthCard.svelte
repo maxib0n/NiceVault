@@ -1,8 +1,3 @@
-<!--
-  While the privileged steps run (unmount, partition table, formatting) the system may be asking
-  for the administrator password in its own window (polkit / UAC / macOS): say so plainly, with
-  the progress still on screen next to it.
--->
 <script lang="ts">
   import { KeyRound } from '@lucide/svelte';
   import { m } from '../../paraglide/messages.js';

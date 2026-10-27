@@ -1,6 +1,3 @@
-// tar listing over ranged reads: hop from header to header (512-byte blocks), skipping file
-// bodies, so a listing reads the headers only. ustar, GNU long names and pax paths.
-
 import type { ByteSource } from './source';
 
 export interface TarEntry {
@@ -18,7 +15,6 @@ function str(b: Uint8Array, o: number, n: number): string {
   return new TextDecoder('utf-8').decode(b.subarray(o, end));
 }
 function octal(b: Uint8Array, o: number, n: number): number {
-  // GNU base-256 for big sizes
   if (b[o] & 0x80) {
     let v = 0;
     for (let k = o + 1; k < o + n; k++) v = v * 256 + b[k];
@@ -31,7 +27,6 @@ function octal(b: Uint8Array, o: number, n: number): number {
 export function looksLikeTar(head: Uint8Array): boolean {
   if (head.length < 512) return false;
   if (str(head, 257, 5) === 'ustar') return true;
-  // old v7 tar: the header checksum is right
   let sum = 0;
   for (let k = 0; k < 512; k++) sum += k >= 148 && k < 156 ? 32 : head[k];
   return sum === octal(head, 148, 8) && sum > 256;

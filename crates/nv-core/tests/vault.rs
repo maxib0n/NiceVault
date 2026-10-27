@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-/// Heavy tests and the timing test take this so the timing isn't skewed by CPU contention.
 static HEAVY: std::sync::Mutex<()> = std::sync::Mutex::new(());
 fn heavy() -> std::sync::MutexGuard<'static, ()> {
     HEAVY.lock().unwrap_or_else(|e| e.into_inner())
@@ -15,7 +14,6 @@ fn pw(s: &str) -> SecretString {
     SecretString::from(s.to_owned())
 }
 
-/// Deterministic pseudo-random bytes.
 fn pat(seed: u64, len: usize) -> Vec<u8> {
     let mut x = seed.wrapping_mul(0x9E3779B97F4A7C15) | 1;
     (0..len)
@@ -31,7 +29,6 @@ fn pat(seed: u64, len: usize) -> Vec<u8> {
 fn read_all(v: &Vault, id: NodeId) -> Vec<u8> {
     let size = v.getattr(id).unwrap().size as usize;
     let mut out = vec![0u8; size + 10];
-    // Read in odd-sized pieces to exercise chunk boundaries.
     let mut off = 0;
     while off < size {
         let n = v.read(id, off as u64, &mut out[off..(off + 77_777).min(size + 10)]).unwrap();
@@ -49,7 +46,6 @@ fn side(path: &Path, suffix: &str) -> PathBuf {
     p.into()
 }
 
-/// Model of expected file contents, applied to both the vault and a Vec.
 struct Model(HashMap<NodeId, Vec<u8>>);
 impl Model {
     fn write(&mut self, v: &Vault, id: NodeId, off: usize, data: &[u8]) {
@@ -89,7 +85,6 @@ fn roundtrip_files_and_dirs() {
     assert!(matches!(v.create(ROOT, "x/y", Kind::File), Err(Error::InvalidName)));
     assert!(matches!(v.create(a.id, "z", Kind::File), Err(Error::NotDir)));
 
-    // Multi-chunk file built from unaligned writes.
     let big = v.create(ROOT, "big.bin", Kind::File).unwrap();
     let data = pat(1, 1_500_017);
     let mut off = 0;
@@ -101,18 +96,15 @@ fn roundtrip_files_and_dirs() {
         m.write(&v, big.id, off, &data[off..off + n]);
         off += n;
         if i == 3 {
-            v.flush().unwrap(); // part committed, part buffered
+            v.flush().unwrap();
         }
     }
-    // Overwrite across a chunk boundary.
     m.write(&v, big.id, 262_144 - 5, &pat(2, 20));
 
-    // Sparse write far past EOF.
     let sparse = v.create(docs.id, "sparse", Kind::File).unwrap();
     m.write(&v, sparse.id, 0, b"head");
     m.write(&v, sparse.id, 5 * 1024 * 1024 + 7, b"tail");
 
-    // Truncate down mid-chunk, then grow by writing, then grow by set_size.
     let t = v.create(ROOT, "trunc", Kind::File).unwrap();
     m.write(&v, t.id, 0, &pat(3, 900_000));
     v.flush().unwrap();
@@ -121,9 +113,8 @@ fn roundtrip_files_and_dirs() {
     m.set_size(&v, t.id, 1_000_000);
     m.set_size(&v, t.id, 262_144);
 
-    m.check(&v); // through the write buffers
+    m.check(&v);
 
-    // Rename / remove semantics.
     let tmp = v.create(ROOT, "tmp", Kind::File).unwrap();
     v.write(tmp.id, 0, b"bye").unwrap();
     v.rename(tmp.id, docs.id, "renamed").unwrap();
@@ -159,12 +150,11 @@ fn roundtrip_files_and_dirs() {
     assert_eq!(root_names, ["big.bin", "docs", "replace-me", "trunc"]);
     v.check_integrity().unwrap();
 
-    // Recursive delete.
     v.remove_recursive(docs.id).unwrap();
     assert!(matches!(v.getattr(sparse.id), Err(Error::NotFound)));
     assert!(matches!(v.getattr(a.id), Err(Error::NotFound)));
     v.check_integrity().unwrap();
-    drop(v); // Drop also closes cleanly
+    drop(v);
     assert!(!side(&path, "-wal").exists());
     let v = Vault::open(&path, &pw("pw")).unwrap();
     assert!(matches!(v.lookup(ROOT, "docs"), Err(Error::NotFound)));
@@ -183,7 +173,6 @@ fn wrong_password_and_not_a_vault() {
     std::fs::write(&junk, b"tiny").unwrap();
     assert_eq!(Vault::open(&junk, &pw("right")).err(), Some(OpenError::NotAVault));
     assert!(matches!(Vault::open(&dir.path().join("missing"), &pw("x")), Err(OpenError::Io(_))));
-    // The error serializes like nv_fs::Error.
     assert_eq!(serde_json::to_string(&OpenError::WrongPassword).unwrap(), r#"{"code":"wrong_password"}"#);
 }
 
@@ -209,12 +198,12 @@ fn header_copy_fallback() {
     v.write(f.id, 0, b"payload").unwrap();
     v.close().unwrap();
 
-    flip(&path, 40); // inside copy A's slots
+    flip(&path, 40);
     let v = Vault::open(&path, &pw("pw")).expect("opens via copy B");
     assert_eq!(read_all(&v, f.id), b"payload");
-    v.close().unwrap(); // copy A was repaired on open
+    v.close().unwrap();
 
-    flip(&path, 65536 + 40); // only B broken now: A (repaired) must carry it
+    flip(&path, 65536 + 40);
     Vault::open(&path, &pw("pw")).expect("opens via repaired copy A").close().unwrap();
 
     flip(&path, 40);
@@ -233,37 +222,30 @@ fn stale_header_copy_never_unlocks_old_password() {
     v.change_password(0, &pw("new"), KdfPreset::Fast, None).unwrap();
     v.close().unwrap();
     for copy in [0usize, 1] {
-        // Simulate a crash between the two copy writes: one copy still has the old slot.
         use std::os::unix::fs::FileExt;
         let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
         f.write_all_at(&before[copy * 65536..(copy + 1) * 65536], (copy * 65536) as u64).unwrap();
         drop(f);
         assert_eq!(Vault::open(&path, &pw("old")).err(), Some(OpenError::WrongPassword), "copy {copy}");
-        Vault::open(&path, &pw("new")).unwrap().close().unwrap(); // repairs the stale copy
+        Vault::open(&path, &pw("new")).unwrap().close().unwrap();
         let now = std::fs::read(&path).unwrap();
         assert_ne!(&now[copy * 65536..(copy + 1) * 65536], &before[copy * 65536..(copy + 1) * 65536]);
     }
 }
 
-// ---------------- crash safety ----------------
-
 const B_FILES: usize = 6;
-const B_SIZE: usize = 12 * 1024 * 1024; // 6 x 12 MiB = 72 MiB
-/// The child makes a durability point (flush) each time this much more was written, so kills
-/// land before, during and after commits, mid-file too.
+const B_SIZE: usize = 12 * 1024 * 1024;
 const B_FLUSH_EVERY: usize = 5 << 20;
 
-/// Child half of `crash_mid_write`: only runs when re-invoked with NV_CRASH_CHILD.
 #[test]
 fn crash_child() {
     let Ok(path) = std::env::var("NV_CRASH_CHILD") else { return };
     let stop_after: usize = std::env::var("NV_CRASH_AFTER").unwrap().parse().unwrap();
     if let Ok(ms) = std::env::var("NV_CRASH_MS") {
-        // Timed kill from another thread: lands at an arbitrary point, possibly mid-commit.
         let ms: u64 = ms.parse().unwrap();
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(ms));
-            std::process::exit(134); // simulated crash: no core dump (no DrKonqi/abrt popup)
+            std::process::exit(134);
         });
     }
     let v = Vault::open(Path::new(&path), &pw("pw")).unwrap();
@@ -275,14 +257,14 @@ fn crash_child() {
             v.write(f.id, v.getattr(f.id).unwrap().size, c).unwrap();
             written += c.len();
             if written >= stop_after {
-                std::process::exit(134); // simulated crash: no core dump (no DrKonqi/abrt popup) // no flush, no close, no destructors
+                std::process::exit(134);
             }
             if written % B_FLUSH_EVERY < c.len() {
                 v.flush().unwrap();
             }
         }
     }
-    std::process::exit(134); // simulated crash: no core dump (no DrKonqi/abrt popup)
+    std::process::exit(134);
 }
 
 #[test]
@@ -327,10 +309,8 @@ fn crash_mid_write() {
         }
         eprintln!("crash after {stop_after} B bytes / {ms} ms: {seen} B bytes survived");
         if ms == 0 {
-            // Everything up to the last durability point before the crash survived.
             assert!(seen + B_FLUSH_EVERY + 100_000 >= stop_after.min(B_FILES * B_SIZE), "lost data that was flushed: {seen} B");
         }
-        // Clean up B for the next round.
         for i in 0..B_FILES {
             if let Ok(n) = v.lookup(ROOT, &format!("b{i}")) {
                 v.remove(n.id).unwrap();
@@ -340,7 +320,6 @@ fn crash_mid_write() {
     }
 }
 
-/// Child half of `durability_points`.
 #[test]
 fn durability_child() {
     let Ok(path) = std::env::var("NV_DUR_CHILD") else { return };
@@ -353,15 +332,13 @@ fn durability_child() {
         }
     };
     put("flushed", 201);
-    v.flush().unwrap(); // explicit durability point (fsync from the OS, the app's own ops)
+    v.flush().unwrap();
     put("by-timer", 202);
     std::thread::sleep(nv_core::DURABLE_INTERVAL + std::time::Duration::from_millis(1500));
-    put("lost", 203); // after the last durability point
-    std::process::exit(134); // simulated crash: no core dump (no DrKonqi/abrt popup)
+    put("lost", 203);
+    std::process::exit(134);
 }
 
-/// Durability contract: flush() is durable on return, anything else within DURABLE_INTERVAL;
-/// what came after the last durability point may be lost, but never half-applied.
 #[test]
 fn durability_points() {
     let _g = heavy();
@@ -389,8 +366,6 @@ fn durability_points() {
     v.close().unwrap();
 }
 
-// ---------------- keyslots ----------------
-
 #[test]
 fn slots_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
@@ -416,7 +391,6 @@ fn slots_lifecycle() {
     let v = Vault::open(&path, &pw("two")).unwrap();
     assert_eq!(v.unlocked_slot(), Some(1));
     assert_eq!(v.slots().iter().map(|s| s.in_use).collect::<Vec<_>>(), [false, true, false]);
-    // verify_password: right slot + right password only.
     assert!(v.verify_password(0, &pw("one")));
     assert!(!v.verify_password(0, &pw("two")), "password of another slot");
     assert!(!v.verify_password(0, &pw("")));
@@ -440,11 +414,9 @@ fn slots_lifecycle() {
     let s = v.slots();
     assert_eq!(s.iter().map(|s| s.label.as_deref()).collect::<Vec<_>>(), [Some("Principale"), Some("Busta in cassaforte"), Some("Chiavetta blu")]);
     assert_eq!(Vault::open_with_identity(&path, &Identity::generate()).err(), Some(OpenError::WrongPassword));
-    // A second open while it is open is refused cleanly (exclusive locking).
     assert!(matches!(Vault::open(&path, &pw("three")), Err(OpenError::Io(_))));
     drop(v);
 
-    // Identity file roundtrip.
     let kf = dir.path().join("me.nvkey");
     id.to_file_with(&kf, &pw("keypw"), fast).unwrap();
     assert!(matches!(id.to_file_with(&kf, &pw("keypw"), fast), Err(Error::Exists)));
@@ -452,7 +424,6 @@ fn slots_lifecycle() {
     let id2 = Identity::from_file(&kf, &pw("keypw")).unwrap();
     assert_eq!(id2.recipient().fingerprint(), r.fingerprint());
 
-    // Removal: slot 1 ("two") goes away; indices of others are stable.
     let v = Vault::open_with_identity(&path, &id2).unwrap();
     v.remove_slot(1).unwrap();
     assert_eq!(v.slots().iter().map(|s| s.index).collect::<Vec<_>>(), [0, 2]);
@@ -478,8 +449,6 @@ fn slots_lifecycle() {
     assert_eq!(Vault::open_with_identity(&path, &id).err(), Some(OpenError::WrongPassword));
     Vault::open(&path, &pw("three")).unwrap().close().unwrap();
 }
-
-// ---------------- opacity ----------------
 
 #[test]
 fn no_plaintext_on_disk() {
@@ -507,8 +476,6 @@ fn no_plaintext_on_disk() {
     v.close().unwrap();
     scan("after close");
 }
-
-// ---------------- timing ----------------
 
 #[test]
 fn fast_create_is_fast() {
@@ -565,8 +532,6 @@ fn bench_sequential_write() {
     v.close().unwrap();
 }
 
-// ---------------- app metadata ----------------
-
 #[test]
 fn meta_roundtrip_and_opacity() {
     let dir = tempfile::tempdir().unwrap();
@@ -594,11 +559,8 @@ fn meta_roundtrip_and_opacity() {
     v.close().unwrap();
     let v = Vault::open(&path, &pw("pw")).unwrap();
     assert_eq!(v.meta_get("emblem").unwrap(), None);
-    // The volume id is still intact (reopen worked) and the store is sound.
     v.check_integrity().unwrap();
 }
-
-// ---------------- appearance (plaintext header section) ----------------
 
 use nv_core::{Appearance, AppearanceError, LockedEmblem};
 
@@ -608,7 +570,6 @@ fn look(accent: &str, emblem: LockedEmblem) -> Appearance {
     Appearance { accent: Some(accent.into()), emblem: Some(emblem) }
 }
 
-/// Minimal PNG header bytes of the given size (only IHDR is ever parsed).
 fn png(w: u32, h: u32, len: usize) -> Vec<u8> {
     let mut v = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
     v.extend_from_slice(&w.to_be_bytes());
@@ -617,8 +578,6 @@ fn png(w: u32, h: u32, len: usize) -> Vec<u8> {
     v
 }
 
-/// Replaces `from` with `to` (same length) inside both header copies and fixes each copy's
-/// unkeyed checksum, like an attacker with a hex editor would.
 fn forge(path: &Path, from: &[u8], to: &[u8]) {
     let mut raw = std::fs::read(path).unwrap();
     for c in 0..2 {
@@ -649,7 +608,6 @@ fn appearance_peek_without_password() {
     let a = look("velluto", LockedEmblem::Icon("house".into()));
     v.set_appearance(Some(&a)).unwrap();
     assert_eq!(nv_core::peek_appearance(&path).unwrap(), Some(a.clone()), "readable while open");
-    // Slot changes keep the section.
     v.add_password(&pw("due"), KdfPreset::Fast, Some("Busta")).unwrap();
     v.close().unwrap();
     let p = nv_core::peek(&path).unwrap();
@@ -677,7 +635,6 @@ fn appearance_tamper_is_detected_on_unlock() {
     v.close().unwrap();
 
     forge(&path, b"house", b"mouse");
-    // Before unlock nobody can tell: the forged section is what a locked screen shows.
     assert_eq!(nv_core::peek_appearance(&path).unwrap(), Some(look("prussia", LockedEmblem::Icon("mouse".into()))));
     let v = Vault::open(&path, &pw("pw")).expect("a forged appearance does not lock the user out");
     assert!(v.appearance_tampered());
@@ -689,11 +646,9 @@ fn appearance_tamper_is_detected_on_unlock() {
     assert!(!v.appearance_tampered());
     v.close().unwrap();
 
-    // The keyslot MAC is unchanged: forging slot bytes still refuses the volume.
     let v = Vault::open(&path, &pw("pw")).unwrap();
     v.set_slot_label(0, Some("Principale")).unwrap();
     v.close().unwrap();
-    // Byte 60 of each copy is inside slot 0's salt (magic 8 + version + id 16 + seq + tags + Argon params).
     let raw = std::fs::read(&path).unwrap();
     let mut fixed = raw[..2 * COPY].to_vec();
     for c in 0..2 {
@@ -729,7 +684,6 @@ fn appearance_caps() {
         assert!(format!("{e:?}").starts_with(want), "{e:?} vs {want}");
     }
     assert_eq!(v.appearance(), Some(ok), "a refused write leaves the header alone");
-    // Eight max-size slots next to the largest appearance still fit one copy.
     for i in 1..8 {
         v.add_recipient(&Identity::generate().recipient(), Some(&"L".repeat(nv_core::MAX_LABEL))).unwrap();
         assert_eq!(v.slots().len(), i + 1);
@@ -750,11 +704,10 @@ fn appearance_cleared_leaves_no_bytes() {
     let mut img = png(96, 96, 4000);
     img.extend_from_slice(b"EMBLEMPIXELS_q9w2");
     v.set_appearance(Some(&Appearance { accent: Some("zz-accent-k4".into()), emblem: Some(LockedEmblem::Image(img)) })).unwrap();
-    // The app keeps the full appearance inside the volume (encrypted meta).
     v.meta_set("nicevault.emblem", Some(b"{\"accent\":\"zz-accent-k4\",\"pix\":\"EMBLEMPIXELS_q9w2\"}")).unwrap();
     let raw = std::fs::read(&path).unwrap();
     assert!(raw.windows(12).any(|w| w == b"zz-accent-k4"), "visible: accent is plaintext");
-    v.set_appearance(None).unwrap(); // "encrypted" mode
+    v.set_appearance(None).unwrap();
     v.flush().unwrap();
     for when in ["open", "closed"] {
         for p in [path.clone(), side(&path, "-wal")] {
@@ -781,8 +734,6 @@ fn appearance_two_copy_robustness() {
     let b = look("ardesia", LockedEmblem::Icon("leaf".into()));
     Vault::create(&path, &pw("pw"), KdfPreset::Fast).unwrap().close().unwrap();
     for copy in [0usize, 1] {
-        // Fresh snapshots each round: writing back a header older than the last repair is a
-        // rollback (`RolledBack`), not a crash leftover.
         let v = Vault::open(&path, &pw("pw")).unwrap();
         v.set_appearance(Some(&a)).unwrap();
         v.close().unwrap();
@@ -791,7 +742,6 @@ fn appearance_two_copy_robustness() {
         v.set_appearance(Some(&b)).unwrap();
         v.close().unwrap();
         let after = std::fs::read(&path).unwrap()[..2 * COPY].to_vec();
-        // Crash between the two copy writes: one copy still carries the old appearance.
         let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
         f.write_all_at(&after, 0).unwrap();
         f.write_all_at(&before[copy * COPY..(copy + 1) * COPY], (copy * COPY) as u64).unwrap();
@@ -803,7 +753,6 @@ fn appearance_two_copy_robustness() {
         v.close().unwrap();
         let now = std::fs::read(&path).unwrap();
         assert!(now[copy * COPY..(copy + 1) * COPY].windows(7).any(|w| w == b"ardesia"), "copy {copy} repaired");
-        // A torn copy: peek and unlock fall back to the other one.
         flip(&path, (copy * COPY + 30) as u64);
         assert_eq!(nv_core::peek_appearance(&path).unwrap(), Some(b.clone()), "torn copy {copy}");
         Vault::open(&path, &pw("pw")).unwrap().close().unwrap();

@@ -1,9 +1,3 @@
-<!--
-  An anti-copy line screen with a latent image: a field of fine diagonal lines in
-  which a word is set in lines of the opposite slant, same weight, same pitch. At
-  reading distance the field is an even tint; tilt it (or zoom, or copy it) and the
-  word appears. Fills its positioned parent.
--->
 <script lang="ts">
   import InkCanvas, { type InkEnv } from './InkCanvas.svelte';
   import { hair } from './ink.svelte';

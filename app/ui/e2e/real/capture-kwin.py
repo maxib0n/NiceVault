@@ -58,8 +58,6 @@ def grab():
                 break
             buf += chunk
     a = np.frombuffer(bytes(buf[:need]), dtype=np.uint8).reshape(hgt, stride)
-    # QImage::Format_ARGB32 / RGB32 in memory: B G R A; the green channel of every second pixel
-    # (a luma stand-in, cheap enough to keep up with the compositor; <dir>/scale says so)
     return a[::SCALE, 1 : wdt * 4 : 4 * SCALE].copy()
 
 

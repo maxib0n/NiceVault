@@ -1,9 +1,3 @@
-<!--
-  The open passport's cover, seen from inside: its lining (anthracite suede with a
-  breath of the volume's ink; book cloth in the ink on paper), the emblem and name
-  stamped in foil. On it: the open volumes, the two sections, the system-drive
-  switch, the auto-lock countdown and Blocca (the clasp).
--->
 <script lang="ts">
   import UpdateNotice from './UpdateNotice.svelte';
   import StickNotice from './device/StickNotice.svelte';
@@ -33,7 +27,6 @@
   const mountLink = $derived(vaults.canMount ? null : (nativeBackend(vaults.backends)?.link ?? null));
   const showCountdown = $derived(idle.timeoutMs > 0 && Number.isFinite(idle.remainingMs));
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
-  // short windows: the stamped seal steps down so the cover rarely needs to scroll
   let winH = $state(800);
   const idSize = $derived(winH < 700 ? 64 : 92);
   const isMobileShell = isMobile;
@@ -50,7 +43,6 @@
     </button>
   {/if}
   {#if sidebar.rail}
-    <!-- the cover folded to its spine: the seal, the three sections, the clasp, Impostazioni -->
     <div class="rail nv-enter">
       {#if active}
         <button type="button" class="rail-seal" title={active.name} aria-label={active.name} onclick={() => sidebar.toggle()}>
@@ -173,7 +165,6 @@
           <Lock size={15} aria-hidden="true" /> {m.lock()}
         </button>
       </div>
-      <!-- this computer's settings, not the volume's: a quiet line under the clasp -->
       <button type="button" class="row settings-row" title="{m.app_settings()} ({isMac ? '⌘,' : 'Ctrl+,'})" data-testid="open-settings" onclick={() => app.openSettings()}>
         <Settings size={15} aria-hidden="true" />
         <span class="row-name">{m.app_settings()}</span>
@@ -191,19 +182,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-5);
-    /* symmetric about the visible cover: the stitched seam runs 8px inside the right edge
-       (VaultScreen .seam), so the right side keeps those 8px more */
     padding: var(--space-5) 22px 14px 14px;
     overflow-y: auto;
     z-index: 2;
-    /* the board's cut edge catches the light; the page curls away into the binding */
     box-shadow:
       inset -1px 0 0 rgb(255 255 255 / 0.1),
       inset -2px 0 0 var(--cloth-edge),
       3px 0 6px -2px rgb(0 0 0 / 0.32);
   }
 
-  /* ---- the stamped identity -------------------------------------------- */
   .identity {
     display: flex;
     flex-direction: column;
@@ -224,8 +211,6 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    /* Bodoni's ink reaches past its line box (descenders 0.27 em under the baseline, accents
-       0.99 em over it): the clamp's box (and the foil, painted inside it) gets that room as padding, given back as margin */
     padding-block: 0.12em 0.16em;
   }
   .id-place {
@@ -256,8 +241,6 @@
     gap: 2px;
   }
 
-  /* rows: plain cloth at rest, a lighter nap under the pointer; the current one is
-     pressed into the cloth (a debossed bed) */
   .row {
     width: 100%;
     display: flex;
@@ -293,7 +276,6 @@
     color: var(--cloth-ink);
     font-weight: 600;
   }
-  /* the volume on the page: a lighter nap of the cloth (no tick in the margin) */
   .vault-btn.active {
     background: color-mix(in oklab, var(--cloth-ink) 7%, transparent);
   }
@@ -325,7 +307,6 @@
     gap: 2px;
   }
 
-  /* ---- system drive: label, switch, one line of truth -------------------- */
   .mount {
     display: flex;
     flex-direction: column;
@@ -349,7 +330,6 @@
     color: var(--cloth-ink-3);
     overflow-wrap: anywhere;
   }
-  /* a path breaks after its separators, a segment only when it alone is wider than the column */
   .mount-desc .path {
     overflow-wrap: break-word;
   }
@@ -357,7 +337,6 @@
     color: var(--cloth-ink-2);
   }
 
-  /* the switch: a groove pressed into the cloth, an ivory knob; foil-lined when on */
   .switch {
     position: relative;
     flex: none;
@@ -383,7 +362,6 @@
     box-shadow:
       0 1px 2px rgb(0 0 0 / 0.45),
       inset 0 -1px 0 rgb(0 0 0 / 0.08);
-    /* styles/motion.css: slides on a registered property, not on its transform */
     translate: var(--nv-dx) 0;
     transition: --nv-dx var(--dur-micro) var(--ease-out);
   }
@@ -410,7 +388,6 @@
     box-shadow: 0 1px 1px rgb(0 0 0 / 0.3);
   }
 
-  /* ---- the clasp ---------------------------------------------------------- */
   .bottom {
     margin-top: auto;
     display: flex;
@@ -428,7 +405,6 @@
     font-size: var(--text-sm);
     color: var(--cloth-ink-3);
   }
-  /* the real countdown, set in mono */
   .readout {
     font-family: var(--font-mono);
     font-size: var(--text-sm);
@@ -453,10 +429,6 @@
     color: var(--cloth-ink-3);
     opacity: 0.85;
   }
-  /* ---- folded to a rail (Ctrl/Cmd+B; desktop) ------------------------------
-     The cover keeps its full width and slides under the window's left edge until only its
-     spine shows (a transform: nothing is laid out again while it moves; VaultScreen slides the
-     page and the seam with it). Its own --nv-dx (styles/motion.css), never the compositor's. */
   .sidebar {
     position: relative;
     translate: var(--nv-dx) 0;
@@ -575,7 +547,6 @@
     font-size: var(--text-2xs);
     color: var(--cloth-ink-2);
   }
-  /* the phone draws its own flap / rail */
   :global(:root[data-platform='mobile']) .fold {
     display: none;
   }

@@ -1,7 +1,3 @@
-//! Malleability: an attacker WITHOUT the password edits bytes of the file.
-//! The property under test: an edit is either harmless (same content comes back) or noticed
-//! (open / read fails). Never a different content returned as if nothing happened.
-
 use crate::common::*;
 use nv_core::{Appearance, LockedEmblem, OpenError, Vault};
 use nv_fs::Fs;
@@ -14,8 +10,6 @@ fn flipped(src: &std::path::Path, dir: &std::path::Path, off: usize, mask: u8) -
     p
 }
 
-/// One bit flip at every 4 KiB of the file (both header copies, every database page, start,
-/// middle and end of each page) and at every byte of the first header copy's used part.
 #[test]
 fn byte_flip_anywhere_is_harmless_or_detected() {
     let t = tempfile::tempdir().unwrap();
@@ -42,7 +36,6 @@ fn byte_flip_anywhere_is_harmless_or_detected() {
     assert!(silent_changes.is_empty(), "content changed without an error after flips at {silent_changes:?}");
 }
 
-/// SQLCipher's per-page HMAC covers the page number: swapping two pages of one volume fails.
 #[test]
 fn page_swap_within_a_volume_is_detected() {
     let t = tempfile::tempdir().unwrap();
@@ -65,8 +58,6 @@ fn page_swap_within_a_volume_is_detected() {
     }
 }
 
-/// Two volumes with the SAME password have independent master keys: a page from one never
-/// authenticates in the other (same page number, same password, still an HMAC failure).
 #[test]
 fn cross_volume_page_splice_is_detected() {
     let t = tempfile::tempdir().unwrap();
@@ -85,7 +76,6 @@ fn cross_volume_page_splice_is_detected() {
         assert!(r.is_err() || r.unwrap() == want, "page {i} from another volume accepted");
         std::fs::remove_file(&q).unwrap();
     }
-    // Whole database of B under A's header: refused (key and volume_id do not match).
     let mut m = ra.clone();
     m.truncate(DB_OFFSET);
     m.extend_from_slice(&rb[DB_OFFSET..]);
@@ -94,7 +84,6 @@ fn cross_volume_page_splice_is_detected() {
     assert!(Vault::open(&q, &pw("pw")).is_err());
 }
 
-/// Truncating the database (dropping trailing pages) must not yield shorter / zeroed files.
 #[test]
 fn truncation_is_detected() {
     let t = tempfile::tempdir().unwrap();
@@ -110,7 +99,6 @@ fn truncation_is_detected() {
         std::fs::remove_file(&q).unwrap();
         let _ = std::fs::remove_file(t.path().join("trunc.nvault-journal"));
     }
-    // Inside the header area: not a volume / corrupt, never a crash.
     for keep in [0, 7, 8, 100, COPY_LEN, DB_OFFSET - 1, DB_OFFSET] {
         let q = t.path().join("trunc.nvault");
         std::fs::write(&q, &raw[..keep]).unwrap();
@@ -120,8 +108,6 @@ fn truncation_is_detected() {
     }
 }
 
-/// Header MAC strip / forge: the checksum is unkeyed, so anyone can make a copy "valid";
-/// the keyed MAC must still refuse it after unlock.
 #[test]
 fn header_mac_strip_is_refused() {
     let t = tempfile::tempdir().unwrap();
@@ -137,7 +123,6 @@ fn header_mac_strip_is_refused() {
         assert!(matches!(Vault::open(&q, &pw("pw")), Err(OpenError::Corrupt(_))));
         std::fs::remove_file(&q).unwrap();
     }
-    // Edit any MAC-covered field (seq, volume_id, slot order) and fix the checksum: refused.
     let edits: [fn(&mut Header); 3] = [
         |h| h.body.seq += 10,
         |h| h.body.volume_id[0] ^= 1,
@@ -156,9 +141,6 @@ fn header_mac_strip_is_refused() {
     }
 }
 
-/// A forged copy with a valid checksum and a higher seq (no key needed) wins over the
-/// intact copy; its MAC then fails and the volume refuses to open with the right password,
-/// although the other copy is intact and authentic. Desired: fall back to the other copy.
 #[test]
 fn forged_newest_copy_falls_back_to_the_authentic_one() {
     let t = tempfile::tempdir().unwrap();
@@ -169,7 +151,6 @@ fn forged_newest_copy_falls_back_to_the_authentic_one() {
     assert!(open_dump(&p, "pw").is_ok(), "the authentic copy A should still open");
 }
 
-/// A forged appearance (no key) is detected at unlock and flagged.
 #[test]
 fn forged_appearance_is_flagged_at_unlock() {
     let t = tempfile::tempdir().unwrap();
@@ -182,18 +163,12 @@ fn forged_appearance_is_flagged_at_unlock() {
         h.appearance.as_mut().unwrap().appearance.accent = Some("velluto".into());
         write_copy(&p, c, &h);
     }
-    // Before unlock it is shown as is (display-only, documented)...
     assert_eq!(nv_core::peek(&p).unwrap().appearance.unwrap().accent.as_deref(), Some("velluto"));
-    // ...and caught at unlock.
     let v = Vault::open(&p, &pw("pw")).unwrap();
     assert!(v.appearance_tampered());
     assert!(v.appearance().is_none());
 }
 
-/// Focused: SQLCipher notices the HMAC failure, zeroes the page and puts the pager in a
-/// permanent error state, but the read in progress still returns the zeroed bytes as data
-/// when the page is the last overflow page of a chunk (next-page pointer 0 = "end of chain").
-/// Only the NEXT statement fails (as "out of memory"). Desired: the read itself fails.
 #[test]
 fn tampered_tail_page_never_reads_as_zeros() {
     let t = tempfile::tempdir().unwrap();
@@ -204,7 +179,6 @@ fn tampered_tail_page_never_reads_as_zeros() {
     for page in 0..(len - DB_OFFSET) / PAGE {
         let q = flipped(&p, t.path(), DB_OFFSET + page * PAGE + 100, 1);
         if let Ok(v) = Vault::open(&q, &pw("pw")) {
-            // Half the pages with a group-commit transaction open (a write happened first).
             if page % 2 == 1 {
                 let _ = v.create(nv_fs::ROOT, "w", nv_fs::Kind::File);
             }
@@ -212,7 +186,7 @@ fn tampered_tail_page_never_reads_as_zeros() {
                 && got != want
             {
                 let zeros = got.iter().zip(&want).filter(|(g, w)| g != w).count();
-                silent.push((page + 1, zeros)); // SQLite page number
+                silent.push((page + 1, zeros));
             }
         }
         std::fs::remove_file(&q).unwrap();

@@ -1,19 +1,3 @@
-<!--
-  Password: the open volume's password manager. Head: title, search-as-you-type, Nuova voce,
-  Generatore, Importa. Body: filters (all / favourites / 2FA / folders) and the list on the
-  left, the chosen entry (or the multi-selection) on the right. A strip at the foot counts down
-  the clipboard wipe.
-  The list renders only the rows in view (fixed row height, ROW px), so thousands of entries
-  scroll and filter at frame rate; site icons are <img> on nvault:// (or a monogram).
-  Folders: "Sposta in cartella…" (context menu, Ctrl/Cmd+Shift+M, or drag entries onto a folder
-  of the tree / onto "Tutte" to take them out), rename / delete from a folder's context menu
-  (F2 / Canc on a focused folder).
-  Keys: Ctrl/Cmd+F search · ↑/↓ (Shift extends) Home End in the list · Ctrl/Cmd+A all ·
-  Ctrl/Cmd+click, Shift+click pick more · Esc back to one · Enter edit · Canc delete ·
-  Menu / Shift+F10 context menu · Ctrl/Cmd+C password · Ctrl/Cmd+B username · Ctrl/Cmd+T 2FA code
-  (copies of the selected entry; Ctrl+C copies selected text when there is some).
-  Switches: ?screen=passwords&entry=<id|title>&q=<search>&pm=<N extra entries>&dialog=pm-edit|pm-new|pm-import|pm-import-2|pm-generator|pm-history|pm-delete|pm-move
--->
 <script lang="ts">
   import { ClipboardCheck, Copy, Folder, FolderInput, KeyRound, MousePointerClick, Pencil, Plus, Search, SearchX, Star, Trash, Upload, Wand2, X } from '@lucide/svelte';
   import { onDestroy, onMount, tick } from 'svelte';
@@ -38,13 +22,9 @@
   import PmGenerator from '../components/PmGenerator.svelte';
   import PmImport from '../components/PmImport.svelte';
 
-  /** row pitch of the virtual list (px): .entry height + gap */
   const ROW = 52;
-  /** rows rendered above / below the viewport */
   const OVERSCAN = 10;
-  /** the rendered window moves in steps of this many rows: most scroll frames touch no DOM */
   const STEP = 8;
-  /** dataTransfer type of dragged entries (JSON EntryId[]) */
   const PM_DRAG = 'application/x-nv-pm-entries';
 
   const store = new PmStore(vaults.activeId!);
@@ -57,21 +37,16 @@
   let importStep = $state<1 | 2>(1);
   let deleting = $state(false);
   let historyOpen = $state(false);
-  /** entries in the "Sposta in cartella" dialog */
   let moving = $state<EntryId[] | null>(null);
   let renaming = $state<string | null>(null);
   let renameTo = $state('');
   let renameError = $state<string | null>(null);
   let folderDeleting = $state<string | null>(null);
   let menu = $state<{ x: number; y: number; items: MenuItem[]; label: string; title?: string; back: HTMLElement | null } | null>(null);
-  /** folder (or "" = Tutte) under a drag */
   let dropOn = $state<string | null>(null);
-  /** first row in view and the viewport height (virtual list) */
   let first = $state(0);
   let viewH = $state(600);
-  /** icons that failed to load: the monogram stays */
   let broken = $state.raw<Set<string>>(new Set());
-  /** the last entry opened with the pointer (its card decodes once, PmDetail `opened`) */
   let opened = $state<{ id: EntryId; n: number } | null>(null);
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
@@ -79,13 +54,12 @@
     await store.load();
     void store.startIcons();
     if (api.isTauri) return;
-    // URL switches (mock): land on an entry, a search or a dialog for screenshots
     if (switches.q) {
       store.setQuery(switches.q);
       store.applied = switches.q;
     }
     const want = switches.entry?.toLowerCase();
-    const hit = want ? store.all.find((e) => e.id === switches.entry || e.title.toLowerCase() === want) : isMobile ? undefined : store.all[0]; // a phone lands on the list
+    const hit = want ? store.all.find((e) => e.id === switches.entry || e.title.toLowerCase() === want) : isMobile ? undefined : store.all[0];
     if (hit) {
       await store.select(hit.id);
       await tick();
@@ -113,8 +87,6 @@
     { f: { kind: 'totp' }, label: m.pm_with_totp, icon: ClipboardCheck },
   ];
 
-  // ---------------- virtual list ----------------
-
   const total = $derived(store.visible.length);
   const span = $derived(Math.ceil(viewH / ROW) + 1);
   const from = $derived(Math.max(0, Math.min(first, total - span) - OVERSCAN));
@@ -128,7 +100,6 @@
     if (f !== first) first = f;
   }
 
-  // a new search or filter starts at the top
   $effect(() => {
     void store.applied;
     void store.filter;
@@ -136,7 +107,6 @@
     first = 0;
   });
 
-  /** Scrolls the list so the row of `id` is in view. */
   function reveal(id: EntryId | null) {
     if (!id || !listEl) return;
     const i = store.positions.get(id);
@@ -147,11 +117,8 @@
     onScroll();
   }
 
-  // ---------------- keys ----------------
-
   const anyDialog = () => !!document.querySelector('dialog[open]');
   const inField = (t: EventTarget | null) => t instanceof HTMLElement && !!t.closest('input, textarea, [contenteditable="true"]');
-  /** what a bulk action works on: the picked entries, else the one in the detail */
   const targets = () => (store.picked.length ? store.picked : store.selectedId ? [store.selectedId] : []);
 
   function keys(e: KeyboardEvent) {
@@ -174,7 +141,6 @@
     const sel = store.selected;
     if (!sel) return;
     if (k === 'c') {
-      // the person's own text selection (or a field's) is copied as usual
       if (inField(e.target) || (window.getSelection()?.toString() ?? '') !== '') return;
       if (!sel.has_password) return;
       e.preventDefault();
@@ -243,8 +209,6 @@
     }
   }
 
-  // ---------------- menus ----------------
-
   function openEntryMenu(e: PmEntrySummary, x: number, y: number, back: HTMLElement | null) {
     const many = store.picked.length > 1 && store.sel.selected.has(e.id);
     const items: MenuItem[] = many
@@ -304,14 +268,11 @@
     listEl?.focus();
   }
 
-  /** the folder every moving entry is in now (marked in the picker), else null */
   const movingFrom = $derived.by(() => {
     if (!moving) return null;
     const fs = new Set(moving.map((id) => store.all.find((e) => e.id === id)?.folder ?? ''));
     return fs.size === 1 ? [...fs][0] : null;
   });
-
-  // ---------------- drag & drop ----------------
 
   function dragStart(ev: DragEvent, e: PmEntrySummary) {
     void store.touch(e.id);
@@ -337,7 +298,6 @@
     try {
       ids = JSON.parse(ev.dataTransfer?.getData(PM_DRAG) || '[]');
     } catch {
-      /* not ours */
     }
     if (Array.isArray(ids) && ids.length) void store.move(ids.map(String), folder);
   }
@@ -444,7 +404,6 @@
         data-count={total}
       >
         {#if store.loaded && store.all.length === 0}
-          <!-- an empty register: ruled lines waiting for their first entry -->
           <div class="ledger" data-state="empty" aria-hidden="true">
             {#each { length: 6 } as _, i (i)}<span class="ledger-line" style:--i={i}></span>{/each}
           </div>
@@ -459,7 +418,6 @@
             {#each rows as e, k (e.id)}
               {@const i = from + k}
               {@const src = e.icon ? pmIcons.src(store.vault, e.icon) : null}
-              <!-- keyboard is on the listbox (aria-activedescendant) -->
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <div
                 id="pm-{e.id}"
@@ -490,8 +448,6 @@
                 ondragstart={(ev) => dragStart(ev, e)}
                 ondragend={() => (dropOn = null)}
               >
-                <!-- one frame for every entry: the site's own icon on an enamel plate, or its initial
-                     engraved on a plate of the volume's ink -->
                 {#if e.icon && src && !broken.has(e.icon)}
                   <span class="plate" data-plate="site">
                     <img
@@ -546,7 +502,6 @@
           bind:historyOpen
         />
       {:else if store.loaded && store.all.length === 0}
-        <!-- the first page of the register: a seal, one sentence, the two ways in -->
         <div class="empty" data-state="empty-detail">
           <span class="empty-seal"><PwLedger size={120} /></span>
           <p class="empty-title display">{m.pm_empty()}</p>
@@ -776,7 +731,6 @@
     padding: var(--space-2) var(--space-3) var(--space-4) var(--space-5);
     outline: none;
   }
-  /* virtual list: only the rows in view exist, each placed by translateY(i * ROW) */
   .rows {
     position: relative;
     contain: strict;
@@ -807,7 +761,6 @@
     outline: 2px solid var(--focus);
     outline-offset: -2px;
   }
-  /* the plate every entry's mark sits on: a small rounded square, lifted off the page */
   .plate {
     flex: none;
     display: grid;
@@ -821,7 +774,6 @@
       0 1px 1px rgb(var(--cast) / 0.25),
       0 2px 4px -2px rgb(var(--cast) / 0.4);
   }
-  /* a site's icon: enamel, the light plate icons are drawn for, in either theme */
   .plate[data-plate='site'] {
     background: linear-gradient(180deg, var(--plate-hi), var(--plate-lo));
   }
@@ -860,7 +812,6 @@
     gap: 6px;
     min-width: min(380px, 80vw);
   }
-  /* no icon: the initial, engraved on a plate of the volume's ink, a hairline inside its edge */
   .mono-badge {
     position: relative;
     font-family: var(--font-display);
@@ -918,7 +869,6 @@
     gap: 6px;
     color: var(--accent);
   }
-  /* nothing yet: the list is a ruled register, its lines fading down the page */
   .ledger {
     display: flex;
     flex-direction: column;
@@ -932,7 +882,6 @@
   .ledger-line:first-child {
     border-top: 1px solid var(--paper-rule);
   }
-  /* the register's first page, in the detail */
   .empty {
     display: flex;
     flex-direction: column;
@@ -962,7 +911,6 @@
     gap: var(--space-2);
     margin-top: var(--space-3);
   }
-  /* no match, nothing picked: one quiet line by a pressed glyph */
   .none,
   .pick {
     display: flex;
@@ -1020,7 +968,6 @@
   .copied :global(svg) {
     color: var(--accent);
   }
-  /* the clipboard drains as the wipe approaches (a transform: nothing is laid out again) */
   .drain {
     position: absolute;
     left: 0;

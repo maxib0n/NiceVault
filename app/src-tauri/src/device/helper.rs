@@ -1,11 +1,3 @@
-//! Windows elevated helper: `NiceVault.exe --device-helper <plan.json>`, started by the app
-//! through UAC (`ShellExecuteExW` "runas"). main.rs handles it before Tauri starts (no window).
-//! It re-reads the disk and refuses (exit 20 `device_changed`, 21 `device_refused`) when the
-//! serial, size or bus differ or the disk is a boot / system disk, then runs the PowerShell
-//! Storage script of the plan with an absolute powershell.exe path. An elevated child's output
-//! cannot be read by the app, so progress goes to the JSON-lines file named in the request,
-//! which the app tails.
-
 use super::commands::{EXIT_CHANGED, EXIT_REFUSED};
 use super::{Disk, HostCtx, Plan};
 use serde::{Deserialize, Serialize};
@@ -15,11 +7,9 @@ use std::path::Path;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Request {
     pub plan: Plan,
-    /// JSON-lines progress file the app tails.
     pub progress: String,
 }
 
-/// The helper's own re-check of the disk it is about to erase (`now` = as enumerated now).
 pub fn recheck(plan: &Plan, now: Option<&Disk>, ctx: &HostCtx) -> Result<(), i32> {
     let Some(d) = now else { return Err(EXIT_CHANGED) };
     if !d.same_as(&plan.disk) || d.bus != plan.disk.bus || d.number != plan.disk.number || d.is_system {
@@ -37,7 +27,6 @@ fn line(path: &Path, v: serde_json::Value) {
     }
 }
 
-/// Entry point (main.rs). Returns the process exit code.
 pub fn run(plan_path: &Path) -> i32 {
     let req: Request = match std::fs::read(plan_path).ok().and_then(|b| serde_json::from_slice(&b).ok()) {
         Some(r) => r,
@@ -94,7 +83,6 @@ fn run_os(req: &Request, progress: &Path) -> i32 {
 
 #[cfg(not(windows))]
 fn run_os(_req: &Request, progress: &Path) -> i32 {
-    // Linux and macOS never elevate the whole app (udisks2 / diskutil + osascript).
     line(progress, serde_json::json!({ "exit": 2, "error": "the device helper only runs on Windows" }));
     2
 }

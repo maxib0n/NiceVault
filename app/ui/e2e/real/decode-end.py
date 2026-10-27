@@ -36,8 +36,6 @@ for i, (x, y, w, h) in enumerate(boxes):
     ink = np.abs(final - ground) > 28
     if not ink.any():
         ink = np.ones_like(final, dtype=bool)
-    # resolved: how far a frame has come from the bare ground to the settled piece (1 - its distance
-    # to the settled frame, over the ground's), on the pixels that carry the piece
     span = float(np.mean(np.abs(final - ground)[ink])) or 1.0
     scores = [max(0.0, 1 - float(np.mean(np.abs(c - final)[ink])) / span) for c in crops]
     s = len(scores) - 1

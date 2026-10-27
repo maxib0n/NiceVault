@@ -1,6 +1,3 @@
-//! Appearance in the header, per-volume settings, and Benvenuto's list without any file on
-//! the stick (scan + installed-mode known list + legacy NiceVault.json migration).
-
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use nicevault_app::appearance::Visibility;
@@ -20,7 +17,6 @@ fn app(loc: Locations) -> Arc<AppState> {
     AppState::new(Store::new(loc), Box::new(NoEvents))
 }
 
-/// Portable: `exe` is the stick's folder; `usb` = fake removable drive roots; no known list.
 fn portable(exe: &Path, usb: &[PathBuf]) -> Locations {
     Locations { exe_dir: Some(exe.to_path_buf()), removable: Some(usb.to_vec()), config_dir: None }
 }
@@ -29,7 +25,6 @@ fn patch(json: &str) -> nicevault_app::appearance::SettingsPatch {
     serde_json::from_str(json).unwrap()
 }
 
-/// Bytes of a PNG header with the given size (only IHDR is ever parsed), padded with `fill`.
 fn png(side: u32, len: usize, fill: &[u8]) -> Vec<u8> {
     let mut v = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
     v.extend_from_slice(&side.to_be_bytes());
@@ -44,7 +39,6 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
     hay.windows(needle.len()).any(|w| w == needle)
 }
 
-/// Every file under `dir` (recursive).
 fn files(dir: &Path) -> Vec<PathBuf> {
     let mut out = vec![];
     for e in std::fs::read_dir(dir).unwrap().flatten() {
@@ -58,8 +52,6 @@ fn entry<'a>(list: &'a [nicevault_app::store::RecentEntry], name: &str) -> &'a n
     list.iter().find(|r| r.name == name).unwrap_or_else(|| panic!("{name} not in {list:?}"))
 }
 
-/// What an attacker with a hex editor does: same-length replacement in both header copies,
-/// unkeyed per-copy checksum fixed up.
 fn forge(path: &Path, from: &[u8], to: &[u8]) {
     use std::io::{Seek, SeekFrom, Write};
     let mut raw = std::fs::read(path).unwrap()[..2 * 65536].to_vec();
@@ -82,15 +74,12 @@ fn appearance_visibility_and_settings_per_volume() {
     let st = app(portable(stick, &[]));
     let casa = stick.join("Casa.nvault");
 
-    // nothing open: session defaults; they seed new volumes
     let d = st.settings_get(None).unwrap();
     assert_eq!((d.accent.as_str(), d.theme.as_str(), d.auto_lock_minutes), ("velluto", "dark", 15));
-    // the retired "bordeaux" id reads as its replacement, "velluto"
     assert_eq!(st.settings_set(patch(r#"{"accent": "bordeaux"}"#), None).unwrap().accent, "velluto");
     assert_eq!(st.settings_set(patch(r#"{"accent": "seppia"}"#), None).unwrap().accent, "seppia");
     assert_eq!(st.settings_get(Some("nope")).unwrap_err().code, "locked");
 
-    // new volumes start from the defaults when they don't wear the app's look ("Come l'app" off)
     st.app_settings_set(serde_json::from_str::<nicevault_app::global::AppSettingsPatch>(r#"{"new_like_app": false}"#).unwrap()).unwrap();
     let info = st.vault_create(casa.to_str().unwrap(), pw("p"), Some("fast")).unwrap();
     assert_eq!((info.settings.accent.as_str(), info.visibility, info.show_when_locked), ("seppia", Visibility::Visible, true));
@@ -103,7 +92,6 @@ fn appearance_visibility_and_settings_per_volume() {
     let e = entry(&r, "Casa");
     assert_eq!((e.accent.as_deref(), e.emblem.clone(), e.show_when_locked), (Some("seppia"), Some(Emblem::Initial), true));
 
-    // image emblem: the full 256 px one stays inside, the 128 px copy goes to the header
     let full = png(256, 30_000, b"FULLIMAGE_w8");
     let small = png(128, 9_000, b"SMALLCOPY_k3");
     let full_b64 = B64.encode(&full);
@@ -116,7 +104,6 @@ fn appearance_visibility_and_settings_per_volume() {
     let bad = st.vault_emblem_set(&info.id, Emblem::Image { data_base64: full_b64.clone() }, true, Some(full_b64.clone()), None);
     assert_eq!(bad.unwrap_err().code, "invalid_emblem", "a 256 px header copy is refused");
 
-    // settings are per volume; without `vault` they follow the most recently opened one
     let due = st.vault_create(stick.join("Due.nvault").to_str().unwrap(), pw("p"), Some("fast")).unwrap();
     st.settings_set(patch(r#"{"theme": "system", "auto_lock_minutes": 5}"#), None).unwrap();
     assert_eq!(st.settings_get(Some(&due.id)).unwrap().theme, "system");
@@ -126,7 +113,6 @@ fn appearance_visibility_and_settings_per_volume() {
     assert_eq!(nv_core::peek_appearance(&casa).unwrap().unwrap().accent.as_deref(), Some("ottanio"), "accent refreshed in the header");
     assert_eq!(st.vault_appearance_get(&info.id).unwrap().accent, "ottanio");
 
-    // encrypted: the header section is cleared; the look survives inside the volume only
     let a = st.vault_appearance_set(&info.id, None, None, Some(Visibility::Encrypted), None, None).unwrap();
     assert_eq!((a.visibility, a.accent.as_str()), (Visibility::Encrypted, "ottanio"));
     assert_eq!(nv_core::peek_appearance(&casa).unwrap(), None);
@@ -145,12 +131,10 @@ fn appearance_visibility_and_settings_per_volume() {
     assert_eq!(info.emblem, Emblem::Image { data_base64: full_b64.clone() });
     assert_eq!(nv_core::peek_appearance(&casa).unwrap(), None, "unlock does not bring it back");
 
-    // vault_emblem_set's show_when_locked is the visibility; the small copy was kept
     st.vault_emblem_set(&info.id, Emblem::Image { data_base64: full_b64 }, true, None, None).unwrap();
     let h = nv_core::peek_appearance(&casa).unwrap().unwrap();
     assert_eq!(h, Appearance { accent: Some("ottanio".into()), emblem: Some(LockedEmblem::Image(small)) });
 
-    // edited while locked: listed as forged until the unlock rewrites it from the volume
     st.lock_all("user");
     forge(&casa, b"ottanio", b"prussia");
     assert_eq!(entry(&st.recent_list(), "Casa").accent.as_deref(), Some("prussia"));
@@ -185,14 +169,12 @@ fn scan_finds_stick_and_removable_volumes_writes_nothing() {
     assert_eq!(got, [("Due", "here"), ("Fuori", "session"), ("Profondo", "session"), ("Tre", "removable"), ("Uno", "here")]);
     assert!(r.iter().all(|e| e.exists && e.unlock_ms.is_some() && e.show_when_locked && e.size_bytes > 0));
 
-    // a new session: only what the scan finds (deeper folders and other places are not looked at)
     let st = app(loc.clone());
     let mut names: Vec<String> = st.recent_list().into_iter().map(|e| e.name).collect();
     names.sort();
     assert_eq!(names, ["Due", "Tre", "Uno"]);
     let e = entry(&st.recent_list(), "Uno").clone();
     assert!(e.last_opened > 0, "mtime as last-opened proxy");
-    // forget hides a scanned volume for this session only
     assert!(!st.recent_forget(&e.path).unwrap().iter().any(|x| x.name == "Uno"));
     assert!(app(loc).recent_list().iter().any(|x| x.name == "Uno"));
 
@@ -247,7 +229,6 @@ fn legacy_json_next_to_the_exe_is_imported_once_and_deleted() {
     });
     let write = || std::fs::write(stick.join("NiceVault.json"), serde_json::to_vec(&legacy).unwrap()).unwrap();
 
-    // installed: paths go to the known list in the config dir, settings become the defaults
     write();
     let loc = Locations { exe_dir: Some(stick.clone()), removable: Some(vec![]), config_dir: Some(cfg.clone()) };
     let mut s = Store::new(loc.clone());
@@ -261,10 +242,9 @@ fn legacy_json_next_to_the_exe_is_imported_once_and_deleted() {
     let known = std::fs::read_to_string(cfg.join("known.json")).unwrap();
     assert!(known.contains("Lontano") && !known.contains("house"));
     let mut again = Store::new(loc);
-    again.migrate_legacy(); // nothing left to import; the list stays
+    again.migrate_legacy();
     assert_eq!(again.recent().len(), 2);
 
-    // portable: nothing persisted anywhere, the paths are listed for this session
     std::fs::remove_dir_all(&cfg).unwrap();
     write();
     let mut s = Store::new(portable(&stick, &[]));
@@ -275,7 +255,6 @@ fn legacy_json_next_to_the_exe_is_imported_once_and_deleted() {
     assert!(Store::new(portable(&stick, &[])).recent().is_empty());
 }
 
-/// The ink chosen in Dettagli is what Benvenuto shows: one source of truth (settings -> header).
 #[test]
 fn chosen_ink_reaches_benvenuto_after_lock() {
     let t = tempfile::tempdir().unwrap();
@@ -285,11 +264,9 @@ fn chosen_ink_reaches_benvenuto_after_lock() {
     let info = st.vault_create(path.to_str().unwrap(), pw("p"), Some("fast")).unwrap();
     assert_eq!(entry(&st.recent_list(), "Verde").accent.as_deref(), Some("velluto"));
     st.settings_set(patch(r#"{"accent": "bottiglia"}"#), Some(&info.id)).unwrap();
-    // while it is still open, and after it is locked
     assert_eq!(entry(&st.recent_list(), "Verde").accent.as_deref(), Some("bottiglia"));
     st.vault_lock(&info.id, "user").unwrap();
     assert_eq!(entry(&st.recent_list(), "Verde").accent.as_deref(), Some("bottiglia"));
-    // and in a new app session reading the file cold
     let st2 = app(portable(stick, &[]));
     assert_eq!(entry(&st2.recent_list(), "Verde").accent.as_deref(), Some("bottiglia"));
 }

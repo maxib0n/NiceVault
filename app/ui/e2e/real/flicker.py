@@ -17,7 +17,6 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 d, x, y, w, h = sys.argv[1], *map(int, sys.argv[2:6])
-# frames captured at a fraction of the screen (capture-kwin.py)
 if os.path.exists(os.path.join(d, 'scale.txt')):
     k = int(open(os.path.join(d, 'scale.txt')).read())
     x, y, w, h = x // k, y // k, max(2, w // k), max(2, h // k)

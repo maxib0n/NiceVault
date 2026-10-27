@@ -1,11 +1,3 @@
-<!--
-  "Spazio stretto" (Dettagli > Volume, under the stick's ledger): devices made before 1f86d4a have
-  a 128 MiB NiceVault partition, too small to keep the old copy of every program beside the new
-  one. Before the update it says what will happen (one program at a time, the old copy removed
-  first where two do not fit) with the numbers; during / after it, the same with the real sizes
-  (stick.rs Space). Shown only when the room is tight or a program does not fit at all.
-  Hooks: [data-testid=stick-space][data-tight][data-fits].
--->
 <script lang="ts">
   import { formatBytes } from '../../lib/format';
   import { OS_NAMES, type Stick, type StickSpace } from '../../lib/stick';

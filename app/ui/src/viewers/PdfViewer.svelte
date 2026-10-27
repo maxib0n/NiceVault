@@ -1,9 +1,3 @@
-<!--
-  PDF through the bundled pdf.js (Apache-2.0, offline; WebKitGTK has no PDF viewer of its
-  own). The bytes come in on demand through a range transport over the preview URL, so a
-  500-page file opens as fast as a one-page one; pages are drawn when they scroll near and
-  dropped when far, canvases capped in pixels. Page field + ‹ ›, zoom − / + / fit width.
--->
 <script lang="ts">
   import { tick } from 'svelte';
   import { m } from '../paraglide/messages.js';
@@ -16,7 +10,6 @@
   let { src, onfail, onzoom }: { src: ByteSource; onfail: (r: InfoReason) => void; onzoom?: (zoomed: boolean) => void } = $props();
 
   const MAX_PAGES = 5000;
-  /** canvas budget per page (pixels): beyond, the page is drawn softer and scaled by CSS */
   const MAX_CANVAS_PX = 12_000_000;
   const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3];
 
@@ -24,7 +17,6 @@
   let status = $state<'loading' | 'ready'>('loading');
   let doc = $state.raw<PDFDocumentProxy | null>(null);
   let count = $state(0);
-  /** first page's size in points (all placeholders start with it) */
   let base = $state({ w: 595, h: 842 });
   let sizes = $state<{ w: number; h: number }[]>([]);
   let zoom = $state(1);
@@ -32,7 +24,6 @@
   let pageField = $state('1');
   let width = $state(800);
 
-  // fit width: the sheet as wide as the stage allows (max 900 px), times the zoom
   const fitScale = $derived(Math.min(width - 48, 900) / base.w);
   const scale = $derived(fitScale * zoom);
 
@@ -61,7 +52,6 @@
         disableAutoFetch: true,
         disableStream: true,
         enableXfa: false,
-        // no fetches of fonts/cmaps from anywhere: what the PDF embeds, else the system's
         useSystemFonts: true,
       });
       task = t;
@@ -91,7 +81,6 @@
     return () => ro.disconnect();
   });
 
-  // --- drawing: pages near the viewport, at the current scale --------------------------------
   const rendered = new Map<number, { scale: number; task: { cancel(): void } | null }>();
 
   async function draw(i: number, canvas: HTMLCanvasElement) {
@@ -124,10 +113,9 @@
     try {
       await job.promise;
     } catch {
-      return; // cancelled
+      return;
     }
     if (rendered.get(i)?.scale !== want) return;
-    // swap in the finished picture at once (never a half-drawn page)
     canvas.width = off.width;
     canvas.height = off.height;
     canvas.getContext('2d')?.drawImage(off, 0, 0);
@@ -142,7 +130,6 @@
     delete canvas.dataset.drawn;
   }
 
-  /** each page placeholder: drawn while within two screens of the viewport */
   function page(canvas: HTMLCanvasElement, p: { i: number; scale: number }) {
     let i = p.i;
     let near = false;
@@ -167,7 +154,6 @@
     };
   }
 
-  // the page in the middle of the view is "current"
   function onscroll() {
     const el = scroller;
     if (!el) return;
@@ -194,7 +180,6 @@
 
   function setZoom(z: number) {
     const el = scroller;
-    // keep the same spot of the document in view
     const ratio = el ? (el.scrollTop + el.clientHeight / 2) / Math.max(1, el.scrollHeight) : 0;
     zoom = Math.max(ZOOMS[0], Math.min(ZOOMS[ZOOMS.length - 1], z));
     requestAnimationFrame(() => {
@@ -203,10 +188,6 @@
   }
   $effect(() => onzoom?.(zoom > 1.001));
 
-  // ---- fingers: pinch about the midpoint, double tap to zoom in where it lands (and back to fit
-  // width). One finger is the scroller's own (native scroll, its momentum); two are ours: the
-  // pages are scaled by a transform while the fingers move (nothing laid out per frame), then
-  // drawn at the new size with the same point of the document under the fingers.
   let pagesEl: HTMLDivElement | undefined = $state();
   const TOUCH_ZOOM = { min: 1, max: ZOOMS[ZOOMS.length - 1] };
   let pinch: { d0: number; z0: number; ox: number; oy: number; mx0: number; my0: number; k: number; mx: number; my: number } | null = null;
@@ -216,7 +197,6 @@
     const [a, b] = [e.touches[0], e.touches[1]];
     return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
   };
-  /** zoom to `z` keeping the document point under (cx, cy) (client px) under it */
   async function zoomAt(z: number, cx: number, cy: number) {
     const el = scroller;
     if (!el) return setZoom(z);
@@ -239,7 +219,6 @@
     e.preventDefault();
     const p = two(e);
     const pr = pagesEl.getBoundingClientRect();
-    // the transform's origin: the midpoint, in the pages' own box
     pinch = { d0: Math.max(1, p.d), z0: zoom, ox: p.x - pr.left, oy: p.y - pr.top, mx0: p.x, my0: p.y, k: 1, mx: p.x, my: p.y };
     pagesEl.style.transformOrigin = `${pinch.ox}px ${pinch.oy}px`;
     pagesEl.style.willChange = 'transform';
@@ -264,7 +243,6 @@
         pagesEl.style.transform = '';
         pagesEl.style.willChange = '';
       }
-      // the document point that was under the midpoint at the start, under where it is now
       const el = scroller;
       if (!el) return;
       const r = el.getBoundingClientRect();
@@ -278,7 +256,6 @@
       el.scrollTop = oy * k - (pz.my - r.top);
       return;
     }
-    // a double tap: in where it lands, again: back to fit width
     const t0 = tapStart;
     tapStart = null;
     const t = e.changedTouches[0];
@@ -293,7 +270,6 @@
   $effect(() => {
     const el = scroller;
     if (!el) return;
-    // not passive: two fingers are ours, not the page's
     el.addEventListener('touchstart', touchstart, { passive: false });
     el.addEventListener('touchmove', touchmove, { passive: false });
     el.addEventListener('touchend', touchend, { passive: false });
@@ -330,7 +306,6 @@
 <div class="vw pdf-vw" data-testid="viewer-pdf" data-status={status} data-pages={count} data-page={current} data-zoom={Math.round(zoom * 100)} aria-busy={status === 'loading'}>
   <div class="vw-scroll" bind:this={scroller} {onscroll} data-testid="viewer-scroll">
     {#if status === 'loading'}
-      <!-- the page it will be: paper proportions, the glyphs where the text will land -->
       <div class="vw-sheet vw-loading nv-enter page-skeleton" data-state="loading">
         <span class="visually-hidden">{m.pdf_opening()}</span>
         <span class="vw-skeleton" aria-hidden="true" use:skeleton={{ lines: 12, seed: 7, widths: ['58%', '100%', '94%', '100%', '72%', '0%', '100%', '88%', '100%', '96%', '64%', '30%'] }}></span>
@@ -382,13 +357,10 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* zoomed wider than the stage: the pages grow the scroll area both ways (a centred box
-       wider than its parent would hang off the left edge, out of reach) */
     width: max-content;
     min-width: 100%;
     gap: var(--space-5);
   }
-  /* pages are paper on the stage, in both themes */
   .pdf-page {
     flex: none;
     overflow: hidden;

@@ -1,15 +1,9 @@
-// The glyph decode from the NiceVault app, on the page. Same engine (vendor/ascii-reveal,
-// MIT, the one the app bundles) and the same preset as the app's lib/reveal.ts: text and
-// pictures resolve out of a grid of machine-readable glyphs, once, when they come into view.
-// The real content stays in the DOM the whole time. With prefers-reduced-motion nothing
-// plays and nothing is held back.
 (() => {
   'use strict';
   const NV = window.NVReveal;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   if (!NV || reduce.matches || !('IntersectionObserver' in window)) { document.documentElement.classList.remove('dec-on'); return; }
 
-  // the machine-readable alphabet of the app's document MRZ, condensing through a light ramp
   const MRZ = {
     ramp: ' .:-=+<#',
     scramble: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<',
@@ -23,7 +17,6 @@
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const fontsReady = () => (document.fonts && document.fonts.ready ? Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 600))]) : Promise.resolve());
 
-  // buttons and chips fade in on the wave instead of being drawn as glyphs
   $$('.btn, .chip').forEach((el) => el.setAttribute('data-ascii', 'fade'));
 
   const textTargets = [
@@ -44,7 +37,6 @@
 
   function decodeText(el, speed) {
     const c = NV.create(el, { preset: MRZ, speed, origin: 'top-left', lazy: false, media: '[data-ascii="media"]' });
-    // held back at once (before any paint), then decoded
     void c.hide({ instant: true });
     el.classList.add('dec-go');
     void c.reveal().then(() => c.destroy());
@@ -83,7 +75,6 @@
       io.observe(el);
     }));
 
-    // pictures: the first one in each place a visitor can see; tabs decode the first time they are opened
     $$('.ph').forEach((el) => { el.__dec = { pic: true, speed: 1.15 }; el.setAttribute('data-decp', ''); el.querySelector('img').setAttribute('data-decimg', ''); io.observe(el); });
 
     const frame = document.querySelector('.frame');
@@ -103,12 +94,10 @@
       fio.observe(frame);
       let opened = false;
       new IntersectionObserver((es) => { if (es[0].isIntersecting) opened = true; }, { threshold: 0.3 }).observe(frame);
-      document.addEventListener('nv:tab', () => { if (opened) decodeActive(); else if (firstImg) { /* first view still pending */ } });
+      document.addEventListener('nv:tab', () => { if (opened) decodeActive(); else if (firstImg) { } });
     }
 
-    // failsafe: anything still held back after a while is shown as it is
     setTimeout(() => {
-      // only what is on screen right now; the rest waits for its turn
       $$('[data-dec]:not(.dec-go), [data-decimg]:not(.dec-go)').forEach((el) => {
         const r = el.getBoundingClientRect();
         if (r.top < innerHeight && r.bottom > 0) el.classList.add('dec-go');

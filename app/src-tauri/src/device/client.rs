@@ -1,14 +1,3 @@
-//! What goes on the NiceVault partition, written by the unprivileged app.
-//!
-//! The three builds: always the latest signed ones from the update
-//! channel (`latest.json`, each file's minisign signature verified and bound to the manifest's
-//! version and platform, never older than this app); when that is not possible (offline, or a
-//! file fails), local copies: the running app for its own OS, or siblings with the dist names
-//! whose `.sig` verifies. Whatever cannot be had is listed as missing (README, marker, UI).
-//!
-//! Writes: `<name>.part` -> fsync -> rename -> read back and compare SHA-256. The marker is
-//! written last, only after every file checks out (file and folder fsynced).
-
 use super::{DataFs, Marker, Os, Plan};
 use crate::error::{ApiError, ApiResult};
 use crate::updater;
@@ -20,13 +9,10 @@ use std::path::{Path, PathBuf};
 
 pub const LINUX_NAME: &str = "NiceVault-linux-x86_64";
 pub const WINDOWS_NAME: &str = "NiceVault-windows-x86_64.exe";
-/// The Linux build the stick carries: the AppImage (WebKitGTK inside, so it runs on any distro),
-/// kept under the name the stick has always used. Its dist name, for the offline fallback:
 pub const LINUX_APPIMAGE: &str = "NiceVault-linux-x86_64.AppImage";
 pub const MAC_ZIP: &str = "NiceVault-macos-universal.zip";
 pub const MAC_APP: &str = "NiceVault.app";
 
-/// (OS, latest.json platform key, file name on the device).
 pub const BUILDS: [(Os, &str, &str); 3] =
     [(Os::Linux, "linux-x86_64", LINUX_NAME), (Os::Windows, "windows-x86_64", WINDOWS_NAME), (Os::Macos, "darwin-aarch64", MAC_ZIP)];
 
@@ -42,13 +28,11 @@ pub struct Build {
     pub os: Os,
     pub name: String,
     pub bytes: Vec<u8>,
-    /// The `.sig` text (base64 minisign), when there is a verified one.
     pub sig: Option<String>,
     pub version: Option<String>,
     pub origin: Origin,
 }
 
-/// macOS without a zip: the running `.app` folder, copied as is.
 pub struct Bundle {
     pub dir: PathBuf,
 }
@@ -57,7 +41,6 @@ pub struct Bundle {
 pub struct Builds {
     pub files: Vec<Build>,
     pub mac_bundle: Option<Bundle>,
-    /// Why downloading did not give everything (shown in the log, not an error).
     pub notes: Vec<String>,
 }
 
@@ -74,7 +57,6 @@ impl Builds {
     }
 }
 
-/// Bytes under `p` (a file's length, a folder's files summed; nothing: 0).
 pub fn dir_size(p: &Path) -> u64 {
     match std::fs::symlink_metadata(p) {
         Ok(m) if m.is_dir() => std::fs::read_dir(p).map_or(0, |rd| rd.flatten().map(|e| dir_size(&e.path())).sum()),
@@ -83,13 +65,10 @@ pub fn dir_size(p: &Path) -> u64 {
     }
 }
 
-/// The manifest key to take for `os`: Linux prefers the AppImage, falling back to the bare
-/// binary (a mirror without one).
 fn channel_key(m: &updater::Manifest, os: Os, base: &'static str) -> &'static str {
     if os == Os::Linux && m.platforms.contains_key("linux-x86_64-appimage") { "linux-x86_64-appimage" } else { base }
 }
 
-/// Where the local builds are, for [`local_builds`] and the options screen.
 #[derive(Clone, Debug)]
 pub struct Local {
     pub exe: PathBuf,
@@ -109,14 +88,12 @@ impl Local {
     }
 }
 
-/// A verified `<file>.sig` next to `file`: (sig text, signed version).
 fn verified_sig(pubkey: &str, file: &Path, bytes: &[u8]) -> Option<(String, Option<String>)> {
     let sig = std::fs::read_to_string(updater::sibling(file, ".sig")).ok()?;
     let trusted = updater::verify_signature(pubkey, bytes, sig.trim()).ok()?;
     Some((sig.trim().to_owned(), updater::signed_version(&trusted)))
 }
 
-/// The offline fallback: the running app for its OS, siblings (dist names) with a valid `.sig`.
 pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
     let mut out = Builds::default();
     let dirs: Vec<PathBuf> = {
@@ -124,7 +101,6 @@ pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
         if let Some(d) = l.exe.parent() {
             v.push(d.to_path_buf());
         }
-        // macOS: the folder holding NiceVault.app (the exe is in X.app/Contents/MacOS)
         if let Ok(updater::Target::Bundle(b)) = updater::target_for(&l.exe, true)
             && let Some(p) = b.parent()
         {
@@ -133,7 +109,6 @@ pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
         v
     };
     for &(os, _, name) in BUILDS.iter().filter(|(o, _, _)| want.contains(o)) {
-        // 1. the running app
         if os == l.os {
             match os {
                 Os::Linux | Os::Windows => {
@@ -146,7 +121,6 @@ pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
                 }
                 Os::Macos => {
                     if let Ok(updater::Target::Bundle(b)) = updater::target_for(&l.exe, true) {
-                        // a sibling zip is better (verifiable), else the bundle itself
                         let zip = dirs.iter().map(|d| d.join(MAC_ZIP)).find(|z| z.is_file());
                         if zip.is_none() {
                             out.mac_bundle = Some(Bundle { dir: b });
@@ -156,7 +130,6 @@ pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
                 }
             }
         }
-        // 2. a sibling whose signature verifies (never an unsigned one)
         for d in &dirs {
             let candidates = if os == Os::Linux { vec![d.join(LINUX_APPIMAGE), d.join(name)] } else { vec![d.join(name)] };
             let Some((f, bytes)) = candidates.into_iter().find_map(|f| std::fs::read(&f).ok().map(|b| (f, b))) else { continue };
@@ -169,8 +142,6 @@ pub fn local_builds(l: &Local, want: &[Os]) -> Builds {
     out
 }
 
-/// The OSes `local_builds` would give, without reading the running app (the options page only
-/// shows whether a local copy exists; reading a large build there made "Avanti" slow).
 pub fn local_available(l: &Local, want: &[Os]) -> Vec<Os> {
     want.iter()
         .copied()
@@ -178,8 +149,6 @@ pub fn local_available(l: &Local, want: &[Os]) -> Vec<Os> {
         .collect()
 }
 
-/// The latest signed builds for `want` from the update channel (release packs opened, then the
-/// signature of the plaintext verified: updater::fetch_verified). Failures go to `notes`.
 pub fn download(l: &Local, manifest_url: &str, want: &[Os], progress: &mut dyn FnMut(u64, u64)) -> Builds {
     let mut out = Builds::default();
     match updater::fetch_manifest(manifest_url) {
@@ -215,7 +184,6 @@ pub fn download(l: &Local, manifest_url: &str, want: &[Os], progress: &mut dyn F
     out
 }
 
-/// The latest signed builds from the update channel; what fails falls back to local copies.
 pub fn gather(l: &Local, manifest_url: &str, download_them: bool, progress: &mut dyn FnMut(u64, u64)) -> Builds {
     let mut out = if download_them { download(l, manifest_url, &Os::ALL, progress) } else { Builds::default() };
     let want: Vec<Os> = Os::ALL.into_iter().filter(|o| !out.has(*o)).collect();
@@ -224,9 +192,6 @@ pub fn gather(l: &Local, manifest_url: &str, download_them: bool, progress: &mut
     out.mac_bundle = local.mac_bundle;
     out
 }
-
-// ---------------------------------------------------------------------------------------------
-// writing
 
 fn sha(b: &[u8]) -> [u8; 32] {
     Sha256::digest(b).into()
@@ -243,7 +208,6 @@ fn copy_err(e: impl std::fmt::Display) -> ApiError {
     ApiError::new("copy_failed", format!("Copy to the drive failed: {e}"))
 }
 
-/// `<dir>/<name>.part` -> fsync -> rename over `<name>` -> read back, same SHA-256.
 pub fn write_verified(dir: &Path, name: &str, bytes: &[u8]) -> ApiResult<()> {
     let dest = dir.join(name);
     let part = dir.join(format!("{name}.part"));
@@ -281,7 +245,6 @@ pub(crate) fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Every file under `a` exists under `b` with the same SHA-256.
 pub(crate) fn same_tree(a: &Path, b: &Path) -> bool {
     match std::fs::symlink_metadata(a) {
         Ok(m) if m.is_dir() => std::fs::read_dir(a).is_ok_and(|rd| rd.flatten().all(|e| same_tree(&e.path(), &b.join(e.file_name())))),
@@ -290,7 +253,6 @@ pub(crate) fn same_tree(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Every file of the zip's bundle is in `app` with its bytes.
 pub(crate) fn bundle_matches_zip(zip_bytes: &[u8], app: &Path) -> bool {
     use std::io::Read;
     let Ok(mut z) = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)) else { return false };
@@ -317,13 +279,8 @@ pub fn remove_any(p: &Path) {
     }
 }
 
-/// Room kept free on the NiceVault partition beyond a program's own size (READMEs, marker, the
-/// file system's own bookkeeping).
 pub const SLACK: u64 = 1 << 20;
 
-/// The NiceVault partition being written: how much room is left (the device backend says: the
-/// OS's free space, the fake's partition size less its contents) and the program this app runs
-/// from, which is never removed to make room.
 pub struct Room<'a> {
     pub free: &'a dyn Fn() -> Option<u64>,
     pub running: &'a Path,
@@ -333,20 +290,15 @@ impl Room<'_> {
     pub fn free(&self) -> Option<u64> {
         (self.free)()
     }
-    /// `n` bytes (and [`SLACK`]) fit now (unknown room: assumed so; the write itself fails then).
     pub fn fits(&self, n: u64) -> bool {
         self.free().is_none_or(|f| f >= n + SLACK)
     }
-    /// `p` is (or holds) the program this app runs from.
     pub fn is_running(&self, p: &Path) -> bool {
         let canon = |x: &Path| std::fs::canonicalize(x).unwrap_or_else(|_| x.to_path_buf());
         !self.running.as_os_str().is_empty() && canon(self.running).starts_with(canon(p))
     }
 }
 
-/// The macOS program as it is stored: only `NiceVault.app` (the signed zip is checked against
-/// in memory and not kept: it would double macOS' footprint on a 128 MiB partition). The marker
-/// keeps the zip's SHA-256 and a digest of the bundle verified against it ([`MacRecord`]).
 pub fn mac_record(zip_bytes: Option<&[u8]>, app: &Path) -> Option<super::MacRecord> {
     Some(super::MacRecord { zip_sha256: zip_bytes.map(|z| hex(&sha(z))), tree_sha256: tree_digest(app)? })
 }
@@ -355,7 +307,6 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// SHA-256 over every file of a folder (sorted relative path, NUL, its SHA-256, newline).
 pub fn tree_digest(dir: &Path) -> Option<String> {
     fn walk(base: &Path, p: &Path, out: &mut Vec<(String, [u8; 32])>) -> Option<()> {
         for e in std::fs::read_dir(p).ok()?.flatten() {
@@ -386,18 +337,15 @@ pub fn tree_digest(dir: &Path) -> Option<String> {
     Some(hex(&h.finalize()))
 }
 
-/// The bytes `NiceVault.app` takes once extracted from `zip_bytes` (0: unreadable zip).
 pub fn zip_unpacked_size(zip_bytes: &[u8]) -> u64 {
     let Ok(mut z) = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)) else { return 0 };
     (0..z.len()).filter_map(|i| z.by_index(i).ok().filter(|e| e.is_file()).map(|e| e.size())).sum()
 }
 
-/// The bytes the new program of `os` takes on the partition (macOS: the extracted bundle).
 pub fn new_size(b: &Builds, os: Os) -> u64 {
     new_size_of(os, b.files.iter().find(|f| f.os == os), (os == Os::Macos).then_some(b.mac_bundle.as_ref().map(|m| m.dir.as_path())).flatten())
 }
 
-/// [`new_size`] of one build (macOS: the zip, or this app's bundle).
 pub fn new_size_of(os: Os, file: Option<&Build>, bundle: Option<&Path>) -> u64 {
     match file {
         Some(f) if os == Os::Macos => zip_unpacked_size(&f.bytes),
@@ -406,12 +354,8 @@ pub fn new_size_of(os: Os, file: Option<&Build>, bundle: Option<&Path>) -> u64 {
     }
 }
 
-/// What macOS used to keep beside the app (the zip and its `.sig`): removed whenever the app is
-/// written. Older devices have them; [`super::stick::tidy`] removes them when the app checks out.
 pub const MAC_LEGACY: [&str; 2] = [MAC_ZIP, "NiceVault-macos-universal.zip.sig"];
 
-/// Puts `NiceVault.app` on the drive, extracted from the signed zip (in memory) or copied from
-/// this app, and checks it against its source. Returns its record for the marker.
 fn write_mac(dir: &Path, b: &Builds, room: &Room) -> ApiResult<Option<super::MacRecord>> {
     let app = dir.join(MAC_APP);
     let part = dir.join(format!("{MAC_APP}.part"));
@@ -449,16 +393,12 @@ fn write_mac(dir: &Path, b: &Builds, room: &Room) -> ApiResult<Option<super::Mac
     Ok(mac_record(zip.map(|z| z.bytes.as_slice()), &app))
 }
 
-/// Copies and verifies everything (not the marker). `progress(done, total)` in bytes.
 pub fn write_client(dir: &Path, b: &Builds, data_fs: DataFs, room: &Room, progress: &mut dyn FnMut(u64, u64)) -> ApiResult<Option<super::MacRecord>> {
     let rec = write_builds(dir, b, room, progress)?;
     write_readmes(dir, data_fs, &b.missing())?;
     Ok(rec)
 }
 
-/// The programs of `b` (each verified after writing), not the READMEs nor the marker. A file
-/// that does not fit beside its previous copy (a "Completa" on a 128 MiB partition) replaces it:
-/// the previous copy is removed first (never the program this app runs from).
 pub fn write_builds(dir: &Path, b: &Builds, room: &Room, progress: &mut dyn FnMut(u64, u64)) -> ApiResult<Option<super::MacRecord>> {
     let total = b.total_bytes().max(1);
     let mut done = 0;
@@ -482,7 +422,6 @@ pub fn write_builds(dir: &Path, b: &Builds, room: &Room, progress: &mut dyn FnMu
         #[cfg(unix)]
         if f.os == Os::Linux {
             use std::os::unix::fs::PermissionsExt;
-            // exFAT mounts give every file the execute bit anyway; on others this sets it
             let _ = std::fs::set_permissions(dir.join(&f.name), std::fs::Permissions::from_mode(0o755));
         }
         done += f.bytes.len() as u64;
@@ -498,7 +437,6 @@ pub fn write_readmes(dir: &Path, data_fs: DataFs, missing: &[Os]) -> ApiResult<(
     write_verified(dir, "README.txt", readme(false, data_fs, missing).as_bytes())
 }
 
-/// The OSes the marker has no program for.
 pub fn marker_missing(m: &Marker) -> Vec<Os> {
     Os::ALL.into_iter().filter(|o| m.clients.get(os_key(*o)).cloned().flatten().is_none()).collect()
 }
@@ -519,7 +457,6 @@ fn os_name(o: Os) -> &'static str {
     }
 }
 
-/// LEGGIMI.txt / README.txt (embedded templates).
 pub fn readme(it: bool, fs: DataFs, missing: &[Os]) -> String {
     let t = if it { include_str!("LEGGIMI.txt") } else { include_str!("README.txt") };
     let fs_name = match fs {
@@ -572,7 +509,6 @@ pub fn marker(plan: &Plan, b: &Builds) -> Marker {
     }
 }
 
-/// Written last: the file, then its folder, synced.
 pub fn write_marker(dir: &Path, m: &Marker) -> ApiResult<()> {
     write_verified(dir, super::MARKER, &serde_json::to_vec_pretty(m).unwrap())
 }

@@ -30,7 +30,6 @@ describe('mobile', () => {
     await done;
     const last = events.at(-1)!;
     expect(last).toMatchObject({ job: r!.job, total: 3, done: 3, imported: 3, finished: true, failures: [] });
-    // N di M only grows
     expect(events.map((e) => e.done)).toEqual([...events.map((e) => e.done)].sort((a, b) => a - b));
     const names = (await api.fsList(v.id, ROOT)).map((n) => n.name);
     for (const n of ['IMG_0412.HEIC', 'IMG_0413.MOV', 'IMG_0415.JPG']) expect(names).toContain(n);
@@ -55,14 +54,11 @@ describe('mobile', () => {
     const off = installBackgroundLock(doc, () => t, lock);
     const flip = (s: DocumentVisibilityState) => { state = s; target.dispatchEvent(new Event('visibilitychange')); };
 
-    // short trip: nothing
     flip('hidden'); t += 5_000; vi.advanceTimersByTime(5_000); flip('visible');
     expect(lock).not.toHaveBeenCalled();
-    // timer fires while hidden
     flip('hidden'); vi.advanceTimersByTime(BACKGROUND_LOCK_MS);
     expect(lock).toHaveBeenCalledTimes(1);
     flip('visible');
-    // timers frozen: the clock says it was long, locked on return
     flip('hidden'); t += BACKGROUND_LOCK_MS + 1; flip('visible');
     expect(lock).toHaveBeenCalledTimes(2);
     off();
@@ -100,7 +96,6 @@ describe('mobile', () => {
 });
 
 describe('goBack (Android Back)', () => {
-  // no DOM in this suite: a document with one open dialog (an EventTarget with close())
   function docWith(prevent: boolean) {
     const dlg = Object.assign(new EventTarget(), { closed: false, close() { this.closed = true; } });
     if (prevent) dlg.addEventListener('cancel', (e) => e.preventDefault());

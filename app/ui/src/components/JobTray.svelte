@@ -1,4 +1,3 @@
-<!-- Import/export/delete jobs with real progress from job-progress / job-done events. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Check, ChevronDown, ChevronUp, CircleAlert, Download, Trash2, Upload, X } from '@lucide/svelte';
@@ -29,7 +28,6 @@
     return `${kind} · ${Math.round((jobs.progress ?? 0) * 100)}%`;
   });
 
-  /** "12 MB/s · ~2 min": speed once there is one, the time left once it is stable */
   const pace = (j: Job): string => {
     const r = j.rate.rate;
     if (r === null) return '';
@@ -109,7 +107,6 @@
 {/if}
 
 <style>
-  /* a manifest slip, bottom right, lifted off the page */
   .job-tray {
     position: fixed;
     right: var(--space-4);

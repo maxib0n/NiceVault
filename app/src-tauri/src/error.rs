@@ -1,5 +1,3 @@
-//! `{ code, message }` — the error shape of every command (see app/ui/src/lib/errors.ts).
-
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -23,7 +21,6 @@ impl ApiError {
     pub fn io(detail: impl std::fmt::Display) -> Self {
         Self::new("io", format!("Read or write error: {detail}"))
     }
-    /// Data written by a newer NiceVault that this build cannot read or must not overwrite.
     pub fn unsupported_version() -> Self {
         Self::new(
             "unsupported_version",

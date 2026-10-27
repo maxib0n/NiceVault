@@ -1,6 +1,3 @@
-<!-- Phones: asked once, the first time Esporta meets a picture or a video (stores/gallery.svelte.ts):
-     to the gallery, or to Files as before. The answer is the "Salva foto e video nella Galleria"
-     setting (Impostazioni); Esc / the scrim cancels this export only. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import Dialog from './Dialog.svelte';

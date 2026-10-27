@@ -1,5 +1,3 @@
-//! Tauri commands (contract: app/ui/src/lib/api.ts) and the `--device-dry-run` CLI.
-
 use super::job::{self, DeviceCtx, Log, Outcome};
 use super::{Access, DataFs, Disk, Os, Plan, PlanOpts, Resume, Table};
 use crate::error::{ApiError, ApiResult};
@@ -9,7 +7,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
-/// A disk as the picker shows it.
 #[derive(Clone, Debug, Serialize)]
 pub struct Candidate {
     #[serde(flatten)]
@@ -23,7 +20,6 @@ pub struct FsOption {
     pub id: DataFs,
     pub creatable: bool,
     pub missing_tool: Option<String>,
-    /// Package that has the missing tool (Linux).
     pub package: Option<String>,
     pub readable_on: Vec<(Os, Access)>,
 }
@@ -31,7 +27,6 @@ pub struct FsOption {
 #[derive(Clone, Debug, Serialize)]
 pub struct SourceInfo {
     pub os: Os,
-    /// A local copy exists (the running app, or a signed sibling).
     pub local: bool,
 }
 
@@ -40,16 +35,12 @@ pub struct Options {
     pub os: Os,
     pub fs: Vec<FsOption>,
     pub sources: Vec<SourceInfo>,
-    /// GPT is required (over 2 TiB); APFS also requires it.
     pub gpt_required: bool,
     pub default_table: Table,
-    /// The size VaultData will have (approximately).
     pub data_size: u64,
-    /// Where builds are downloaded from (host only).
     pub update_host: String,
 }
 
-/// Times one part of a command (`NICEVAULT_DEVICE_TRACE=1`).
 fn part<T>(name: &str, f: impl FnOnce() -> T) -> T {
     let t = std::time::Instant::now();
     let v = f();
@@ -113,7 +104,6 @@ pub fn make_plan(ctx: &DeviceCtx, st: &AppState, opts: &PlanOpts) -> ApiResult<P
     {
         return Err(ApiError::new("fs_unsupported", format!("{}:{tool}", opts.data_fs.id())));
     }
-    // the client partition is always exFAT
     if os == Os::Linux
         && let Some(tool) = ctx.ops.missing_tool(DataFs::Exfat)
     {
@@ -139,7 +129,6 @@ pub fn create(ctx: &Arc<DeviceCtx>, st: &AppState, plan_id: &str, typed: &str) -
     Ok(job::start(ctx.clone(), st.arc(), plan, false))
 }
 
-/// "Completa": a device with the layout but no marker. `Done` devices give their outcome at once.
 pub fn resume(ctx: &Arc<DeviceCtx>, st: &AppState, id: &str) -> ApiResult<String> {
     let d = allowed(ctx, st, id)?;
     let marker = d.by_label(super::CLIENT_LABEL).and_then(|p| p.mountpoints.first()).map(|m| PathBuf::from(m).join(super::MARKER).is_file());
@@ -161,7 +150,6 @@ pub fn resume(ctx: &Arc<DeviceCtx>, st: &AppState, id: &str) -> ApiResult<String
         ["check", "download", "mount", "copy", "verify", "marker"].iter().map(|s| s.to_string()).collect()
     };
     if action == Resume::Done {
-        // nothing to write: mount and report (the first volume may be offered again)
         let job = random_id();
         let (ctx2, st2, j) = (ctx.clone(), st.arc(), job.clone());
         std::thread::spawn(move || {
@@ -181,9 +169,6 @@ pub fn resume(ctx: &Arc<DeviceCtx>, st: &AppState, id: &str) -> ApiResult<String
     Ok(job::start(ctx.clone(), st.arc(), plan, true))
 }
 
-/// "Scarica ora": a finished device that lacks some programs (it was made offline) gets them
-/// from the update channel now: only those files are added (verified), then the READMEs and the
-/// marker (last). Still offline: an error, nothing changed.
 pub fn fetch_missing(ctx: &DeviceCtx, job: &str) -> ApiResult<Outcome> {
     let mut o = outcome(ctx, job)?;
     if o.missing.is_empty() {
@@ -196,8 +181,6 @@ pub fn fetch_missing(ctx: &DeviceCtx, job: &str) -> ApiResult<Outcome> {
     if got.files.is_empty() {
         return Err(ApiError::new("device_download", format!("The programs could not be downloaded ({}).", got.notes.join("; "))));
     }
-    // a 128 MiB partition: leftovers and the old macOS zip go first, then each program in turn
-    // (one that does not fit beside a previous partial copy replaces it; never the running one)
     let disk = ctx.ops.disks().into_iter().find(|d| d.id == o.disk_id);
     let free = || match &disk {
         Some(d) => ctx.ops.client_free(d, &dir),
@@ -234,19 +217,14 @@ pub fn outcome(ctx: &DeviceCtx, job: &str) -> ApiResult<Outcome> {
     lock_or_recover(&ctx.outcomes).get(job).cloned().ok_or_else(|| ApiError::not_found("Device"))
 }
 
-/// "Apri VaultData": the data partition of a finished job in the file manager (only that path).
 pub fn open_data(ctx: &DeviceCtx, job: &str) -> ApiResult<()> {
     let o = outcome(ctx, job)?;
     open::that_detached(&o.data_mount).map_err(ApiError::io)
 }
 
-// ---------------------------------------------------------------------------------------------
-// Tauri wrappers
-
 type Dev<'a> = State<'a, Arc<DeviceCtx>>;
 type St<'a> = State<'a, Arc<AppState>>;
 
-/// `NICEVAULT_DEVICE_TRACE=1`: every device command's queue wait and run time on stderr.
 fn trace_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var("NICEVAULT_DEVICE_TRACE").is_ok_and(|v| v == "1"))
@@ -322,31 +300,21 @@ pub async fn device_outcome(dev: Dev<'_>, st: St<'_>, job: String) -> ApiResult<
     blocking("device_outcome", &dev, &st, move |d, _| outcome(d, &job)).await
 }
 
-/// "Aggiorna i programmi sulla chiavetta" (stick.rs): the NiceVault devices connected, or only
-/// the one holding `path` (an open volume's file). Read-only and cheap.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn device_sticks(dev: Dev<'_>, st: St<'_>, path: Option<String>) -> ApiResult<Vec<super::stick::Stick>> {
     blocking("device_sticks", &dev, &st, move |d, _| Ok(super::stick::sticks(d.ops.as_ref(), &d.local, path.as_deref().map(std::path::Path::new)))).await
 }
 
-/// Mounts the NiceVault partition of a device (unprivileged), then its state.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn device_stick_mount(dev: Dev<'_>, st: St<'_>, id: String) -> ApiResult<super::stick::Stick> {
     blocking("device_stick_mount", &dev, &st, move |d, _| super::stick::mount(d, &id)).await
 }
 
-/// Replaces the programs on the device's NiceVault partition. Events `job-progress {job, step,
-/// os, done_bytes, total_bytes}`, `job-done {job, error, outcome: UpdateOutcome}`.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn device_stick_update(dev: Dev<'_>, st: St<'_>, id: String) -> ApiResult<String> {
     blocking("device_stick_update", &dev, &st, move |d, s| super::stick::start_update(d, s, &id)).await
 }
 
-// ---------------------------------------------------------------------------------------------
-// `nicevault --device-dry-run [--disk <id>] [--table mbr|gpt] [--fs exfat|...] [--os linux|windows|macos]`
-
-/// Prints the candidates (and every refused disk with its reason), then the full plan and its
-/// commands for the chosen disk (default: the first candidate). Executes nothing.
 pub fn dry_run_cli(args: &[String]) -> i32 {
     let arg = |k: &str| args.iter().position(|a| a == k).and_then(|i| args.get(i + 1)).cloned();
     let ops = super::backend::detect();

@@ -1,10 +1,3 @@
-<!--
-  "Aggiorna formato" (Dettagli > Volume): shows the active volume's format and offers the opt-in
-  upgrade to the single-file format (api.vaultUpgradeFormat).
-  Two steps: the button shows what changes (older builds can no longer open it), then confirm.
-  Set like the other rows of the card: a dashed rule over it, the state on the left (a small
-  seal: one file or file + journal), the key on the right; the warning is a warm callout.
--->
 <script lang="ts">
   import { FileCheck2, Files } from '@lucide/svelte';
   import * as api from '../lib/api';
@@ -72,7 +65,6 @@
     padding-top: var(--space-3);
     border-top: 1px dashed var(--paper-rule-2);
   }
-  /* a small engraved seal: one file (ink) or a file with its journal beside it (quiet) */
   .fmt-mark {
     grid-row: span 2;
     align-self: start;
@@ -111,7 +103,6 @@
     gap: var(--space-2);
     justify-content: flex-end;
   }
-  /* asking: the warning spans the row, the keys sit under it on the right */
   .fmt-warn {
     grid-column: 2 / -1;
     margin: var(--space-2) 0 0;

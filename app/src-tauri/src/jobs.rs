@@ -1,6 +1,3 @@
-//! Import / export jobs: stream files in 1 MiB blocks through the `Fs` trait on a worker
-//! thread, report `job-progress` (at most ~10/s) and one `job-done`.
-
 use crate::error::{ApiError, ApiResult};
 use crate::state::{AppState, Job, lock_or_recover, random_id};
 use nv_core::Vault;
@@ -22,9 +19,7 @@ pub(crate) struct Ctx<'a> {
     pub(crate) cancel: &'a AtomicBool,
     pub(crate) done: u64,
     pub(crate) total: u64,
-    /// (done, total) items, sent with every progress event when set (delete jobs).
     pub(crate) items: Option<(u64, u64)>,
-    /// Sent as `job-done.outcome` when set.
     pub(crate) outcome: Option<serde_json::Value>,
     last: Instant,
     buf: Vec<u8>,
@@ -58,8 +53,6 @@ pub(crate) fn start(state: &AppState, vault_id: &str, name: &str, work: impl FnO
         .name(name.into())
         .spawn(move || {
             let mut ctx = Ctx { state: &st, job: &id, cancel: &cancel, done: 0, total: 0, items: None, outcome: None, last: Instant::now(), buf: vec![0; buf] };
-            // job-done comes whatever happens (a panic in the work included): the tray entry and
-            // the jobs map must not outlive the job
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work(&mut ctx)))
                 .unwrap_or_else(|_| Err(ApiError::new("error", "Internal error: the job stopped unexpectedly.")));
             if r.is_ok() {
@@ -80,7 +73,6 @@ fn ns(t: SystemTime) -> i64 {
     t.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos() as i64)
 }
 
-/// "name (2).ext" style alternative names.
 fn numbered(name: &str, n: u32) -> String {
     match name.rfind('.') {
         Some(i) if i > 0 => format!("{} ({n}){}", &name[..i], &name[i..]),
@@ -100,7 +92,6 @@ fn unique_in_vault(v: &Vault, parent: NodeId, name: &str) -> ApiResult<String> {
     unreachable!()
 }
 
-/// `dir/<name>` with `name` mapped to exactly one safe host component.
 pub fn host_join(dir: &Path, name: &str) -> ApiResult<PathBuf> {
     let c = nv_fs::host_name(name);
     let mut it = Path::new(&c).components();
@@ -120,8 +111,6 @@ fn unique_on_host(dir: &Path, name: &str) -> ApiResult<PathBuf> {
     Ok(cand)
 }
 
-// ---------------- import ----------------
-
 fn host_size(p: &Path) -> u64 {
     match std::fs::symlink_metadata(p) {
         Ok(m) if m.is_dir() => std::fs::read_dir(p).map_or(0, |rd| rd.flatten().map(|e| host_size(&e.path())).sum()),
@@ -131,8 +120,6 @@ fn host_size(p: &Path) -> u64 {
     }
 }
 
-/// Bytes of the host files and folders an import would read (import_size: the free-space check
-/// before it starts). What can't be read (a content:// URI, a vanished file) counts as 0.
 pub fn import_size(paths: &[String]) -> u64 {
     paths.iter().map(|p| host_size(Path::new(p))).sum()
 }
@@ -161,7 +148,7 @@ fn import_one(cx: &mut Ctx, v: &Vault, parent: NodeId, src: &Path, name: &str) -
         record_import(v, d.id, src, &lmd);
         return Ok(());
     }
-    let md = std::fs::metadata(src)?; // follows a symlink to a file; symlinked dirs are skipped
+    let md = std::fs::metadata(src)?;
     if !md.is_file() {
         return Ok(());
     }
@@ -187,17 +174,11 @@ fn import_one(cx: &mut Ctx, v: &Vault, parent: NodeId, src: &Path, name: &str) -
         Ok(())
     })();
     if r.is_err() {
-        // no half-imported files; cut in steps and without the secure-delete rewrite, so that a
-        // cancelled 2 GB import neither holds the volume for minutes nor delays its job-done
-        // (cancel-hang)
         let _ = v.discard(node.id);
     }
     r
 }
 
-/// Proprietà: when the host file was born (if the OS knows), when it was imported, and from
-/// where (an absolute path, encrypted with the volume). Best effort: a volume whose metadata
-/// table belongs to a newer build just does not get it.
 fn record_import(v: &Vault, id: NodeId, src: &Path, md: &std::fs::Metadata) {
     let born = md.created().ok().map(ns).filter(|&t| t > 0);
     let origin = std::path::absolute(src).unwrap_or_else(|_| src.to_path_buf());
@@ -221,8 +202,6 @@ pub fn fs_import(state: &AppState, vault_id: &str, parent: NodeId, host_paths: V
     fs_import_then(state, vault_id, parent, host_paths, || ())
 }
 
-/// `fs_import`, then `after` once the job has ended (done, failed or cancelled); mobile wipes
-/// its staged plaintext copies there. Not called when the job doesn't start (the error).
 pub fn fs_import_then(state: &AppState, vault_id: &str, parent: NodeId, host_paths: Vec<String>, after: impl FnOnce() + Send + 'static) -> ApiResult<String> {
     let v = state.vault(vault_id)?;
     if v.getattr(parent)?.kind != Kind::Dir {
@@ -245,12 +224,8 @@ pub fn fs_import_then(state: &AppState, vault_id: &str, parent: NodeId, host_pat
     }))
 }
 
-/// Imported files of a streaming import (`import_stream`) between two commits.
 pub const STREAM_FLUSH_EVERY: usize = 16;
 
-/// The import side of a streaming import: files arrive one by one (mobile camera roll: as
-/// they are downloaded), each is imported at once; the volume is committed every
-/// [`STREAM_FLUSH_EVERY`] files and at the end.
 pub struct Sink<'a, 'b> {
     cx: &'a mut Ctx<'b>,
     v: &'a Vault,
@@ -259,7 +234,6 @@ pub struct Sink<'a, 'b> {
 }
 
 impl Sink<'_, '_> {
-    /// Imports `src` (a file or a folder) into the target folder, under a free name.
     pub fn put(&mut self, src: &Path) -> ApiResult<()> {
         self.cx.total += host_size(src);
         let name = unique_in_vault(self.v, self.parent, &name_of(src)?)?;
@@ -282,8 +256,6 @@ impl<'b> Sink<'_, 'b> {
     }
 }
 
-/// A streaming import job: `feed` runs on the job thread and hands files to the sink as they
-/// arrive (the total grows with them). Cancelled through `job_cancel` as any job.
 pub fn import_stream(state: &AppState, vault_id: &str, parent: NodeId, feed: impl FnOnce(&mut Sink) -> ApiResult<()> + Send + 'static) -> ApiResult<String> {
     let v = state.vault(vault_id)?;
     if v.getattr(parent)?.kind != Kind::Dir {
@@ -299,8 +271,6 @@ pub fn import_stream(state: &AppState, vault_id: &str, parent: NodeId, feed: imp
         r.and(f)
     }))
 }
-
-// ---------------- export ----------------
 
 fn vault_size(v: &Vault, id: NodeId) -> ApiResult<u64> {
     let n = v.getattr(id)?;

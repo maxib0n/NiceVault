@@ -1,11 +1,3 @@
-//! The unlocked volumes as an Android DocumentsProvider (`NvDocumentsProvider.kt`): one root per unlocked volume, read + write, streamed through the volume
-//! (proxy file descriptors on the Kotlin side call `read` / `write` here), never a plaintext
-//! temp file. Document ids are `<session volume id>/<node>` (mobile_paths::doc_id): when the
-//! volume locks its id is gone, every call answers `locked` and the root disappears.
-//!
-//! The JNI glue (`jni` below) is Android only; the logic is plain Rust over `AppState`, unit
-//! tested on the desktop.
-
 use crate::error::{ApiError, ApiResult};
 use crate::mobile_paths::{doc_id, doc_mime, parse_doc_id};
 use crate::state::AppState;
@@ -14,8 +6,6 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// A client of the provider used a volume within this long: the background lock waits
-/// (lib/mobile.ts asks `mobile_docs_busy`).
 pub const BUSY_MS: u64 = 30_000;
 
 static LAST_USE: AtomicU64 = AtomicU64::new(0);
@@ -29,13 +19,10 @@ fn used() {
     LAST_USE.store(now_ms(), Ordering::SeqCst);
 }
 
-/// Another app holds a file of a volume open through the provider, or used one in the last
-/// [`BUSY_MS`].
 pub fn busy() -> bool {
     OPEN.load(Ordering::SeqCst) > 0 || now_ms().saturating_sub(LAST_USE.load(Ordering::SeqCst)) < BUSY_MS
 }
 
-/// A file opened (`opened`) / released (`closed`) by a client (Kotlin `openDocument`).
 pub fn opened() {
     OPEN.fetch_add(1, Ordering::SeqCst);
     used();
@@ -47,9 +34,7 @@ pub fn closed() {
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct Root {
-    /// the session's volume id (also the root id)
     pub root: String,
-    /// its root folder's document id
     pub doc: String,
     pub title: String,
     pub free: u64,
@@ -59,10 +44,8 @@ pub struct Root {
 pub struct Row {
     pub doc: String,
     pub name: String,
-    /// `vnd.android.document/directory` for folders
     pub mime: String,
     pub size: u64,
-    /// unix ms
     pub mtime: i64,
     pub dir: bool,
 }
@@ -92,7 +75,6 @@ fn title_of(st: &AppState, vault: &str) -> String {
     st.vault_list_open().into_iter().find(|v| v.id == vault).map(|v| v.name).unwrap_or_default()
 }
 
-/// One root per unlocked volume ("NiceVault – <nome>" is drawn by the Kotlin side).
 pub fn roots(st: &AppState) -> Vec<Root> {
     st.vault_list_open()
         .into_iter()
@@ -115,7 +97,6 @@ pub fn children(st: &AppState, doc: &str) -> ApiResult<Vec<Row>> {
     Ok(list.iter().map(|n| row(v, n, "")).collect())
 }
 
-/// `doc` is `parent` or below it (DocumentsProvider.isChildDocument).
 pub fn is_child(st: &AppState, parent: &str, doc: &str) -> bool {
     let (Ok((pv, pid)), Ok((v, mut id))) = (split(parent), split(doc)) else { return false };
     let Ok(fs) = st.vault(v) else { return false };
@@ -137,7 +118,6 @@ pub fn is_child(st: &AppState, parent: &str, doc: &str) -> bool {
     false
 }
 
-/// A file about to be opened: its size, truncated first when `truncate` (mode "w" / "wt").
 pub fn open(st: &AppState, doc: &str, write: bool, truncate: bool) -> ApiResult<u64> {
     let (v, id) = split(doc)?;
     let fs = st.vault(v)?;
@@ -178,7 +158,6 @@ pub fn flush(st: &AppState, doc: &str) -> ApiResult<()> {
     Ok(fs.flush()?)
 }
 
-/// A free name in `dir`: `name`, `name (2).ext`, ...
 fn free_name(fs: &dyn Fs, dir: NodeId, name: &str) -> ApiResult<String> {
     let (stem, ext) = match name.rfind('.') {
         Some(i) if i > 0 => (&name[..i], &name[i..]),
@@ -195,7 +174,6 @@ fn free_name(fs: &dyn Fs, dir: NodeId, name: &str) -> ApiResult<String> {
     Err(nv_fs::Error::Exists.into())
 }
 
-/// A new file / folder in `parent` (a free name like the system's own providers pick).
 pub fn create(st: &AppState, parent: &str, name: &str, dir: bool) -> ApiResult<String> {
     let (v, pid) = split(parent)?;
     let fs = st.vault(v)?;
@@ -216,7 +194,6 @@ pub fn delete(st: &AppState, doc: &str) -> ApiResult<()> {
     st.fs_delete(v, &[id])
 }
 
-/// Renamed in place; the id stays the same.
 pub fn rename(st: &AppState, doc: &str, name: &str) -> ApiResult<String> {
     let (v, id) = split(doc)?;
     let parent = st.vault(v)?.getattr(id)?.parent;
@@ -225,7 +202,6 @@ pub fn rename(st: &AppState, doc: &str, name: &str) -> ApiResult<String> {
     Ok(doc.to_owned())
 }
 
-/// Moved into another folder of the same volume (keeps its name).
 pub fn move_to(st: &AppState, doc: &str, target: &str) -> ApiResult<String> {
     let (v, id) = split(doc)?;
     let (tv, tid) = split(target)?;
@@ -238,8 +214,6 @@ pub fn move_to(st: &AppState, doc: &str, target: &str) -> ApiResult<String> {
     Ok(doc.to_owned())
 }
 
-/// The JNI half: `app.nicevault.desktop.NvDocs` (Kotlin `external fun`s). Strings in and out,
-/// JSON for rows; an error is `{"error": code, "message": ...}` / a negative count.
 #[cfg(target_os = "android")]
 pub mod jni_glue {
     use super::*;
@@ -297,7 +271,6 @@ pub mod jni_glue {
         state().is_some_and(|st| is_child(&st, &p, &d)) as jboolean
     }
 
-    /// Returns the size (≥ 0), or -1 (locked / gone / a folder).
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_app_nicevault_desktop_NvDocs_open(mut env: JNIEnv, _: JClass, doc: JString, write: jboolean, truncate: jboolean) -> jlong {
         let d = s(&mut env, &doc);
@@ -325,7 +298,6 @@ pub mod jni_glue {
         let mut tmp = vec![0u8; len.max(0) as usize];
         match read(&st, &d, off.max(0) as u64, &mut tmp) {
             Ok(n) => {
-                // SAFETY: u8 and i8 have the same layout
                 let signed: &[i8] = unsafe { std::slice::from_raw_parts(tmp.as_ptr().cast(), n) };
                 if env.set_byte_array_region(&buf, 0, signed).is_err() {
                     return -1;
@@ -345,7 +317,6 @@ pub mod jni_glue {
         if env.get_byte_array_region(&buf, 0, &mut tmp).is_err() {
             return -1;
         }
-        // SAFETY: as above
         let data: &[u8] = unsafe { std::slice::from_raw_parts(tmp.as_ptr().cast(), tmp.len()) };
         let r = write(&st, &d, off.max(0) as u64, data);
         tmp.fill(0);
@@ -434,7 +405,6 @@ mod tests {
         assert_eq!(size(&st, &f).unwrap(), 11);
         let row = stat(&st, &f).unwrap();
         assert_eq!((row.mime.as_str(), row.size, row.dir), ("text/plain", 11, false));
-        // "w" truncates, "rw" does not
         assert_eq!(open(&st, &f, true, false).unwrap(), 11);
         assert_eq!(open(&st, &f, true, true).unwrap(), 0);
         assert!(open(&st, &dir, false, false).is_err(), "a folder is not opened");
@@ -450,7 +420,6 @@ mod tests {
         assert!(stat(&st, &f).is_err());
         assert!(busy(), "just used");
 
-        // locked: the root goes, every id stops working
         st.vault_lock(&v.id, "user").unwrap();
         assert!(roots(&st).is_empty());
         assert_eq!(stat(&st, &dir).unwrap_err().code, "locked");

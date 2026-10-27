@@ -1,5 +1,3 @@
-// Arrow keys inside a role=radiogroup of role=radio buttons (segmented controls, swatches):
-// move the choice and the focus together, wrapping. Tab moves between groups.
 export function radioKeys<T>(e: KeyboardEvent, values: readonly T[], current: T, set: (v: T) => void): void {
   const i = values.indexOf(current);
   let j = -1;

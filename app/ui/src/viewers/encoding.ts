@@ -1,19 +1,11 @@
-// Text encoding detection for the text/code viewer: BOM first, then "is it valid UTF-8",
-// then UTF-16 without BOM (alternating NULs), else Windows-1252 (the superset of Latin-1
-// every Italian/English legacy text file is in). Binary data is told apart by NULs and
-// control characters, so the hex view can take it.
-
 export type TextEncodingName = 'utf-8' | 'utf-16le' | 'utf-16be' | 'windows-1252';
 
 export interface Detected {
   encoding: TextEncodingName;
-  /** bytes of BOM to skip */
   bom: number;
-  /** looks like binary, not text */
   binary: boolean;
 }
 
-/** true when `b` is valid UTF-8, allowing a sequence cut at the very end of the sample */
 export function validUtf8(b: Uint8Array, truncated = true): boolean {
   let i = 0;
   const n = b.length;
@@ -30,7 +22,6 @@ export function validUtf8(b: Uint8Array, truncated = true): boolean {
     else if (c >= 0xf0 && c <= 0xf4) (need = 3), (min = 0x10000);
     else return false;
     if (i + need >= n) {
-      // sequence runs past the sample: fine only for a cut sample
       if (!truncated) return false;
       for (let k = i + 1; k < n; k++) if ((b[k] & 0xc0) !== 0x80) return false;
       return true;
@@ -54,7 +45,6 @@ export function detectEncoding(sample: Uint8Array, truncated = true): Detected {
   if (b.length >= 2 && b[0] === 0xfe && b[1] === 0xff) return { encoding: 'utf-16be', bom: 2, binary: false };
   const n = Math.min(b.length, 64 * 1024);
   if (n === 0) return { encoding: 'utf-8', bom: 0, binary: false };
-  // UTF-16 without BOM: ASCII-range text has NULs in every other byte
   let evenNul = 0;
   let oddNul = 0;
   let nul = 0;
@@ -75,7 +65,6 @@ export function detectEncoding(sample: Uint8Array, truncated = true): Detected {
   return { encoding: 'windows-1252', bom: 0, binary: false };
 }
 
-/** Label shown in the viewer's footer. */
 export function encodingLabel(e: TextEncodingName): string {
   return { 'utf-8': 'UTF-8', 'utf-16le': 'UTF-16 LE', 'utf-16be': 'UTF-16 BE', 'windows-1252': 'Windows-1252' }[e];
 }

@@ -1,6 +1,3 @@
-//! Unit tests: rules, plans, the exact privileged commands per OS, parsers, resume, the
-//! Linux backend's executed calls (recorded, never run). Nothing here touches a real disk.
-
 use super::backend::{DiskOps, Linux, Mac, ok_output};
 use super::commands::*;
 use super::job::Log;
@@ -43,8 +40,6 @@ fn opts(fs: DataFs) -> PlanOpts {
     PlanOpts { id: "/dev/sdd".into(), table: Table::Mbr, data_fs: fs, first_volume: None, download: true }
 }
 
-// ---------------- rules ----------------
-
 #[test]
 fn refusal_rules() {
     let c = ctx();
@@ -55,7 +50,6 @@ fn refusal_rules() {
     let mut d = stick();
     (d.removable, d.bus) = (false, "nvme".into());
     assert_eq!(refusal(&d, &c), Some(Refusal::Internal));
-    // a USB disk that does not say "removable" is still external
     let mut d = stick();
     d.removable = false;
     assert_eq!(refusal(&d, &c), None);
@@ -69,25 +63,19 @@ fn refusal_rules() {
     let mut d = stick();
     d.read_only = true;
     assert_eq!(refusal(&d, &c), Some(Refusal::ReadOnly));
-    // the exe runs from it
     let mut d = stick();
     d.partitions[0].mountpoints = vec!["/opt/nv".into()];
     assert_eq!(refusal(&d, &c), Some(Refusal::HostsApp));
-    // it holds "/" (everything is on it)
     let mut d = stick();
     d.partitions[0].mountpoints = vec!["/".into()];
     assert_eq!(refusal(&d, &c), Some(Refusal::HostsApp));
-    // active swap
     let mut d = stick();
     d.partitions[0].path = "/dev/nvme0n1p3".into();
     assert_eq!(refusal(&d, &c), Some(Refusal::HostsApp));
-    // a volume of this app is open on it
     let c2 = HostCtx { open_volumes: vec![PathBuf::from("/run/media/u/STICK/Foto.nvault")], ..ctx() };
     assert_eq!(refusal(&stick(), &c2), Some(Refusal::OpenVolume));
-    // a mount point that merely shares a prefix is not "on" it
     let c3 = HostCtx { open_volumes: vec![PathBuf::from("/run/media/u/STICK2/a.nvault")], ..ctx() };
     assert_eq!(refusal(&stick(), &c3), None);
-    // Windows paths
     let mut d = stick();
     d.partitions[0].mountpoints = vec![r"E:\".into()];
     let cw = HostCtx { protected: vec![PathBuf::from(r"C:\Users\u")], open_volumes: vec![PathBuf::from(r"e:\Foto.nvault")], ..Default::default() };
@@ -114,8 +102,6 @@ fn names_and_serial_tail() {
     assert_eq!((d.name().as_str(), d.serial_tail().as_str()), ("Generic Flash Disk", "12"));
     assert_eq!(Disk::default().name(), "");
 }
-
-// ---------------- plan ----------------
 
 #[test]
 fn plan_mbr_default_layout() {
@@ -223,8 +209,6 @@ fn whole_volume_reserve() {
     assert!(30 * GB - whole_volume_size(30 * GB) <= 512 * MIB + MIB);
 }
 
-// ---------------- commands: Linux ----------------
-
 #[test]
 fn udisks_calls_exact() {
     let p = plan(&stick(), &opts(DataFs::Exfat), Os::Linux, &ctx(), "x").unwrap();
@@ -262,7 +246,6 @@ fn udisks_calls_exact() {
             "org.freedesktop.UDisks2.Block.Format", "'dos'", "{'auth.no_user_interaction': <false>}"
         ]
     );
-    // GPT with ext4: names, Linux data GUID
     let mut o = opts(DataFs::Ext4);
     o.table = Table::Gpt;
     let p = plan(&stick(), &o, Os::Linux, &ctx(), "x").unwrap();
@@ -272,8 +255,6 @@ fn udisks_calls_exact() {
     assert_eq!(c[3].args[2..4], ["'0fc63daf-8483-4772-8e79-3d69d8477de4'", "'VaultData'"]);
     assert_eq!(c[3].args[5], "'ext4'");
     assert!(p.commands_preview.iter().any(|l| l.contains("chmod 0777")));
-    // never a probe: every call that can prompt allows interaction (user-started), and none of
-    // them is a loop / CanFormat call
     assert!(c.iter().all(|c| c.args.last().unwrap().contains("'auth.no_user_interaction': <false>")));
     assert!(!c.iter().any(|c| c.method.contains("Loop") || c.method.contains("CanFormat")));
 }
@@ -330,14 +311,11 @@ fn linux_backend_runs_exactly_the_plan() {
         assert!(g.0.ends_with("gdbus"));
         assert_eq!(g.1, w.1);
     }
-    // a refused polkit prompt stops at that call, with elevation_denied
     let calls: Calls = Arc::default();
     let l = Linux::new(recorder(calls.clone(), Some("Block.Format")));
     assert_eq!(l.partition(&p, &Log::null(), &mut |_| {}).unwrap_err().code, "elevation_denied");
     assert_eq!(calls.lock().unwrap().len(), 2, "nothing after the refused call");
 }
-
-// ---------------- commands: Windows ----------------
 
 #[test]
 fn windows_script_exact() {
@@ -360,7 +338,6 @@ fn windows_script_exact() {
     assert!(lines.contains(&"Format-Volume -Partition $p1 -FileSystem exFAT -NewFileSystemLabel 'NiceVault' -Confirm:$false | Out-Null"));
     assert!(lines.contains(&"$p2=New-Partition -DiskNumber $n -UseMaximumSize -MbrType IFS"));
     assert!(lines.contains(&"Format-Volume -Partition $p2 -FileSystem NTFS -NewFileSystemLabel 'VaultData' -Confirm:$false | Out-Null"));
-    // drive letters only at the end (no "format this disk?" popups midway)
     assert_eq!(lines[lines.len() - 2], "$p1,$p2 | Add-PartitionAccessPath -AssignDriveLetter");
     let mut o = o.clone();
     o.table = Table::Gpt;
@@ -368,7 +345,6 @@ fn windows_script_exact() {
     let s = windows_script(&plan(&d, &o, Os::Windows, &ctx(), "x").unwrap());
     assert!(s.contains("Initialize-Disk -Number $n -PartitionStyle GPT"));
     assert!(s.contains("-GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'"));
-    // -EncodedCommand = base64(UTF-16LE)
     use base64::Engine;
     let argv = windows_argv(&plan(&d, &o, Os::Windows, &ctx(), "x").unwrap());
     assert_eq!(argv[..5], ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand"]);
@@ -404,8 +380,6 @@ fn windows_helper_exit_codes_and_recheck() {
     assert_eq!(super::helper::recheck(&p, Some(&n), &c), Err(21));
 }
 
-// ---------------- commands: macOS ----------------
-
 #[test]
 fn diskutil_args_and_osascript_quoting() {
     let mut d = stick();
@@ -423,7 +397,6 @@ fn diskutil_args_and_osascript_quoting() {
     assert!(script.starts_with(r#"do shell script quoted form of "/usr/sbin/diskutil" & space & quoted form of "partitionDisk" & space & quoted form of "/dev/disk4""#));
     assert!(script.ends_with(&format!("with administrator privileges with prompt {}", as_str(&mac_prompt(&p.disk, true)))));
     assert!(script.contains(r#"Evil\" & do shell script \"rm -rf ~\""#), "the model's quotes stay inside the literal: {script}");
-    // every `"` inside a literal is escaped: the only unescaped quotes delimit literals
     let unescaped = script.as_bytes().iter().enumerate().filter(|(i, b)| **b == b'"' && (*i == 0 || script.as_bytes()[i - 1] != b'\\' || script.as_bytes()[i - 2] == b'\\')).count();
     assert_eq!(unescaped % 2, 0);
     assert_eq!(as_str(r#"a"b\c"#), r#""a\"b\\c""#);
@@ -438,7 +411,6 @@ fn mac_backend_falls_back_to_osascript() {
     let mut o = opts(DataFs::Exfat);
     o.id = d.id.clone();
     let p = plan(&d, &o, Os::Macos, &ctx(), "x").unwrap();
-    // `disks()` is empty off macOS: the re-check reports the disk gone, nothing runs
     let calls: Calls = Arc::default();
     let m = Mac::new(recorder(calls.clone(), None));
     if !cfg!(target_os = "macos") {
@@ -446,8 +418,6 @@ fn mac_backend_falls_back_to_osascript() {
         assert!(calls.lock().unwrap().is_empty());
     }
 }
-
-// ---------------- enumeration parsers ----------------
 
 fn w(p: &std::path::Path, s: &str) {
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -459,7 +429,6 @@ fn linux_sysfs_enumeration() {
     let t = tempfile::tempdir().unwrap();
     let sys = t.path().join("sys/block");
     let udev = t.path().join("udev");
-    // a USB stick with one mounted partition
     let sdd = t.path().join("sys/devices/pci0000:00/usb2/2-1/host6/block/sdd");
     w(&sdd.join("size"), "60062500\n");
     w(&sdd.join("removable"), "1\n");
@@ -470,13 +439,11 @@ fn linux_sysfs_enumeration() {
     w(&sdd.join("sdd1/dev"), "8:49\n");
     w(&udev.join("b8:48"), "E:ID_BUS=usb\nE:ID_VENDOR=SanDisk\nE:ID_MODEL=Ultra\nE:ID_SERIAL_SHORT=4C530001071103235\n");
     w(&udev.join("b8:49"), "E:ID_FS_TYPE=vfat\nE:ID_FS_LABEL=MY_STICK\nE:ID_FS_LABEL_ENC=MY\\x20STICK\n");
-    // a 2.5" disk in a USB-SATA case: udev says ata, the path says usb
     let sdc = t.path().join("sys/devices/pci0000:00/usb2/2-3/2-3:1.0/host8/block/sdc");
     w(&sdc.join("size"), "1953525168\n");
     w(&sdc.join("removable"), "0\n");
     w(&sdc.join("dev"), "8:32\n");
     w(&udev.join("b8:32"), "E:ID_BUS=ata\nE:ID_MODEL=ST1000LM025\n");
-    // the internal NVMe with LUKS root
     let nvme = t.path().join("sys/devices/pci0000:00/nvme/nvme0/nvme0n1");
     w(&nvme.join("size"), "1000215216\n");
     w(&nvme.join("removable"), "0\n");
@@ -488,7 +455,6 @@ fn linux_sysfs_enumeration() {
     w(&dm.join("dev"), "253:0\n");
     std::fs::create_dir_all(nvme.join("nvme0n1p2/holders")).unwrap();
     std::os::unix::fs::symlink(&dm, nvme.join("nvme0n1p2/holders/dm-0")).unwrap();
-    // a loop device and an empty card reader
     let lo = t.path().join("sys/devices/virtual/block/loop0");
     w(&lo.join("size"), "4194304\n");
     w(&lo.join("dev"), "7:0\n");
@@ -560,8 +526,6 @@ fn macos_json_enumeration() {
     assert_eq!(candidates(d, &HostCtx { allow_virtual: true, ..Default::default() }).len(), 2, "hdiutil ram disk with the test override");
 }
 
-// ---------------- client files ----------------
-
 #[test]
 fn readme_lists_readability_and_missing() {
     let r = super::client::readme(true, DataFs::Ntfs, &[Os::Macos]);
@@ -581,4 +545,18 @@ fn write_verified_replaces_atomically() {
     super::client::write_verified(t.path(), "a.bin", b"two").unwrap();
     assert_eq!(std::fs::read(t.path().join("a.bin")).unwrap(), b"two");
     assert!(!t.path().join("a.bin.part").exists());
+}
+
+#[test]
+#[ignore = "network: downloads the real public release (diagnostic)"]
+fn real_release_downloads() {
+    let l = super::client::Local { exe: std::path::PathBuf::new(), os: Os::Linux, version: env!("CARGO_PKG_VERSION").into(), pubkey: crate::updater::embedded_config().1 };
+    let url = crate::updater::manifest_url();
+    let b = super::client::download(&l, &url, &[Os::Linux, Os::Windows, Os::Macos], &mut |_, _| {});
+    for f in &b.files {
+        eprintln!("ok {:?} {} {} bytes v{:?}", f.os, f.name, f.bytes.len(), f.version);
+    }
+    for n in &b.notes {
+        eprintln!("NOTE {n}");
+    }
 }

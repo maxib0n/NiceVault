@@ -1,9 +1,3 @@
-<!--
-  Transport for quick look audio/video, replacing the webview's native controls
-  (they differ per OS and break the material). Presentation only: it reflects
-  the media element's real state and forwards play / seek / mute / fullscreen.
-  Space and arrows stay here, so they do not close or step the quick look.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Maximize, Pause, Play, Settings2, Volume2, VolumeX } from '@lucide/svelte';
@@ -16,9 +10,7 @@
   let duration = $state(0);
   let muted = $state(false);
 
-  // ---- speed, embedded / sidecar subtitles, audio tracks (desktop; phones keep the native player) ----
   const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
-  /** the speed is kept for the session (module-level in this file's instance chain via window) */
   const SESSION = '__nvRate';
   const getRate = () => ((globalThis as Record<string, unknown>)[SESSION] as number | undefined) ?? 1;
   let rate = $state(getRate());
@@ -126,8 +118,6 @@
     if (media && duration > 0) media.currentTime = v;
   }
 
-  // desktop: our own full screen (QuickLook + the window, never the webview's native player);
-  // phones keep the platform's player, which has its own speed / subtitle / audio pickers
   function fullscreen() {
     if (!isMobile) return void window.dispatchEvent(new CustomEvent('nv:ql-fullscreen'));
     const v = media as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | undefined;
@@ -217,7 +207,6 @@
 </div>
 
 <style>
-  /* the transport: a paper strip with a round primary key and a groove for time */
   .media-controls {
     display: flex;
     align-items: center;
@@ -232,7 +221,6 @@
       0 0 0 1px var(--key-edge),
       var(--lift-key-hover);
   }
-  /* the keys at the end sit close together, a pair */
   .tail {
     display: flex;
     flex: none;
@@ -265,7 +253,6 @@
     color: var(--ink-3);
     text-align: center;
   }
-  /* the scrubber: a groove pressed into the strip, inked up to now */
   .scrubber {
     -webkit-appearance: none;
     appearance: none;

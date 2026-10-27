@@ -1,6 +1,3 @@
-// Password manager: "Sposta in cartella" (context menu, keyboard, multi-select, drag onto a
-// folder), the folder picker (search + "Nuova cartella"), folder rename / delete, relative
-// dates, the site-icons setting, and a 2,000-entry list with a performance budget.
 import type { Page } from '@playwright/test';
 import { boot, expect, test } from './helpers';
 
@@ -18,7 +15,6 @@ test('context menu: move to a new folder through the picker', async ({ page }) =
   const dlg = page.getByTestId('pm-move');
   const input = dlg.getByRole('combobox');
   await expect(input).toBeFocused();
-  // every folder, plus "Nessuna cartella"
   await expect(dlg.getByRole('option')).toHaveCount(5);
   await input.fill('Svago/Film');
   await expect(dlg.locator('[data-new="Svago/Film"]')).toHaveAttribute('aria-selected', 'true');
@@ -39,14 +35,12 @@ test('keyboard: pick several, Ctrl+Shift+M, search the picker, Enter', async ({ 
   await page.keyboard.press(`${mod}+Shift+m`);
   const dlg = page.getByTestId('pm-move');
   await page.keyboard.type('banc');
-  // the matching folder first (highlighted), then "Nuova cartella «banc»"
   await expect(dlg.getByRole('option')).toHaveCount(2);
   await expect(dlg.locator('[data-folder="Personale/Banche"]')).toHaveAttribute('aria-selected', 'true');
   await expect(dlg.locator('[data-new="banc"]')).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(dlg).toHaveCount(0);
   await expect.poll(() => count(page, 'Personale/Banche')).toBe(3);
-  // Esc collapses a multi-selection back to one
   await page.getByTestId('pm-list').focus();
   await page.keyboard.press(`${mod}+a`);
   await expect(page.getByTestId('pm-multi')).toHaveAttribute('data-count', '6');
@@ -94,7 +88,6 @@ test('editor: the folder field is the picker; relative dates in the detail', asy
   await page.getByTestId('pm-edit').click();
   const field = page.locator('#pm-folder');
   await field.click();
-  // focus shows every folder, not only the current one
   await expect(page.getByTestId('pm-editor').getByRole('option')).toHaveCount(5);
   await page.getByTestId('pm-editor').locator('[data-folder="Lavoro"]').click();
   await expect(field).toHaveValue('Lavoro');
@@ -119,15 +112,10 @@ test('2,000 entries: only the rows in view exist, scroll reaches the end, search
   const list = page.getByTestId('pm-list');
   await expect(list).toHaveAttribute('data-count', '2006');
   expect(await page.getByTestId('pm-entry').count()).toBeLessThan(60);
-  // the last entry, after scrolling to the bottom
   await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
   await expect(page.getByTestId('pm-entry').last()).toHaveAttribute('aria-posinset', '2006');
   await list.evaluate((el) => (el.scrollTop = 0));
 
-  // keystroke -> list applied (the data-q marker), per key
-  // timing budgets in Chromium only: Playwright's headless WebKit renders in software and its
-  // own idle frames already reach 60-130 ms on a loaded machine (WebKitGTK is measured in the
-  // real app: e2e/real/pm-perf-real.mjs)
   const lat = await page.evaluate(async () => {
     const input = document.querySelector<HTMLInputElement>('[data-testid=pm-search]')!;
     const listEl = document.querySelector<HTMLElement>('[data-testid=pm-list]')!;
@@ -149,7 +137,6 @@ test('2,000 entries: only the rows in view exist, scroll reaches the end, search
   if (browserName === 'chromium') {
     expect(Math.max(...lat), `keystroke -> list ms: ${lat.join(', ')}`).toBeLessThan(150);
 
-    // a steady fling (2,400 px/s) over the full list: frames stay near 60 fps
     await page.getByTestId('pm-search').fill('');
     await expect(list).toHaveAttribute('data-count', '2006');
     const fps = await list.evaluate(async (sc) => {

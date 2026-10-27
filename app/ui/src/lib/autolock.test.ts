@@ -36,7 +36,7 @@ describe('auto-lock options (mock backend)', () => {
     await api.onVaultLocked((e) => locked.push(e));
     expect(m.idleTick(t0 + 2 * MIN)).toEqual([doc.id]);
     expect(locked).toEqual([{ vault: doc.id, reason: 'idle' }]);
-    expect(m.idleTick(t0 + 24 * 60 * MIN)).toEqual([]); // "mai"
+    expect(m.idleTick(t0 + 24 * 60 * MIN)).toEqual([]);
     await api.vaultTouch(arc.id);
     await expect(api.vaultTouch(doc.id)).rejects.toMatchObject({ code: 'locked' });
   });
@@ -68,7 +68,6 @@ describe('duress password (mock backend)', () => {
     expect(duress).toEqual(wrong);
     expect(duress).toMatchObject({ code: 'wrong_password' });
     await expect(api.vaultOpen(DOC, MOCK_PASSWORD)).rejects.toMatchObject({ code: 'wrong_password' });
-    // the other volumes are untouched
     expect((await api.vaultOpen(ARC, MOCK_PASSWORD)).name).toBe('Archivio fiscale');
   });
 
@@ -86,7 +85,7 @@ describe('duress password (mock backend)', () => {
     expect((await api.slotRemove(arc.id, d.index)).map((s) => s.kind)).toEqual(['password']);
     await api.vaultLock(arc.id);
     await expect(api.vaultOpen(ARC, 'rapina')).rejects.toMatchObject({ code: 'wrong_password' });
-    expect((await api.vaultOpen(ARC, MOCK_PASSWORD)).name).toBe('Archivio fiscale'); // disarmed, not destroyed
+    expect((await api.vaultOpen(ARC, MOCK_PASSWORD)).name).toBe('Archivio fiscale');
   });
 });
 
@@ -120,7 +119,6 @@ describe('idle store: one clock per volume', () => {
     idle.tick(t0 + 30_000);
     expect(idle.remainingMs).toBe(30_000);
     expect(idle.remainingFor(arc.id)).toBe(4.5 * MIN);
-    // activity on screen bumps only the active volume's clock
     vi.setSystemTime(t0 + 50_000);
     idle.bump();
     idle.tick(t0 + 61_000);
@@ -144,7 +142,7 @@ describe('idle store: one clock per volume', () => {
     expect(idle.timeoutMs).toBe(2 * MIN);
     idle.force(3000);
     expect(idle.timeoutMs).toBe(3000);
-    idle.setMinutesFor(doc.id, 10); // ignored while forced
+    idle.setMinutesFor(doc.id, 10);
     expect(idle.timeoutMs).toBe(3000);
     idle.forcedMs = null;
   });

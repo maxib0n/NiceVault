@@ -1,9 +1,3 @@
-<!--
-  A phone picking several files (an item's sheet → Seleziona): a slip laid over the flap, as the
-  photo apps do — Fine on the left, how many are picked, then what to do with them: Tutti, Tag,
-  Esporta, Elimina and the rest of the item's sheet (⋯). A tap on a file picks / unpicks it
-  (FileBrowser.click); nothing picked any more, or Fine / Back, and the flap is back.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { CheckCheck, Download, Ellipsis, Tag as TagIcon, Trash, X } from '@lucide/svelte';
@@ -60,7 +54,6 @@
 </div>
 
 <style>
-  /* the slip lies over the flap, the same height, paper rather than cloth */
   .m-select {
     position: fixed;
     inset: auto 0 0;

@@ -4,7 +4,6 @@ import * as dev from './device';
 import type { DeviceDone, DeviceProgress } from './device';
 import { MockBackend } from './mock';
 
-/** Events may come before the command returns the job id: record everything, then filter. */
 async function run(start: () => Promise<string>): Promise<{ steps: string[]; done: DeviceDone }> {
   const progress: DeviceProgress[] = [];
   const dones: DeviceDone[] = [];

@@ -57,13 +57,8 @@ class PickArgs {
   var multiple: Boolean = true
 }
 
-/**
- * NiceVault's own bridge to Android (src-tauri/src/mobile.rs):
- * the names of picked documents, the share sheet for decrypted copies, the camera roll.
- */
 @TauriPlugin
 class NvPlugin(private val activity: Activity) : Plugin(activity) {
-  /** OpenableColumns.DISPLAY_NAME of each content:// URI ("" when the provider has none). */
   @Command
   fun displayNames(invoke: Invoke) {
     val args = invoke.parseArgs(UrisArgs::class.java)
@@ -85,10 +80,6 @@ class NvPlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve(JSObject().put("names", names))
   }
 
-  /**
-   * The Photo Picker hides the file's real name ("1000000024.heic": the media id). A name like a
-   * camera's from when it was taken instead: IMG_20261025_090000.heic / VID_... (local time).
-   */
   private fun pickerName(name: String, c: android.database.Cursor): String {
     val stem = name.substringBeforeLast('.')
     if (stem.isEmpty() || !stem.all { it.isDigit() }) return name
@@ -102,7 +93,6 @@ class NvPlugin(private val activity: Activity) : Plugin(activity) {
     return prefix + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(taken)) + ext
   }
 
-  /** The share sheet for files in the app's cache (FileProvider, read-only grant). */
   @Command
   fun share(invoke: Invoke) {
     val args = invoke.parseArgs(ShareArgs::class.java)
@@ -130,12 +120,6 @@ class NvPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /**
-   * The camera roll: the system Photo Picker (photos and videos, several at once, no storage
-   * permission; androidx picks the Play-services backport or ACTION_OPEN_DOCUMENT on devices
-   * without it). Returns the picked content:// URIs, read by fs_import under their display name
-   * (an empty list when cancelled).
-   */
   @Command
   fun pickPhotos(invoke: Invoke) {
     val args = invoke.parseArgs(PickArgs::class.java)
@@ -156,18 +140,11 @@ class NvPlugin(private val activity: Activity) : Plugin(activity) {
   fun photosPicked(invoke: Invoke, result: ActivityResult) {
     val files = JSArray()
     if (result.resultCode == Activity.RESULT_OK) {
-      // one item: data.data; several: clipData (both the picker and the document fallback)
       ActivityResultContracts.PickMultipleVisualMedia().parseResult(result.resultCode, result.data).forEach { files.put(it.toString()) }
     }
     invoke.resolve(JSObject().put("files", files))
   }
 
-  /**
-   * "Salva nella Galleria" (mobile.rs mobile_save_gallery): a pending MediaStore entry in
-   * Pictures/NiceVault or Movies/NiceVault (Android 10+: no storage permission), opened for
-   * writing; the descriptor is detached and handed to Rust, which writes the decrypted bytes
-   * straight from the volume (nothing staged) and then calls galleryClose.
-   */
   @Command
   fun galleryOpen(invoke: Invoke) {
     val args = invoke.parseArgs(GalleryOpenArgs::class.java)
@@ -200,7 +177,6 @@ class NvPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /** The entry written by Rust: published (IS_PENDING 0), or removed when the write failed. */
   @Command
   fun galleryClose(invoke: Invoke) {
     val args = invoke.parseArgs(GalleryCloseArgs::class.java)
@@ -217,7 +193,6 @@ class NvPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
-  /** A volume was unlocked / locked: the Files app and the system picker re-read the roots. */
   @Command
   fun docsChanged(invoke: Invoke) {
     activity.contentResolver.notifyChange(DocumentsContract.buildRootsUri(NvDocumentsProvider.authority(activity)), null)

@@ -1,8 +1,3 @@
-<!--
-  "Non c'è abbastanza spazio: servono X, liberi Y" before an import (stores/space.svelte.ts).
-  A fixed-size volume offers Estendi il volume… (ResizeDialog, prefilled to a size that fits);
-  a growable one on a full drive only says so. Mounted once, in App.
--->
 <script lang="ts">
   import { formatBytes } from '../lib/format';
   import { space } from '../lib/stores/space.svelte';

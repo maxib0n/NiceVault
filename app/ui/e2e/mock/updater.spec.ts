@@ -1,5 +1,3 @@
-// The updater: full controls in Impostazioni (settings-updates), a compact notice on
-// Benvenuto and in the sidebar only while an update is pending.
 import { boot, expect, expectScreen, test } from './helpers';
 
 test('no update pending: no notice; Impostazioni checks, installs and offers Riavvia', async ({ page }) => {

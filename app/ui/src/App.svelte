@@ -1,10 +1,3 @@
-<!--
-  Root: theme, global listeners (vault-locked, jobs, idle), screen routing.
-  Hooks for the designer on #app > .app:
-    data-world="locked|open"  (documents on the board vs the open passport)
-    data-screen="welcome|create|unlock|vault|details|passwords|settings|device"
-  On <html>: data-theme (light|dark, absent = OS) and data-accent (styles/accents.css).
--->
 <script lang="ts">
   import { onMount } from 'svelte';
   import * as api from './lib/api';
@@ -38,14 +31,12 @@
 
   let ready = $state(false);
 
-  // Theme: OS by default; data-theme overrides (URL switch wins for screenshots).
   $effect(() => {
     const t = switches.theme ?? (prefs.theme === 'system' ? null : prefs.theme);
     if (t) document.documentElement.dataset.theme = t;
     else delete document.documentElement.dataset.theme;
   });
 
-  // Accent preset: the saved setting; ?accent= wins for screenshots.
   $effect(() => applyAccent(switches.accent ?? accent.current));
 
   $effect(() => {
@@ -61,13 +52,11 @@
     disposers.push(idle.install(() => void lockAllIdle()));
     (async () => {
       try {
-        // first: the app's look (theme, ink, size) and the UI language saved in Impostazioni
         const g = await api.appSettingsGet();
         appLook.adopt(g);
         sidebar.adopt(g);
         i18n.adopt(g.language);
       } catch {
-        /* the defaults and the OS language */
       }
       await jobs.listen();
       disposers.push(await api.onVaultLocked((e) => vaults.handleLocked(e)));
@@ -77,7 +66,6 @@
         idle.setMinutes(s.auto_lock_minutes);
         accent.adopt(s.accent);
       } catch {
-        /* keep default */
       }
       await app.loadRecents();
       await applySwitches();
@@ -85,7 +73,6 @@
       const takePath = () => void app.takeLaunchPath(vaults.open, (id) => vaults.activate(id));
       disposers.push(await api.onOpenPath(takePath));
       takePath();
-      // at most once a day, silent, never blocks the start
       void update.autoCheck();
     })();
     return () => disposers.forEach((d) => d());
@@ -139,8 +126,6 @@
 </div>
 
 <style>
-  /* screens share one cell, so the document can turn over the open volume
-     during the ceremony (ceremony.ts); the root colour shows only in between */
   .app {
     height: 100%;
     display: grid;

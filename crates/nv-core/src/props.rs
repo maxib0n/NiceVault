@@ -1,25 +1,7 @@
-//! Per-node metadata beyond `nodes` (Proprietà): when a node came into being, when and from where
-//! it was imported, and a SHA-256 computed on request. A side table, added by a versioned additive
-//! migration (`meta nv.files_schema`), so old volumes and older builds keep working:
-//!
-//! ```sql
-//! CREATE TABLE node_meta (node INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
-//!   created INTEGER,        -- unix ns: the host file's birth time at import, else when made in the volume
-//!   imported INTEGER,       -- unix ns: when it was imported (NULL = made inside the volume)
-//!   origin TEXT,            -- host path it was imported from (encrypted with the volume, like everything)
-//!   sha256 BLOB, sha256_size INTEGER, sha256_mtime INTEGER);  -- valid only while size + mtime match
-//! CREATE TRIGGER node_meta_created AFTER INSERT ON nodes
-//!   BEGIN INSERT OR IGNORE INTO node_meta(node, created) VALUES (NEW.id, NEW.mtime); END;
-//! ```
-//! The trigger records the creation of every node, whoever inserts it (this build, the mounted
-//! drive, an older build opening the volume later). Nodes made before the migration have no row:
-//! their values are unknown (the UI shows "—"). Deleting a node deletes its row (foreign key).
-
 use crate::{Vault, dberr};
 use nv_fs::{NodeId, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 
-/// `meta` key of this schema's version (ASCII integer).
 pub const FILES_SCHEMA_KEY: &str = "nv.files_schema";
 pub const FILES_SCHEMA_VERSION: u32 = 1;
 
@@ -41,8 +23,6 @@ END;
 INSERT OR IGNORE INTO node_meta(node, created) SELECT id, mtime FROM nodes WHERE id = 1 AND (SELECT COUNT(*) FROM nodes) = 1;
 "];
 
-/// Applies the missing steps in one transaction; idempotent. A version this build cannot read
-/// (a newer build's, or garbage) is left alone. Runs at open and create, after the volume_id check.
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     use rusqlite::types::Value;
     let raw: Option<Value> = conn.query_row("SELECT v FROM meta WHERE k = ?", [FILES_SCHEMA_KEY], |r| r.get(0)).optional()?;
@@ -79,15 +59,11 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
 }
 
-/// What the volume knows about a node besides `nodes` (all `None` = unknown).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NodeMeta {
-    /// unix ns
     pub created: Option<i64>,
-    /// unix ns
     pub imported: Option<i64>,
     pub origin: Option<String>,
-    /// Only when computed for the node's current size and mtime.
     pub sha256: Option<[u8; 32]>,
 }
 
@@ -96,8 +72,6 @@ fn missing_table(e: &rusqlite::Error) -> bool {
 }
 
 impl Vault {
-    /// The node's metadata. A volume without the table (left untouched as a newer build's) reads
-    /// as unknown.
     pub fn node_meta(&self, id: NodeId) -> Result<NodeMeta> {
         let n = nv_fs::Fs::getattr(self, id)?;
         self.with(|i| {
@@ -131,10 +105,7 @@ impl Vault {
         })
     }
 
-    /// Records an import: the host file's birth time (when the OS tells it), when, and from where
-    /// (durable at the next durability point, with the imported data).
     pub fn set_import_meta(&self, id: NodeId, created: Option<i64>, imported: i64, origin: &str) -> Result<()> {
-        // one step of the open transaction: durable with the import it belongs to
         self.with(|i| {
             i.op(|c| {
                 c.execute(
@@ -148,9 +119,7 @@ impl Vault {
         })
     }
 
-    /// Caches a SHA-256 computed over the node's content at `size` / `mtime` (durable on return).
     pub fn set_sha256(&self, id: NodeId, hash: &[u8; 32], size: u64, mtime: i64) -> Result<()> {
-        // durable on return, like meta_set
         self.with(|i| {
             i.op(|c| {
                 c.execute(
@@ -189,7 +158,7 @@ mod tests {
         assert_eq!((m.imported, m.origin.as_deref(), m.sha256), (None, None, None));
 
         v.set_import_meta(f.id, Some(42), 100, "/home/u/a.txt").unwrap();
-        v.set_import_meta(f.id, None, 101, "/home/u/a.txt").unwrap(); // no birth time: keeps 42
+        v.set_import_meta(f.id, None, 101, "/home/u/a.txt").unwrap();
         v.write(f.id, 0, b"hello").unwrap();
         v.flush().unwrap();
         let n = v.getattr(f.id).unwrap();
@@ -197,12 +166,10 @@ mod tests {
         let m = v.node_meta(f.id).unwrap();
         assert_eq!((m.created, m.imported, m.origin.as_deref(), m.sha256), (Some(42), Some(101), Some("/home/u/a.txt"), Some([7; 32])));
 
-        // the content changes: the cached hash no longer applies
         v.write(f.id, 5, b"!").unwrap();
         v.flush().unwrap();
         assert_eq!(v.node_meta(f.id).unwrap().sha256, None);
 
-        // deleting the node deletes its row (a reused id starts clean)
         v.remove(f.id).unwrap();
         v.flush().unwrap();
         let g = v.create(ROOT, "b.txt", Kind::File).unwrap();

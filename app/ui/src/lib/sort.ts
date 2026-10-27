@@ -1,4 +1,3 @@
-// Sorting of directory entries. Folders always first.
 import type { FsNode } from './types';
 import { extension } from './filetype';
 import { i18n } from './i18n.svelte';

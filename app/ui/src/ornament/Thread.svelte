@@ -1,10 +1,3 @@
-<!--
-  The foil stripe: a diffractive foil laid across the sheet from edge to edge.
-  Its colours shift as the light moves (the pointer stands in for tilting the
-  document; still under reduced motion). Fine grating lines and a repeated
-  emblem are embossed into the foil. Pastel on paper; a dark silver on anthracite,
-  the colours barely there (tokens: --thread-*).
--->
 <script lang="ts">
   import { onMount } from 'svelte';
 
@@ -44,7 +37,6 @@
     overflow: hidden;
     background-color: var(--thread-base);
     background-image:
-      /* diffraction: the hue shifts along the stripe and with the light */
       linear-gradient(180deg, var(--thread-rainbow));
     background-size: 100% 320%;
     background-position: 50% calc(var(--tilt) * 100%);
@@ -54,7 +46,6 @@
       1px 0 0 rgb(var(--cast) / 0.12),
       -1px 0 0 var(--deboss-lip);
   }
-  /* the emblem embossed into the foil, repeated along the stripe */
   .thread::before {
     content: '';
     position: absolute;
@@ -63,7 +54,6 @@
     background-size: 100% 18px;
     opacity: var(--thread-emboss);
   }
-  /* grating lines: the rainbow comes from these */
   .grating {
     position: absolute;
     inset: 0;
@@ -71,7 +61,6 @@
     mix-blend-mode: soft-light;
     opacity: var(--thread-grating);
   }
-  /* the specular glint travels against the colours */
   .glint {
     position: absolute;
     inset: -20% 0;

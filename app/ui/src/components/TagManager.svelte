@@ -1,11 +1,3 @@
-<!--
-  The volume's tags: a new one (name + ink), and each one renamed in place (Enter or leaving
-  the field keeps it, Esc puts it back), re-inked from the 7 inks + neutral, or deleted after
-  a confirmation in its own row (how many items lose it).
-  Hooks: [data-testid=tag-manager], [data-testid=tag-new-name], [data-testid=tag-new-add],
-  rows [data-testid=tag-row][data-tag], [data-testid=tag-name-input], [data-testid=tag-ink],
-  swatches [data-testid=tag-swatch][data-color], [data-testid=tag-delete], [data-testid=tag-delete-confirm].
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Plus, Trash2 } from '@lucide/svelte';
@@ -25,7 +17,6 @@
   // svelte-ignore state_referenced_locally
   let newColor = $state<TagColor>(TAG_COLORS[browser.tags.list.length % (TAG_COLORS.length - 1)]);
   let error = $state<{ tag: TagId | 'new'; text: string } | null>(null);
-  /** the row whose inks are shown, the row asking to confirm its deletion */
   let inking = $state<TagId | 'new' | null>(null);
   let confirming = $state<TagId | null>(null);
 
@@ -124,7 +115,6 @@
     <h3 class="title display">{m.tag_manager_title()}</h3>
   </div>
 
-  <!-- a new tag -->
   <div class="row new">
     <button
       type="button"
@@ -240,7 +230,6 @@
     height: 30px;
     font-size: var(--text-md);
   }
-  /* an existing name reads as text until it is pointed at or edited */
   .name.quiet:not(:focus-visible):not([aria-invalid='true']) {
     border-color: transparent;
     background: transparent;
@@ -264,7 +253,6 @@
     color: var(--danger);
   }
 
-  /* the ink of a tag: a bead set in a small key; pressed, the inks open under the row */
   .ink-key {
     display: grid;
     place-items: center;

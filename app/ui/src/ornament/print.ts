@@ -1,23 +1,11 @@
-// How ink and foil sit on the surface. One light, from the top-left.
-//   intaglio  printed line work. On paper (--ink-relief 1) the ink stands raised: it
-//             catches the light on its top-left flank and drops a hair of shadow
-//             bottom-right. On anthracite (--ink-relief -1) the line is pressed into the
-//             material and inked in the groove: its near (top-left) wall in shade, its far
-//             lip lit.
-//   blind     the same relief with no ink at all (tone on tone): a blind emboss on paper,
-//             a blind deboss in suede or card.
-//   foil      stamped metal: its recess shaded at the top-left, lit at the bottom-right.
-//   flat      ink alone (tiny sizes, dense line screens).
 import type { InkEnv } from './InkCanvas.svelte';
 
 export type Finish = 'intaglio' | 'blind' | 'foil' | 'flat';
 
-/** +1 raised (paper), -1 pressed in (anthracite). */
 export function reliefOf(env: InkEnv): number {
   return env.num('--ink-relief', 1) < 0 ? -1 : 1;
 }
 
-/** Paints `paint` (which strokes/fills with the current styles) as printed ink, blind relief or stamped foil. */
 export function impress(
   ctx: CanvasRenderingContext2D,
   env: InkEnv,
@@ -49,7 +37,6 @@ export function impress(
       pass(env.ink('var(--relief-hi)'), 0.5, 0.62);
     }
     if (finish === 'blind') {
-      // the floor of the impression: the material compressed (pressed in: darker; raised: lit)
       pass(env.ink(r > 0 ? 'var(--relief-hi)' : 'var(--press-floor)'), 0, 0);
       return;
     }
@@ -85,7 +72,6 @@ export function foilGradient(ctx: CanvasRenderingContext2D, env: InkEnv): Canvas
   return g;
 }
 
-/** An offscreen alpha mask at the canvas' device resolution; draw in CSS px. */
 export function mask(env: InkEnv, w: number, h: number, build: (m: CanvasRenderingContext2D) => void): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w * env.dpr));
@@ -100,7 +86,6 @@ export function mask(env: InkEnv, w: number, h: number, build: (m: CanvasRenderi
   return c;
 }
 
-/** A copy of `m` filled with `style` (keeps the alpha). */
 function tint(m: HTMLCanvasElement, style: string | CanvasGradient, w: number, h: number): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = m.width;
@@ -114,13 +99,11 @@ function tint(m: HTMLCanvasElement, style: string | CanvasGradient, w: number, h
   return c;
 }
 
-/** A scratch canvas' pixels given back now rather than at the next collection (phones: full pixel ratio). */
 export function release(c: HTMLCanvasElement): void {
   c.width = 0;
   c.height = 0;
 }
 
-/** Prints an alpha mask as intaglio ink (raised on paper, pressed into anthracite), blind relief or stamped foil; the mask is used up. */
 export function printMask(ctx: CanvasRenderingContext2D, m: HTMLCanvasElement, env: InkEnv, w: number, h: number, finish: Finish, color?: string): void {
   printMaskOnce(ctx, m, env, w, h, finish, color);
   release(m);
@@ -161,12 +144,6 @@ function printMaskOnce(ctx: CanvasRenderingContext2D, m: HTMLCanvasElement, env:
   put(tint(m, ink, w, h), 0, 0);
 }
 
-/**
- * A row of saddle stitches along `pts` (a closed polyline when `closed`): short lengths
- * of thread that sink into the material at each end, each catching the light along its
- * top-left edge, set in the faint groove the needle line pressed. Drawn only where the
- * theme stitches (--stitch-alpha > 0).
- */
 export function stitchRow(
   ctx: CanvasRenderingContext2D,
   env: InkEnv,
@@ -196,7 +173,6 @@ export function stitchRow(
     }
     carry = Math.max(0, t - L);
   }
-  // saddle stitches lie on a slight slant across the needle line
   const slant = opts.slant ?? 0.22;
   const cs = Math.cos(slant);
   const sn = Math.sin(slant);
@@ -219,7 +195,6 @@ export function stitchRow(
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.lineCap = 'round';
-  // the needle line pressed into the material
   ctx.beginPath();
   ctx.moveTo(path[0][0], path[0][1]);
   for (const [x, y] of path.slice(1)) ctx.lineTo(x, y);
@@ -228,7 +203,6 @@ export function stitchRow(
   ctx.globalAlpha = alpha * 0.35;
   ctx.stroke();
   ctx.globalAlpha = alpha;
-  // each stitch: its drop shadow, the thread, the light along its top-left edge
   line('rgba(0,0,0,0.6)', wid, 0.5, 0.7);
   line(thread, wid, 0, 0);
   line('rgba(255,255,255,0.26)', wid * 0.4, -0.3, -0.34, 0.16);

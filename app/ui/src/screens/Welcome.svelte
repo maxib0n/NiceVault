@@ -1,11 +1,3 @@
-<!--
-  Benvenuto: the volumes found here, as passports lying on the board, each bound
-  in its own dyed suede (cloth on paper) when its look is visible while locked,
-  saddle-stitched and stamped in foil; a volume that keeps its look encrypted is
-  bound in plain anthracite with a neutral rosette. Under each, where it was found.
-  Open one, open a file, or issue a new one. An open volume carries a silk ribbon;
-  an unreachable one is only the impression it left in the board.
--->
 <script lang="ts">
   import { FolderOpen, HardDrive, History, Monitor, Plus, Settings, Usb, X } from '@lucide/svelte';
   import { m } from '../paraglide/messages.js';
@@ -47,13 +39,11 @@
 
   const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
   const isOpen = (r: RecentEntry) => vaults.open.some((v) => v.path === r.path);
-  /** the frame round the emblem: the open volume's own, else what this computer last saw */
   const frameFor = (r: RecentEntry) => {
     const v = vaults.open.find((x) => x.path === r.path);
     return v && v.show_when_locked !== false ? v.emblem_frame : lockedFrame(r);
   };
 
-  // where the scan found it (RecentEntry.source)
   const SOURCE = {
     here: { label: m.source_here, icon: HardDrive },
     removable: { label: m.source_removable, icon: Usb },
@@ -61,16 +51,13 @@
     session: { label: m.source_session, icon: History },
   } as const;
 
-  // the books grow a little with the window (the board is a table, not a list)
   let winW = $state(1280);
-  // a phone (styles/mobile.css: the passports are a deck you thumb through) holds one book large in the middle
   const bookW = $derived(winW <= 640 ? Math.round(Math.min(236, winW * 0.58)) : Math.round(Math.min(252, Math.max(158, winW * 0.148))));
   const empty = $derived(app.recentsLoaded && app.recents.length === 0);
 </script>
 
 <svelte:window bind:innerWidth={winW} />
 
-<!-- on app start the page decodes from glyphs, once per session: the covers assemble, their foil intact -->
 <main
   class="welcome ground scroller"
   class:is-empty={empty}
@@ -107,7 +94,6 @@
     <h2 id="recents-title" class="visually-hidden">{m.welcome_recents()}</h2>
     {#if empty}
       <div class="empty" data-state="empty">
-        <!-- the place where the first volume will lie: pressing it makes one -->
         <button type="button" class="slot" data-testid="welcome-first" onclick={() => app.goto('create')}>
           <Rosette size={86} kind="cover" finish="intaglio" />
           <span class="slot-label">{m.welcome_first()}</span>
@@ -138,8 +124,6 @@
             >
               <span class="state" role="img" aria-label={open ? m.welcome_state_open() : m.welcome_state_closed()}></span>
               {#if open}
-                <!-- the bookmark: a silk ribbon from inside the book, under the cover; only its
-                     tail shows below the boards, in the cover's shadow where it comes out -->
                 <svg class="ribbon" viewBox="0 0 12 48" aria-hidden="true" data-testid="ribbon">
                   <defs>
                     <linearGradient id="silk-{i}" x1="0" x2="1" y1="0" y2="0.18">
@@ -154,15 +138,12 @@
                       <stop offset="0.72" stop-color="#000" stop-opacity="0" />
                     </linearGradient>
                   </defs>
-                  <!-- a hair of curve as it hangs, the end cut in a V -->
                   <path d="M1.6 0H10.4C10.6 16 10.9 30 10.2 47.4L6.2 42.6L1.9 47.6C1.2 30 1.3 16 1.6 0Z" fill="url(#silk-{i})" />
-                  <!-- the half-turn of the silk catching the light -->
                   <path d="M2 33C4.5 35.5 7.5 37.5 10.4 38.6V40.4C7.4 39.4 4.4 37.4 1.9 35Z" fill="#fff" opacity="0.22" />
                   <path d="M1.6 0H10.4V48H1.6Z" fill="url(#edge-{i})" />
                 </svg>
               {/if}
               <span class="cover cloth">
-                <!-- saddle-stitched round the board, tone on tone, following its corners -->
                 <Stitch inset={[6, 6, 6, 20]} radius={[3, 4, 4, 3]} len={3.6} gap={2.5} width={1.3} thread="var(--stitch-cloth)" />
                 <span class="issuer foil fine" aria-hidden="true" data-ascii="skip">{m.volume_encrypted()}</span>
                 <span class="mark">
@@ -210,7 +191,6 @@
 </main>
 
 <style>
-  /* the board is the scroll container, so the scrollbar sits at the window edge */
   .welcome {
     position: relative;
     z-index: 2;
@@ -229,7 +209,6 @@
     color: var(--ink-2);
   }
 
-  /* ---- title and the two keys ---------------------------------------- */
   .intro {
     display: flex;
     align-items: flex-end;
@@ -263,7 +242,6 @@
     padding-bottom: 6px;
   }
 
-  /* ---- the shelf of passports ------------------------------------------ */
   .shelf {
     margin-top: clamp(28px, 6vh, 64px);
   }
@@ -304,16 +282,12 @@
     overflow: hidden;
     clip: rect(0 0 0 0);
   }
-  /* the cover: book cloth over board, the book block showing at the fore-edge */
   .cover {
     position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     aspect-ratio: 0.705;
-    /* the text lies on the stitched panel (Stitch inset: 20 px at the spine, 6 px elsewhere),
-       centred on it, a hair inside the thread; the cover is its own size container, so every
-       label is sized against the room it really has (window, interface size, language) */
     padding: 18px 10px 0 24px;
     container-type: inline-size;
     border-radius: 6px 10px 10px 6px;
@@ -327,13 +301,10 @@
       4px 4px 0 -0.5px var(--paper-edge-lo),
       0 3px 4px -1px rgb(var(--cast) / 0.3),
       0 18px 30px -14px rgb(var(--cast) / 0.55);
-    /* only the cover moves: the button's hit area stays put, so the lift never slides out
-       from under the pointer (no hover on/off bounce) */
     transition:
       transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1),
       box-shadow 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
   }
-  /* the hinge: the board is scored near the spine */
   .cover::after {
     content: '';
     position: absolute;
@@ -349,7 +320,6 @@
   .issuer {
     max-width: 100%;
     font-family: var(--font-mono);
-    /* "Encrypted volume", 16 mono letters spaced 0.24 em: 13.5 em; never wider than the panel */
     font-size: min(9.5px, 100cqi / 13.8);
     white-space: nowrap;
     overflow: hidden;
@@ -364,12 +334,9 @@
   }
   .name {
     max-width: 100%;
-    /* on a narrow book the size the room allows: a long word (Dichiarazioni) still fits a line */
     font-size: min(calc(var(--book-w) * 0.122), 100cqi / 6.9);
     font-weight: 500;
     line-height: 1.08;
-    /* a word longer than the line breaks inside it (then two lines and the ellipsis; the whole
-       name is in the book's title) */
     overflow-wrap: anywhere;
     text-wrap: balance;
     display: -webkit-box;
@@ -377,8 +344,6 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    /* Bodoni's ink reaches past its line box (descenders 0.27 em under the baseline, accents
-       0.99 em over it): the clamp's box (and the foil, painted inside it) gets that room as padding, given back as margin */
     padding-block: 0.12em 0.16em;
     margin-block: -0.12em -0.16em;
   }
@@ -395,7 +360,6 @@
     text-transform: uppercase;
   }
 
-  /* hover lifts the book off the board, pressing sets it down */
   .book:hover:not(:disabled) .cover {
     transform: translateY(-4px);
     box-shadow:
@@ -413,8 +377,6 @@
     transform: translateY(1px);
   }
 
-  /* open now: the bookmark comes out of the book from under the cover (it lies between the
-     cover and the pages: the cover, its edge and the page block are all drawn over it) */
   .cover {
     z-index: 1;
   }
@@ -422,7 +384,6 @@
     position: absolute;
     z-index: 0;
     right: 30%;
-    /* 48 px of ribbon, the top 28 under the boards (and the page block): a 20 px tail */
     bottom: -20px;
     width: 12px;
     height: 48px;
@@ -432,7 +393,6 @@
     transform-origin: 50% 0;
     transition: transform 180ms cubic-bezier(0.2, 0.7, 0.3, 1);
   }
-  /* it lifts with the book */
   .book:hover:not(:disabled) .ribbon {
     transform: translateY(-4px) rotate(-2.5deg);
   }
@@ -440,7 +400,6 @@
     transform: translateY(1px) rotate(-2.5deg);
   }
 
-  /* unreachable: only the impression the book left in the board */
   .passport.missing .cover {
     background: none;
     color: var(--ink-3);
@@ -449,8 +408,6 @@
       inset -1px -1px 0 var(--deboss-lip),
       inset 0 0 0 1px rgb(var(--cast) / 0.12);
   }
-  /* no stitching, no hinge: nothing to keep the text off the spine, so the header, the seal
-     and the name stand on the impression's own centre (not 7 px towards the fore-edge) */
   .passport.missing .cover {
     padding-inline: 20px;
   }
@@ -459,7 +416,6 @@
   .passport.missing .cover :global(.stitch) {
     display: none;
   }
-  /* its look kept encrypted: bound in undyed material, a neutral rosette */
   .passport.neutral .cover {
     --cloth: var(--cloth-neutral);
     --cloth-hi: var(--cloth-neutral-hi);
@@ -506,8 +462,6 @@
     font-weight: 600;
     color: var(--accent);
   }
-  /* where the scan found it: one quiet line under the caption */
-  /* (inline, so a long place wraps under its own first word, the glyph leading it) */
   .where {
     max-width: 100%;
     overflow-wrap: anywhere;
@@ -525,7 +479,6 @@
     color: var(--ink-4);
   }
 
-  /* ---- empty: the place where the first volume will lie ----------------- */
   .empty {
     display: flex;
   }

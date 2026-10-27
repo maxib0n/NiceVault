@@ -1,15 +1,3 @@
-// In-browser mock of "Aggiorna i programmi sulla chiavetta" (device_sticks / device_stick_mount /
-// device_stick_update), plugged into MockBackend.invoke. Same names, shapes, errors and events as
-// app/src-tauri/src/device/stick.rs (whose fake backend, NICEVAULT_FAKE_DISKS, the Rust tests use).
-//
-// URL switches (switches.ts): stick=old (a SanDisk made by 0.0.5 holds the mock's volumes:
-// every program older) · stick=missing (no macOS program) · stick=current (all up to date) ·
-// stick=unmounted (its NiceVault partition is not mounted) · stick=tight (as old, on a 128 MiB
-// partition: macOS replaced in place) · stick_offline (the other OSes cannot be downloaded) ·
-// stick_fail=<code> (the update fails while copying, e.g. no_space; with stick=tight,
-// stick_fail=rewrite: macOS' in-place write fails once, "da riscrivere", the retry works).
-// Without ?stick there is no NiceVault device.
-
 import type { OsId } from './device';
 import type { Stick, StickOs, StickOsResult, StickOutcome, StickSpace } from './stick';
 import type { ApiError, EventMap, EventName, JobId } from './types';
@@ -26,11 +14,8 @@ export interface StickMockOptions {
   scenario: StickScenario;
   offline: boolean;
   fail: string | null;
-  /** where the device's VaultData is mounted (the mock's volumes live there) */
   dataMount: string;
-  /** the running app's version (app_info) */
   running: string;
-  /** the latest version on the update channel */
   latest: string;
 }
 
@@ -39,10 +24,8 @@ const MIB = 1048576;
 const OSES: OsId[] = ['linux', 'windows', 'macos'];
 const FILES: Record<OsId, string> = { linux: 'NiceVault-linux-x86_64', windows: 'NiceVault-windows-x86_64.exe', macos: 'NiceVault.app' };
 const SIZES: Record<OsId, number> = { linux: 21 * MIB, windows: 17 * MIB, macos: 34 * MIB };
-/** stick=tight: the real programs on a 128 MiB partition (bytes) */
 const TIGHT: Record<OsId, number> = { linux: 28_300_000, windows: 24_500_000, macos: 42_000_000 };
 
-/** semver-ish a < b (numbers only; enough for the mock) */
 function older(a: string | null, b: string): boolean {
   if (!a) return true;
   const pa = a.split('.').map(Number);
@@ -52,7 +35,6 @@ function older(a: string | null, b: string): boolean {
 }
 
 export class StickMock {
-  /** versions on the stick (null = the program is missing) */
   private versions: Record<OsId, string | null>;
   private mounted: boolean;
   private seq = 0;
@@ -102,7 +84,6 @@ export class StickMock {
     };
   }
 
-  /** stick=tight: ~14 MB free and the old macOS zip (26 MB) to clear; else plenty of room */
   private space(oses: OsId[]): StickSpace {
     const tight = this.opts.scenario === 'tight';
     const sizes = tight ? TIGHT : SIZES;
@@ -128,7 +109,6 @@ export class StickMock {
     };
   }
 
-  /** stick=tight: the old macOS zip is still beside the app (cleared by the first update) */
   private zip = true;
 
   private holds(path: unknown): boolean {
@@ -172,7 +152,6 @@ export class StickMock {
       const total = writes.reduce((s, p) => s + SIZES[p.os], 0) || 1;
       let written = 0;
       const results: StickOsResult[] = [];
-      // one at a time, smallest first (stick.rs plan_space)
       const rank = (os: OsId) => {
         const i = space.programs.findIndex((s) => s.os === os);
         return i < 0 ? 9 : i;
@@ -187,7 +166,6 @@ export class StickMock {
         await this.host.wait(ms(380));
         const mode = space.programs.find((s) => s.os === p.os)?.mode ?? 'safe';
         if (this.opts.fail === 'rewrite' && mode === 'tight') {
-          // the old copy was removed to make room and the new write failed: "da riscrivere"
           this.opts.fail = null;
           this.versions[p.os] = null;
           results.push({ os: p.os, from: p.from, to: null, result: 'rewrite', error: err('copy_failed', `${FILES[p.os]}: mock failure while writing`), mode });

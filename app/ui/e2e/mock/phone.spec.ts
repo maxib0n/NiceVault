@@ -1,6 +1,3 @@
-// The phone's own shell (?platform=mobile at phone width, styles/mobile.css "pocket edition"):
-// the flap at the foot with the clasp, menus drawn up from it as sheets, the shelf of volumes above
-// a volume's root, the passports as a deck.
 import { boot, expect, item, listed, test } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
@@ -8,18 +5,15 @@ test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 test('the flap: five places at the foot, the clasp in the middle', async ({ page }) => {
   await boot(page, 'screen=vault&platform=mobile');
   await listed(page);
-  // measured once the volume's page has settled (it rises in on arrival)
   await expect(async () => {
     const files = (await page.getByTestId('nav-files').boundingBox())!;
     const lock = (await page.getByRole('button', { name: 'Blocca', exact: true }).boundingBox())!;
     const details = (await page.getByTestId('nav-details').boundingBox())!;
     const settings = (await page.getByTestId('open-settings').boundingBox())!;
-    // all on the bottom line, in the order File · Password · Blocca · Dettagli · Impostazioni
     for (const b of [files, lock, details, settings]) expect(b.y + b.height).toBeGreaterThan(844 - 90);
     expect(files.x).toBeLessThan(lock.x);
     expect(lock.x).toBeLessThan(details.x);
     expect(details.x).toBeLessThan(settings.x);
-    // every place is a finger wide
     for (const b of [files, lock, details, settings]) expect(b.width).toBeGreaterThanOrEqual(44);
   }).toPass();
 });
@@ -36,7 +30,6 @@ test("an item's menu is a sheet drawn up from the bottom", async ({ page }) => {
     expect(Math.round(box.width)).toBe(390);
     expect(Math.round(box.y + box.height)).toBe(844);
   }).toPass();
-  // a row a finger can hit
   const row = (await menu.getByRole('menuitem').first().boundingBox())!;
   expect(row.height).toBeGreaterThanOrEqual(44);
 });
@@ -64,7 +57,6 @@ test('the passports scroll sideways as a deck, one at a time', async ({ page }) 
   expect(style.scrolls).toBe(true);
 });
 
-/** A finger resting on an element (Pointer Events, as WebKit / Chromium send for a touch). */
 async function longPress(target: import('@playwright/test').Locator, ms = 700) {
   await target.evaluate(async (node, ms) => {
     const r = node.getBoundingClientRect();
@@ -92,9 +84,7 @@ test("a long press opens the item's sheet; the lift does not open the item", asy
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Rinomina' })).toBeVisible();
-  // still in Documenti: the click after the lift was swallowed
   await expect(item(page, 'Audio')).toBeVisible();
-  // a short touch is a tap, not a press
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
 });
@@ -109,10 +99,8 @@ test('rename from the sheet: a slip above the keyboard, its own keys', async ({ 
   const field = sheet.getByRole('textbox', { name: 'Nuovo nome' });
   await expect(field).toBeFocused();
   await expect(field).toHaveValue('Copertina.jpg');
-  // the stem is selected: typing replaces it, the extension stays
   await page.keyboard.type('Retro');
   await expect(field).toHaveValue('Retro.jpg');
-  // the sheet sits on the bottom edge (no keyboard in the test browser)
   await expect(async () => {
     const box = (await sheet.boundingBox())!;
     expect(Math.round(box.y + box.height)).toBe(844);
@@ -132,7 +120,6 @@ test('Seleziona: taps pick several, the slip acts on them, Fine ends it', async 
   await expect(bar).toContainText('1 selezionato');
   await item(page, 'Leggimi.txt').click();
   await expect(bar).toContainText('2 selezionati');
-  // a tap picks, it does not open (no preview)
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await bar.getByRole('button', { name: 'Elimina' }).click();
   await expect(page.getByRole('dialog')).toContainText('2');
@@ -157,7 +144,6 @@ test('the preview covers the whole glass, the app chrome too', async ({ page }) 
   await boot(page, 'screen=vault&dir=Foto&preview=image&platform=mobile');
   const ql = page.getByRole('dialog');
   await expect(ql).toBeVisible();
-  // measured once it has settled (it rises in)
   await expect(async () => {
     const box = (await ql.boundingBox())!;
     expect(Math.round(box.x)).toBe(0);
@@ -165,22 +151,25 @@ test('the preview covers the whole glass, the app chrome too', async ({ page }) 
     expect(Math.round(box.width)).toBe(390);
     expect(Math.round(box.height)).toBe(844);
   }).toPass();
-  // the picture zooms with fingers: no zoom strip on a phone
   await expect(page.getByRole('toolbar', { name: /immagine/i })).toBeHidden();
 });
 
-test('the board and the page paint their grain themselves (no blend across layers: iOS)', async ({ page }) => {
+test('the board and the page paint their grain themselves (no blend across layers: iOS, WebKitGTK 2.52)', async ({ page }) => {
   for (const [q, tex] of [
-    ['screen=welcome&theme=dark', 'felt-board-a62'],
-    ['screen=settings&theme=dark', 'felt-board-a62'],
-    ['screen=settings&theme=light', 'board-grain-a20'],
+    ['screen=welcome&theme=dark&platform=mobile', 'felt-board-a62'],
+    ['screen=settings&theme=dark&platform=mobile', 'felt-board-a62'],
+    ['screen=settings&theme=light&platform=mobile', 'board-grain-a20'],
+    ['screen=welcome&theme=dark', 'felt-board-a'],
+    ['screen=settings&theme=light', 'board-grain-a'],
   ]) {
-    await boot(page, `${q}&platform=mobile`);
+    await boot(page, q);
     const look = await page.locator('main.ground').first().evaluate((el) => ({
-      before: getComputedStyle(el, '::before').display,
+      before: getComputedStyle(el, '::before').content,
       image: getComputedStyle(el).backgroundImage,
+      blend: getComputedStyle(el).backgroundBlendMode,
     }));
-    expect(look.before).toBe('none');
-    expect(look.image).toContain(tex);
+    expect(['none', 'normal']).toContain(look.before);
+    expect(look.image.split(',')[0]).toContain(tex);
+    expect(look.blend.split(',')[0].trim()).toBe('soft-light');
   }
 });

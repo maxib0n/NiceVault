@@ -1,21 +1,3 @@
-// First-run flicker in the real webview (WebKitGTK): each animated surface is opened twice in
-// one session — the first open and the second — and both are measured the same way:
-//   - frame times from requestAnimationFrame over the open (a first open that drops frames the
-//     second does not = work done once per process: GL programs / textures / layers created on
-//     first use);
-//   - on X (Xvfb), the screen captured every ~20 ms (capture.py) and the region of the surface
-//     classified per frame (flicker.py: a frame darker / lighter than both neighbours, a frame
-//     with the surface missing after it was shown).
-// Prints one line per open and writes OUT/flicker-<label>.json + OUT/frames-flk-*/strip.png.
-//   NV_E2E_SCRIPT=flicker.mjs pnpm e2e:real                (Xvfb: frames + timings)
-//   NV_E2E_DISPLAY=wayland NV_E2E_SCRIPT=flicker.mjs ...   (nested KWin, GPU path)
-//   (Wayland frames come from the nested KWin's ScreenShot2, capture-kwin.py, half size; the
-//   webview is found on screen by locate.py.)
-// Env: NV_FLK_LABEL=<name> (default "x11" / "wayland"), NV_FLK_ONLY=a,b (scenario names),
-//      NV_FLK_N=<n> opens each surface n times (default 2), NV_FLK_CSS=<css> injects a stylesheet
-//      (try a fix without a build). Exits 1 when any open flickered.
-// What it found (styles/motion.css): the end of a compositor opacity/transform animation showed one
-// stale frame from its middle (a slip flashing half-transparent): "!" in the labels.
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,7 +19,6 @@ let wd;
 function frames(name) {
   const dir = join(OUT, `frames-flk-${LABEL}-${name}`);
   rmSync(dir, { recursive: true, force: true });
-  // X: the root window; Wayland: the nested KWin's composited screen (ScreenShot2)
   const p = X11 ? spawn('python3', [join(HERE, 'capture.py'), dir], { stdio: 'ignore' }) : spawn('python3', [join(HERE, 'capture-kwin.py'), dir, join(WORK, 'kwin-bus')], { stdio: ['ignore', 'ignore', 'inherit'] });
   const exited = new Promise((r) => p.on('exit', r));
   return async () => {
@@ -67,7 +48,6 @@ const invoke = (cmd, args) =>
     args: [cmd, args],
   });
 
-/** X screen rect of the first element matching css (the webview sits at the bottom of the window). */
 async function screenRect(css) {
   const r = await wd.exec(`const e = document.querySelector(${JSON.stringify(css)}); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, iw: innerWidth, ih: innerHeight }`);
   if (!r) return null;
@@ -83,7 +63,6 @@ async function screenRect(css) {
   return { x: Math.round(ox + r.x), y: Math.round(oy + r.y), w: Math.max(4, Math.round(r.w)), h: Math.max(4, Math.round(r.h)) };
 }
 
-/** Wayland: where the page sits on the captured screen (found once: the window does not move). */
 let origin = null;
 async function webviewOrigin() {
   if (origin) return origin;
@@ -117,7 +96,6 @@ async function pointer(css, button = 0, double = false) {
 }
 
 const results = [];
-/** One open of a surface: frame times over `ms` and (X) the frames of `region`. */
 async function measure(name, nth, open, region, close, ms = 700) {
   await wd.exec(PROBE);
   await sleep(120);
@@ -150,7 +128,6 @@ async function main() {
   wd = new WebDriver(DRIVER);
   await wd.start({ 'tauri:options': { application: APP } });
   await waitFor('app ready', 'return document.querySelector("[data-ready=true]")');
-  // a volume: photos and files at the root, made through the real backend
   const vol = join(WORK, 'stick', 'Prova.nvault');
   const info = await invoke('vault_create', { path: vol, password: PASSWORD, kdf: 'fast' });
   if (!info.ok) throw new Error(JSON.stringify(info));
@@ -168,9 +145,6 @@ async function main() {
   if (!job.ok) throw new Error(JSON.stringify(job));
   await sleep(1500);
   await invoke('vault_lock', { vault: id });
-  // a fresh process state is what matters (first use of each GL program / texture): the page is
-  // reloaded so the session starts like a user's, the process keeps nothing of this setup
-  // except what the setup itself drew (Benvenuto)
   await wd.exec('location.reload()');
   await sleep(300);
   await waitFor('app ready', 'return document.querySelector("[data-ready=true]") && document.querySelector(".passport .book")');
@@ -181,7 +155,6 @@ async function main() {
   const pw = await waitFor('password', 'return document.querySelector("input[type=password]")');
   await wd.sendKeys(pw, PASSWORD + KEY.Enter);
   await waitFor('vault', 'return document.querySelector("[data-screen=vault]") && document.querySelectorAll("[role=listbox] .file-item").length >= 5', 20000);
-  // the unlock ceremony, the folder decode, thumbnails: over
   await sleep(4000);
   if (!X11) await webviewOrigin();
 
@@ -189,8 +162,6 @@ async function main() {
   const esc = () => wd.keys(KEY.Escape);
   const item = (n) => `[role=listbox] .file-item:has([data-testid=item-name][title="${n}"])`;
   for (let nth = 1; nth <= (Number(process.env.NV_FLK_N) || 2); nth++) {
-    // a folder of photos: decodes the first time (thumbnails arriving, glyphs handing over to the
-    // pictures); the second time it is a repeated place (no decode): both must be clean
     if (want('folder')) {
       await measure('folder', nth, () => pointer('[role=listbox] .file-item:has([data-testid=item-name][title="Foto"])', 0, true), '[role=listbox]', async () => {
         await wd.keys(KEY.Backspace);

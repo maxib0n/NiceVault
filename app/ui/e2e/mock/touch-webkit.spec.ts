@@ -1,6 +1,3 @@
-// WebKit (the iPhone's engine) with a touch screen: Playwright taps there but cannot drag, so the
-// strokes are in touch-zoom.spec.ts (Chromium, CDP); here a double tap zooms a picture at the
-// point and back, a single tap on a document brings the chrome, and the scrollers keep pan-y.
 import { boot, expect, test } from "./helpers";
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
@@ -25,7 +22,6 @@ test("a picture: double tap in at the point, again back to fit", async ({
     .poll(async () => Number(await viewer.getAttribute("data-zoom")))
     .toBeGreaterThan(fit * 1.5);
   await expect(ql).toHaveAttribute("data-zoomed", "true");
-  // the point tapped stays about where it was (the zoom grew round it, not round the centre)
   const z = (await pic.boundingBox())!;
   const fx = (p.x - b.x) / b.width;
   expect(Math.abs(z.x + z.width * fx - p.x)).toBeLessThan(40);

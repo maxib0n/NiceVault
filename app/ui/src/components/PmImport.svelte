@@ -1,9 +1,3 @@
-<!--
-  Import wizard for the password manager: 1 the source (Bitwarden JSON / KeePass KDBX / CSV),
-  2 the file (+ KeePass master password and optional key file), 3 the job's real progress
-  (job-progress: done_bytes / total_bytes = entries) and its result (job-done: imported).
-  Hooks: [data-testid=pm-import] data-step, [data-testid=pm-import-result].
--->
 <script lang="ts">
   import { Check, Database, FileJson, FileSpreadsheet, FileUp, KeyRound } from '@lucide/svelte';
   import Rosette from '../ornament/Rosette.svelte';
@@ -31,7 +25,6 @@
   let error = $state<string | null>(null);
   let wasOpen = false;
   const offs: (() => void)[] = [];
-  // events can arrive before pm_import has returned the job id: kept until it is known
   const early = new Map<string, { progress?: { done: number; total: number }; done?: PmImportDone }>();
   function finished(r: PmImportDone) {
     result = { imported: r.imported ?? 0, error: r.error ? errorText(r.error) : null };
@@ -142,7 +135,6 @@
     {:else if step === 2}
       <div class="field">
         <span class="field-label" id="imp-file-label">{m.imp_file()}</span>
-        <!-- the file slot: pressed into the page, the chosen file's path set in it -->
         <div class="slot" data-filled={!!path}>
           <span class="slot-icon" aria-hidden="true"><FileUp size={17} strokeWidth={1.5} /></span>
           <span class="file mono" class:none={!path} aria-labelledby="imp-file-label">{path ?? m.imp_no_file()}</span>
@@ -164,7 +156,6 @@
     {:else}
       <div class="run" aria-live="polite" data-result={result ? (result.error ? (result.imported > 0 ? 'partial' : 'failed') : 'done') : 'running'}>
         {#if result}
-          <!-- the receipt: stamped when every entry came in -->
           {#if !result.error}<span class="stamp" aria-hidden="true"><Rosette size={72} kind="stamp" finish="flat"><Check size={20} strokeWidth={1.8} /></Rosette></span>{/if}
           <p class={result.error ? 'error-text' : 'done display'} data-testid="pm-import-result" data-imported={result.imported}>
             {#if result.error && result.imported > 0}
@@ -203,7 +194,6 @@
     flex-direction: column;
     gap: var(--space-3);
   }
-  /* where the import stands: three numbered steps, the current one in the ink */
   .rail {
     display: flex;
     flex-wrap: wrap;
@@ -246,7 +236,6 @@
     color: var(--accent);
   }
 
-  /* the sources: three cards, each with its mark, its name and one line */
   .kinds {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -313,7 +302,6 @@
   .kind[aria-checked='true'] .kind-icon {
     color: var(--accent);
   }
-  /* the radio's own mark, top right */
   .dot {
     position: absolute;
     top: 12px;
@@ -342,7 +330,6 @@
     border-top: 1px solid var(--paper-rule);
   }
 
-  /* the file slot */
   .slot {
     display: flex;
     align-items: center;
@@ -379,7 +366,6 @@
     color: var(--ink-3);
   }
 
-  /* the job, then its receipt */
   .run {
     display: flex;
     flex-direction: column;

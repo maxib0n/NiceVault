@@ -1,9 +1,3 @@
-<!--
-  Plain text and code. Read a page at a time (256 KB, cut at a line end) with Range, so a
-  multi-gigabyte log opens at once and memory stays flat; ‹ › walk the pages. The encoding is
-  detected (BOM, UTF-8, UTF-16, else Windows-1252); code is highlighted by the tiny tokenizer
-  (highlight.ts), rendered as text nodes only. CSV/TSV also as a table. Binary → hex panel.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Table, TextWrap } from '@lucide/svelte';
@@ -20,7 +14,6 @@
 
   let { src, node, lang, onfail }: { src: ByteSource; node: FsNode; lang: string | null; onfail: (r: InfoReason) => void } = $props();
 
-  /** how far past a page's end to look for the line end it is cut at */
   const LOOK = 64 * 1024;
   const ext = $derived(extension(node.name));
   const csv = $derived(ext === 'csv' || ext === 'tsv');
@@ -35,21 +28,18 @@
   let table = $state(true);
   let error = $state(false);
   let scroller: HTMLDivElement | undefined = $state();
-  /** line number each page starts at, once known (pages read in order) */
   const lineStarts = new Map<number, number>([[0, 1]]);
 
   const isNl = (b: Uint8Array, i: number, e: Detected) =>
     e.encoding === 'utf-16le' ? b[i] === 10 && b[i + 1] === 0 : e.encoding === 'utf-16be' ? b[i] === 0 && b[i + 1] === 10 : b[i] === 10;
   const unit = (e: Detected) => (e.encoding.startsWith('utf-16') ? 2 : 1);
 
-  /** offset (in `raw`) just past the first line end at or after `from`, else a char boundary near `from` */
   function cutAfter(raw: Uint8Array, from: number, e: Detected, eof: boolean): number {
     const u = unit(e);
     from -= from % u;
     if (from >= raw.length) return raw.length;
     for (let i = from; i + u - 1 < raw.length; i += u) if (isNl(raw, i, e)) return i + u;
     if (eof) return raw.length;
-    // a very long line: cut at a character boundary
     let i = from;
     if (e.encoding === 'utf-8') while (i > 0 && (raw[i] & 0xc0) === 0x80) i--;
     return i;
@@ -143,7 +133,6 @@
       </div>
     {:else}
       <div class="vw-sheet wide code-sheet" class:numbered={firstLine !== null}>
-        <!-- one block per line; the number is drawn by CSS from data-n (not selectable) -->
         <div class="code" class:wrap data-testid="viewer-code" style:--digits={String((firstLine ?? 1) + lines.length).length}>
           {#each lines as line, i (i)}
             <div class="ln" data-n={firstLine === null ? null : firstLine + i}>
@@ -214,7 +203,6 @@
     user-select: none;
     -webkit-user-select: none;
   }
-  /* inks for the tokens: the volume's accent for keywords, quiet tones for the rest */
   .t-com {
     color: var(--ink-3);
     font-style: italic;

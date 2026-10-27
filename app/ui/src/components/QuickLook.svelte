@@ -1,8 +1,3 @@
-<!-- Quick look overlay. Space/Esc close, ←/→ step through previewable files in the folder.
-     "Schermo intero" (F, always on a phone): the file fills the window, the chrome and the dock of
-     the folder's other files (QlDock) hide after a moment without the pointer and come back on
-     any movement or a tap; Esc leaves full screen. Touch: swipe ←/→ steps, swipe down closes,
-     pinch / double-tap zooms a picture (lib/gestures.ts). -->
 <script lang="ts">
   import { pointerLast } from '../lib/modality';
   import { m } from '../paraglide/messages.js';
@@ -21,7 +16,6 @@
   import { decodeMedia } from '../lib/reveal';
   import Viewer from '../viewers/Viewer.svelte';
   import { openMounted } from '../viewers/actions';
-  /** the in-app viewers (src/viewers) show every file; the branches below are the old ones */
   const VIEWERS = true;
   import { isMobile } from '../lib/platform';
   import { pinchZoom, swipe } from '../lib/gestures';
@@ -34,18 +28,14 @@
   const node = $derived(browser.previewNode);
   const type = $derived(node ? fileType(node) : 'other');
   const url = $derived(node ? previewUrl(browser.vault.id, node.id) : '');
-  // a picture is shown at most window-sized: the backend sends it resampled to that (thumbs.rs
-  // `fit`), not 12 megapixels decoded and uploaded to the GPU in the frame it appears; zoomed in
-  // (a pinch), the original
   const fitted = $derived(node && type === 'image' ? previewUrl(browser.vault.id, node.id, undefined, Math.ceil(Math.max(innerWidth, innerHeight) * (devicePixelRatio || 1))) : '');
 
-  // media the webview won't stream from nvault:// is replayed from memory (mediaBlob.ts)
   let blobUrl = $state<string | null>(null);
   let mediaFailed = $state(false);
   let blobAbort: AbortController | null = null;
   const mediaSrc = $derived(blobUrl ?? url);
   $effect(() => {
-    void node?.id; // reset per file
+    void node?.id;
     return () => {
       blobAbort?.abort();
       blobAbort = null;
@@ -75,16 +65,13 @@
   }
   const many = $derived(browser.previewable.length > 1);
 
-  // ---- full screen: the chrome (head + dock) hides after IDLE_MS without the pointer ----
   const IDLE_MS = 2000;
   let fullChosen = $state(false);
   const full = $derived(isMobile || fullChosen);
   let chrome = $state(true);
   let zoomed = $state(false);
-  /** the head floats over the stage in full screen: a document starts below it (--ql-head-h) */
   let headH = $state(0);
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
-  /** the dock is being touched / scrolled / hovered (QlDock onhold): no hiding until it ends */
   let held = false;
   function wake() {
     chrome = true;
@@ -103,10 +90,6 @@
       if (idleTimer) clearTimeout(idleTimer);
     };
   });
-  // the chrome comes back for the pointer, never for a scroll: WebKit sends a mouse move after
-  // content scrolls under a still pointer (to update hover), and a finger moving is a scroll or a
-  // swipe (a tap shows it: swipe onTap). A mouse brings it back by really moving towards an edge,
-  // where the head and the dock are, or by a click on the stage.
   const EDGE = 120;
   let lastMouse: { x: number; y: number } | null = null;
   let scrolledAt = 0;
@@ -129,26 +112,21 @@
     if (!el) return;
     if (node && !el.open) {
       el.showModal();
-      // opened by a click: the preview itself holds focus (Esc, arrows and Space still work),
-      // not its close key with a ring round it (lib/modality.ts)
       if (pointerLast()) el.focus();
     } else if (!node && el.open) el.close();
   });
 
   let leaving = false;
   const calm = () => !matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // instant: the swipe down already carried the page out, a second fade would replay it
   function close(instant = false) {
     if (leaving) return;
     const done = () => {
       leaving = false;
       fullChosen = false;
       browser.quickLook = null;
-      // return keyboard focus to the file list
       queueMicrotask(() => document.querySelector<HTMLElement>('.file-view')?.focus());
     };
     if (instant || !el?.open || !calm()) return done();
-    // the sheet fades and sinks a little (through --nv-o / --nv-t, never opacity itself), then goes
     leaving = true;
     const a = el.animate([{ '--nv-o': '1', '--nv-t': 'scale(1)' }, { '--nv-o': '0', '--nv-t': 'scale(0.97)' }] as Keyframe[], {
       duration: 160,
@@ -160,7 +138,6 @@
       () => done(),
     );
   }
-  /** window-sized <-> full screen: the sheet is re-laid at once and eased from its old box to the new (FLIP, --nv-t) */
   function morph(change: () => void) {
     if (!el || !calm()) return change();
     const from = el.getBoundingClientRect();
@@ -183,8 +160,6 @@
     a.addEventListener('cancel', end);
   }
 
-  // the video's full-screen key / double click / F: our full screen, and the window with it on desktop
-  // (never the webview's native player)
   $effect(() => {
     const on = () => !isMobile && node && setFull(!fullChosen);
     window.addEventListener('nv:ql-fullscreen', on);
@@ -200,16 +175,13 @@
 
   function keydown(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
-    const inMedia = t.tagName === 'VIDEO' || t.tagName === 'AUDIO' || e.altKey; // Alt+← = back: closes (FileBrowserView)
-    // a film in full screen: ←/→ seek inside it (MediaViewer), they don't change file
+    const inMedia = t.tagName === 'VIDEO' || t.tagName === 'AUDIO' || e.altKey;
     const film = full && appLook.videoArrows === 'seek' && !!el?.querySelector('[data-testid="viewer-media"][data-kind="video"]');
-    // keys that scroll the document leave the chrome where it is
     if (full && !['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) wake();
     if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && !isMobile && !t.closest('input, textarea')) {
       e.preventDefault();
       setFull(!fullChosen);
     } else if (e.key === ' ' && !inMedia && !el?.querySelector('[data-testid="viewer-media"]')) {
-      // a film or a song: Space is play/pause (MediaViewer), not close
       e.preventDefault();
       close();
     } else if (e.key === 'ArrowRight' && !inMedia && !film) {
@@ -278,7 +250,6 @@
             <ExternalLink size={16} aria-hidden="true" /> {m.ql_open_with()}
           </button>
         {:else if browser.vault.mountpoint}
-          <!-- only through the mounted drive: no decrypted copy anywhere -->
           <button type="button" class="btn ghost" onclick={() => openMounted(browser.vault.id, node.id)}>
             <ExternalLink size={16} aria-hidden="true" /> {m.vw_open_external()}
           </button>
@@ -353,7 +324,6 @@
 </dialog>
 
 <style>
-  /* the light table: the file laid out on its own, prints with their border */
   .quick-look {
     width: min(1180px, calc(100vw - 56px));
     height: min(840px, calc(100vh - 56px));
@@ -381,7 +351,6 @@
       transition: none;
     }
   }
-  /* full screen: the whole window, the stage edge to edge; head and dock float and fade */
   .quick-look[data-full] {
     width: 100vw;
     height: 100dvh;
@@ -395,7 +364,6 @@
     z-index: 2;
     background: color-mix(in oklab, var(--paper-hi) 86%, transparent);
     backdrop-filter: blur(10px);
-    /* hidden / shown through --nv-o / --nv-t (styles/motion.css), never opacity itself */
     will-change: opacity;
     --nv-o: 1;
     --nv-t: translate3d(0, 0, 0);
@@ -413,14 +381,11 @@
   .quick-look[data-chrome='hidden'] {
     cursor: none;
   }
-  /* a document in full screen: its first line below the floating head, its last above the dock */
   .quick-look[data-full] :global(.vw-scroll) {
     padding-top: calc(var(--ql-head-h, 0px) + var(--space-5));
     padding-bottom: calc(var(--space-7) + 112px);
     scroll-padding-top: var(--ql-head-h, 0px);
   }
-  /* a viewer's strip (zoom, pages) rests at the foot of the stage and rides up over the dock while
-     it shows, down again when it goes: --nv-dy (registered, styles/motion.css) read by `translate` */
   .quick-look[data-full]:has(:global(.ql-dock)) :global(.vw-bar) {
     translate: 0 var(--nv-dy);
     transition: --nv-dy var(--dur-ui) var(--ease-out);
@@ -434,14 +399,11 @@
   }
   .ql-body {
     position: relative;
-    /* documents keep their vertical scroll; horizontal strokes are swipes (lib/gestures.ts) */
     touch-action: pan-y;
   }
-  /* a document zoomed wider than the glass pans both ways (and steps no more) */
   .quick-look[data-zoomed] .ql-body {
     touch-action: pan-x pan-y;
   }
-  /* pictures and films: every stroke is ours (swipe, pinch, pan) */
   .quick-look:is([data-type='image'], [data-type='video']) .ql-body {
     touch-action: none;
   }
@@ -509,8 +471,6 @@
     background-image: radial-gradient(90% 80% at 30% 20%, color-mix(in oklab, var(--paper-hi) 45%, transparent), transparent 70%);
     box-shadow: inset 0 2px 6px rgb(var(--cast) / 0.12);
   }
-  /* a photograph is a print: white border, lying on the table; the picture develops
-     inside its border (the decode holds the picture, never the paper) */
   .ql-print {
     --ascii-surface: var(--print-develop);
     display: block;
@@ -526,7 +486,6 @@
   }
   .ql-image {
     display: block;
-    /* the light table, less its margin and the print's border (dialog: 1180 x 840 max, head 58) */
     max-width: calc(min(1180px, 100vw - 56px) - 72px - 16px);
     max-height: calc(min(840px, 100vh - 56px) - 58px - 72px - 16px);
     object-fit: contain;

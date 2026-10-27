@@ -1,13 +1,8 @@
-// Phone, iPhone engine with a touch screen: Impostazioni is centred in its window, the Vista sheet's
-// keys line up, and every bottom sheet is dismissed by pulling it down (a short pull springs back).
-// Playwright cannot drag with WebKit's touchscreen, so the strokes are Pointer Events (touch) dispatched
-// on the sheet, which is what lib/sheetSwipe.ts listens to.
 import type { Locator, Page } from '@playwright/test';
 import { boot, expect, item, listed, test } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-/** a one-finger stroke down from (x, y0) by `dy`, in `steps`, `ms` apart, on `target` */
 async function pull(target: Locator, x: number, y0: number, dy: number, ms = 16, steps = 8) {
   await target.evaluate(
     async (el, a) => {
@@ -30,7 +25,7 @@ async function openView(page: Page) {
   await page.getByRole('button', { name: 'Vista', exact: true }).click();
   const sheet = page.getByTestId('phone-view-sheet');
   await expect(sheet).toBeVisible();
-  await page.waitForTimeout(600); // it has risen
+  await page.waitForTimeout(600);
   return page.getByRole('dialog', { name: 'Vista' });
 }
 
@@ -64,7 +59,6 @@ test('the Vista sheet: icon and label of Griglia / Elenco on one line, keys of o
       const b = r.getBoundingClientRect();
       return { y: b.y, h: b.height };
     });
-    // the icon's centre and the text's centre sit on one line, both centred in the key
     expect(Math.abs(ib.y + ib.height / 2 - (tb.y + tb.h / 2))).toBeLessThanOrEqual(5);
     expect(Math.abs(ib.y + ib.height / 2 - (kb.y + kb.height / 2))).toBeLessThanOrEqual(2);
     bs.push(kb);
@@ -79,11 +73,9 @@ test('a bottom sheet (Vista): pulled down by its head it closes; a short pull sp
   const dlg = await openView(page);
   const b = (await dlg.boundingBox())!;
   const x = b.x + b.width / 2;
-  // short: back where it was
   await pull(dlg, x, b.y + 12, 40);
   await expect(dlg).toBeVisible();
   await expect.poll(async () => Math.round((await dlg.boundingBox())!.y)).toBe(Math.round(b.y));
-  // far: gone
   await pull(dlg, x, b.y + 12, Math.round(b.height * 0.6));
   await expect(page.getByTestId('phone-view-sheet')).toBeHidden();
 });
@@ -129,7 +121,6 @@ test('a scrolled menu keeps its scroll: a pull inside it does not close it', asy
   await page.waitForTimeout(400);
   const mb = (await menu.boundingBox())!;
   const last = menu.getByRole('menuitem').last();
-  // a pull that starts low in the slip, on its content, while it is scrolled down, is the scroll's
   await menu.evaluate((el) => (el.scrollTop = 40));
   const scrolls = await menu.evaluate((el) => el.scrollHeight > el.clientHeight);
   if (scrolls) {

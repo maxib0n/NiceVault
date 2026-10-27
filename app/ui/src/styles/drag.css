@@ -1,5 +1,3 @@
-/* The drag preview (lib/dragPreview.ts): built in the document behind the app while the
-   browser takes its picture. Pictures are copies of the items' own (envelope, print, sheet). */
 .nv-drag-preview {
   position: fixed;
   top: 0;
@@ -10,12 +8,9 @@
   flex-direction: row;
   align-items: center;
   gap: 8px;
-  /* padding: set by dragPreview.ts (room for the fanned cards and the count) */
   border-radius: var(--radius-md, 6px);
   color: var(--ink);
   font-family: var(--font-ui);
-  /* a slip of the page, lit at its top edge: solid, so it reads the same with or without a
-     compositor (the browser takes a picture of it) */
   background: linear-gradient(180deg, var(--key-hi), var(--key-lo));
   box-shadow:
     inset 0 1px 0 var(--key-lip),
@@ -30,11 +25,9 @@
 .nv-drag-preview .drag-card {
   position: absolute;
   inset: 0;
-  /* each one further back sits a little up-right and turned, like a fanned pile */
   transform: translate(calc(var(--i, 0) * 5px), calc(var(--i, 0) * -3px)) rotate(var(--tilt, 0deg));
   filter: drop-shadow(0 2px 3px rgb(var(--cast, 0 0 0) / 0.35));
 }
-/* the name of a single item: on up to two lines, never cut in the middle of a word */
 .nv-drag-preview .label {
   max-width: 132px;
   font-size: var(--text-md, 13px);
@@ -48,7 +41,6 @@
   overflow: hidden;
   color: var(--ink);
 }
-/* how many: a dot of the volume's ink at the top right */
 .nv-drag-preview .count {
   position: absolute;
   top: 5px;

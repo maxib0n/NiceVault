@@ -1,6 +1,3 @@
-//! Global settings (language + new-volume defaults): installed mode persists them in the OS
-//! config dir, portable mode keeps them in memory only; new volumes start from the defaults.
-
 use nicevault_app::global::AppSettingsPatch;
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, NoEvents};
@@ -40,12 +37,10 @@ fn installed_persists_language_and_defaults() {
     assert_eq!((a.language.as_str(), a.defaults.accent.as_str(), a.defaults.auto_lock_minutes), ("en", "prussia", 0));
     assert_eq!(st.app_settings_set(patch(r#"{"language": "de"}"#)).unwrap().language, "en", "unknown language ignored");
 
-    // a new app run reads them back
     let st2 = app(loc());
     let b = st2.app_settings_get();
     assert_eq!((b.language.as_str(), b.defaults.theme.as_str(), b.defaults.lock_on_sleep), ("en", "light", false));
 
-    // a new volume starts from them
     std::fs::create_dir_all(t.path().join("exe")).unwrap();
     let v = st2.vault_create(t.path().join("exe/N.nvault").to_str().unwrap(), SecretString::from("p".to_owned()), Some("fast")).unwrap();
     let s = st2.settings_get(Some(&v.id)).unwrap();
@@ -75,7 +70,6 @@ fn settings_json_keeps_unknown_keys_and_never_overwrites_what_it_cannot_read() {
     let cfg = t.path().join("cfg");
     std::fs::create_dir_all(&cfg).unwrap();
     let loc = || Locations { exe_dir: None, removable: Some(vec![]), config_dir: Some(cfg.clone()) };
-    // a newer build's file: extra keys at the top and inside defaults
     std::fs::write(
         cfg.join("settings.json"),
         r#"{"language":"it","future":{"x":1},"defaults":{"accent":"prugna","future_default":true}}"#,
@@ -89,7 +83,6 @@ fn settings_json_keeps_unknown_keys_and_never_overwrites_what_it_cannot_read() {
     assert_eq!(v["defaults"]["future_default"], true);
     assert_eq!((v["defaults"]["theme"].as_str(), v["language"].as_str()), (Some("light"), Some("it")));
 
-    // unreadable: left alone, the change is refused with unsupported_version
     std::fs::write(cfg.join("settings.json"), b"[\"not an object\"]").unwrap();
     let st = app(loc());
     let e = st.app_settings_set(patch(r#"{"language": "en"}"#)).unwrap_err();
@@ -111,11 +104,9 @@ fn app_look_persists_and_new_volumes_wear_it_when_like_app() {
         .app_settings_set(patch(r#"{"app_theme": "light", "app_accent": "ottanio", "ui_scale": 125, "defaults": {"accent": "prussia", "theme": "dark"}}"#))
         .unwrap();
     assert_eq!((a.app_theme.as_str(), a.app_accent.as_str(), a.ui_scale), ("light", "ottanio", 125));
-    // unknown values are ignored
     let a = st.app_settings_set(patch(r#"{"app_theme": "neon", "app_accent": "oro", "ui_scale": 300}"#)).unwrap();
     assert_eq!((a.app_theme.as_str(), a.app_accent.as_str(), a.ui_scale), ("light", "ottanio", 125));
 
-    // "Come l'app" (default on): the app's theme and ink, the defaults' auto-lock
     let v = st.vault_create(exe.join("A.nvault").to_str().unwrap(), SecretString::from("p".to_owned()), Some("fast")).unwrap();
     let s = st.settings_get(Some(&v.id)).unwrap();
     assert_eq!((s.accent.as_str(), s.theme.as_str()), ("ottanio", "light"));
@@ -124,7 +115,6 @@ fn app_look_persists_and_new_volumes_wear_it_when_like_app() {
     let s = st.settings_get(Some(&v.id)).unwrap();
     assert_eq!((s.accent.as_str(), s.theme.as_str()), ("prussia", "dark"));
 
-    // read back by a new run, next to keys this build does not know
     let raw: serde_json::Value = serde_json::from_slice(&std::fs::read(cfg.join("settings.json")).unwrap()).unwrap();
     assert_eq!((raw["app_theme"].as_str(), raw["ui_scale"].as_u64(), raw["new_like_app"].as_bool()), (Some("light"), Some(125), Some(false)));
     let mut obj = raw.as_object().unwrap().clone();

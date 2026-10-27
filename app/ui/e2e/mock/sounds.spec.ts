@@ -1,5 +1,3 @@
-// Subtle UI sounds: the switch in Impostazioni, and the right sound at the right moment
-// (the page records what played in window.__nvSounds; Web Audio itself is not asserted).
 import type { Page } from '@playwright/test';
 import { boot, expect, expectScreen, test } from './helpers';
 
@@ -35,7 +33,6 @@ test('the Suoni switch is on by default and toggles', async ({ page }) => {
   await sw.click();
   await expect(sw).toHaveAttribute('aria-checked', 'false');
   await page.evaluate(() => ((window as unknown as { __nvSounds: string[] }).__nvSounds.length = 0));
-  // with sounds off an error toast makes no sound (the mock wrong-password path
   await page.getByTestId('settings-back').click();
   await expectScreen(page, 'welcome');
   await page.getByRole('button', { name: /Documenti/ }).first().click();

@@ -1,8 +1,3 @@
-//! "Aggiorna i programmi sulla chiavetta" with the fake disk backend (partitions are folders in
-//! a temp dir) and a local signed update channel: detection, online / offline update, a bad
-//! signature, the NiceVault partition not mounted, the app running from the stick. The data
-//! partition must come out byte-identical. Nothing here touches a real disk.
-
 use base64::Engine;
 use nicevault_app::device::backend::{Fake, FakeFile};
 use nicevault_app::device::client::Local;
@@ -56,12 +51,10 @@ fn app_zip() -> Vec<u8> {
     w.finish().unwrap().into_inner()
 }
 
-/// A local update channel at `version`; `bad` platforms get a signature of other bytes.
 fn serve(k: &Key, version: &str, bad: &[&str]) -> String {
     serve_with(k, version, bad, [b"channel linux".to_vec(), b"new windows exe".to_vec(), app_zip()])
 }
 
-/// [`serve`] with these builds (Linux, Windows, the macOS zip).
 fn serve_with(k: &Key, version: &str, bad: &[&str], [lin, win, mac]: [Vec<u8>; 3]) -> String {
     let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let url = format!("http://{}", server.server_addr().to_ip().unwrap());
@@ -97,8 +90,6 @@ struct World {
     ctx: Arc<DeviceCtx>,
 }
 
-/// A NiceVault device made by an older app (0.0.5): Linux and Windows programs, no macOS;
-/// a volume in VaultData. `client_mounted`: whether the NiceVault partition is mounted.
 fn world(manifest: String, pubkey: String, client_mounted: bool, exe_in_client: bool) -> World {
     let t = tempfile::tempdir().unwrap();
     let file = t.path().join("disks.json");
@@ -134,7 +125,6 @@ fn world(manifest: String, pubkey: String, client_mounted: bool, exe_in_client: 
     let other = Disk { id: "/dev/fake2".into(), partitions: vec![Partition { path: "/dev/fake2p1".into(), label: "STICK".into(), fs: "vfat".into(), size: 1 << 30, mountpoints: vec![t.path().join("media/STICK").to_string_lossy().into_owned()] }], ..Default::default() };
     let f = FakeFile { disks: vec![disk, other], root: root.to_string_lossy().into_owned(), step_ms: Some(10), ..Default::default() };
     std::fs::write(&file, serde_json::to_vec(&f).unwrap()).unwrap();
-    // the running "app" 0.1.0, Linux, unsigned (a dev build), or the stick's own program
     let exe = if exe_in_client {
         client.join("NiceVault-linux-x86_64")
     } else {
@@ -161,7 +151,6 @@ fn run(w: &World) -> Result<stick::UpdateOutcome, nicevault_app::error::ApiError
     stick::execute(&w.ctx, &w.st, "job1", &AtomicBool::new(false), "/dev/fake1", &Log::null())
 }
 
-/// Every file under `dir` with its bytes and modification time.
 fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
     let mut out = vec![];
     for e in walk(dir) {
@@ -202,10 +191,9 @@ fn detection_is_read_only_and_finds_the_device_of_a_volume() {
     assert_eq!((s.disk_id.as_str(), s.name.as_str(), s.mounted, s.complete, s.outdated), ("/dev/fake1", "SanDisk Ultra", true, true, true));
     assert_eq!(s.running_version, "0.1.0");
     let l = prog(s, Os::Linux);
-    assert_eq!((l.present, l.version.as_deref(), l.target.as_deref(), l.source, l.current), (true, Some("0.0.5"), Some("0.1.0"), Source::Running, false));
+    assert_eq!((l.present, l.version.as_deref(), l.target.as_deref(), l.source, l.current), (true, Some("0.0.5"), None, Source::Download, false));
     let m = prog(s, Os::Macos);
     assert_eq!((m.present, m.version.as_deref(), m.target.as_deref(), m.source, m.current), (false, None, None, Source::Download, false));
-    // a volume elsewhere: no device
     assert!(stick::sticks(w.ctx.ops.as_ref(), &w.ctx.local, Some(&w.t.path().join("media/STICK/x.nvault"))).is_empty());
     assert!(stick::sticks(w.ctx.ops.as_ref(), &w.ctx.local, Some(Path::new("/home/u/x.nvault"))).is_empty());
     assert_eq!(snapshot(w.t.path()), before, "detection writes nothing");
@@ -218,12 +206,11 @@ fn online_update_replaces_every_program_and_never_touches_the_data_partition() {
     let data_before = snapshot(&w.data);
     let o = run(&w).unwrap();
     let by = |os: Os| o.results.iter().find(|r| r.os == os).unwrap().clone();
-    assert_eq!((by(Os::Linux).result, by(Os::Linux).from.as_deref(), by(Os::Linux).to.as_deref()), (Change::Updated, Some("0.0.5"), Some("0.1.0")));
+    assert_eq!((by(Os::Linux).result, by(Os::Linux).from.as_deref(), by(Os::Linux).to.as_deref()), (Change::Updated, Some("0.0.5"), Some("0.2.0")));
     assert_eq!((by(Os::Windows).result, by(Os::Windows).to.as_deref()), (Change::Updated, Some("0.2.0")));
     assert_eq!((by(Os::Macos).result, by(Os::Macos).from.as_deref(), by(Os::Macos).to.as_deref()), (Change::Updated, None, Some("0.2.0")));
-    // this app's own build for its OS (not the channel's), unsigned: no stale .sig
-    assert_eq!(std::fs::read(w.client.join("NiceVault-linux-x86_64")).unwrap(), b"running linux 0.1.0");
-    assert!(!w.client.join("NiceVault-linux-x86_64.sig").exists());
+    assert_eq!(std::fs::read(w.client.join("NiceVault-linux-x86_64")).unwrap(), b"channel linux");
+    assert!(w.client.join("NiceVault-linux-x86_64.sig").exists());
     assert_eq!(std::fs::read(w.client.join("NiceVault-windows-x86_64.exe")).unwrap(), b"new windows exe");
     assert_ne!(std::fs::read(w.client.join("NiceVault-windows-x86_64.exe.sig")).unwrap(), b"old sig");
     assert_eq!(std::fs::read(w.client.join("NiceVault.app/Contents/MacOS/nicevault")).unwrap(), b"new mac binary");
@@ -231,7 +218,7 @@ fn online_update_replaces_every_program_and_never_touches_the_data_partition() {
     assert!(!std::fs::read_to_string(w.client.join("README.txt")).unwrap().contains("missing"));
     assert!(leftovers(&w.client).is_empty(), "{:?}", leftovers(&w.client));
     let m = marker(&w);
-    assert_eq!(m.clients.get("linux").cloned().flatten().as_deref(), Some("0.1.0"));
+    assert_eq!(m.clients.get("linux").cloned().flatten().as_deref(), Some("0.2.0"));
     assert_eq!(m.clients.get("macos").cloned().flatten().as_deref(), Some("0.2.0"));
     assert_eq!(m.mac_app.as_ref().map(|r| r.tree_sha256.clone()), nicevault_app::device::client::tree_digest(&w.client.join("NiceVault.app")));
     assert_eq!((m.device_id.as_str(), m.app_version.as_str()), ("ab".repeat(16).as_str(), "0.0.5"), "identity kept");
@@ -239,7 +226,6 @@ fn online_update_replaces_every_program_and_never_touches_the_data_partition() {
     assert!(!o.stick.outdated && o.stick.programs.iter().all(|p| p.current));
     assert_eq!(snapshot(&w.data), data_before, "VaultData untouched");
 
-    // again: nothing newer, nothing written
     let mtime = std::fs::metadata(w.client.join("NiceVault-windows-x86_64.exe")).unwrap().modified().unwrap();
     let o = run(&w).unwrap();
     assert!(o.results.iter().all(|r| r.result == Change::Unchanged), "{:?}", o.results);
@@ -285,7 +271,6 @@ fn not_mounted_is_said_then_mounted_without_privileges() {
     let s = stick::mount(&w.ctx, "/dev/fake1").unwrap();
     assert!(s.mounted && s.complete && s.outdated);
     assert_eq!(PathBuf::from(s.client_mount.unwrap()), w.client);
-    // through the job: progress per OS, then job-done with the outcome
     let job = stick::start_update(&w.ctx, &w.st, "/dev/fake1").unwrap();
     let t0 = Instant::now();
     let done = loop {
@@ -300,7 +285,6 @@ fn not_mounted_is_said_then_mounted_without_privileges() {
     let steps: Vec<String> = w.rec.0.lock().unwrap().iter().filter(|(e, v)| e == "job-progress" && v["job"] == job).map(|(_, v)| v["step"].as_str().unwrap().to_owned()).collect();
     assert!(steps.first().map(String::as_str) == Some("check") && steps.last().map(String::as_str) == Some("marker"), "{steps:?}");
     assert!(w.rec.0.lock().unwrap().iter().any(|(e, v)| e == "job-progress" && v["step"] == "copy" && v["os"] == "windows"));
-    // the fake disk file now lists the mount
     assert!(std::fs::read_to_string(&w.file).unwrap().contains("NiceVault\""));
 }
 
@@ -322,12 +306,8 @@ fn an_incomplete_device_is_refused() {
     assert_eq!(std::fs::read(w.client.join("NiceVault-linux-x86_64")).unwrap(), b"old linux");
 }
 
-// ---------------------------------------------------------------------------------------------
-// a 128 MiB NiceVault partition (devices made before 1f86d4a), programs sized like the real ones
-
 const MB: usize = 1_000_000;
 
-/// `n` bytes that deflate about as well as a program (16 symbols: ~half), different per `seed`.
 fn blob(n: usize, seed: u64) -> Vec<u8> {
     let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
     (0..n)
@@ -340,7 +320,6 @@ fn blob(n: usize, seed: u64) -> Vec<u8> {
         .collect()
 }
 
-/// A macOS zip whose app binary is `n` bytes.
 fn big_zip(n: usize, seed: u64) -> Vec<u8> {
     let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let o = zip::write::SimpleFileOptions::default().unix_permissions(0o755).compression_level(Some(1));
@@ -359,8 +338,6 @@ fn used(dir: &Path) -> u64 {
     walk(dir).iter().map(|p| std::fs::metadata(p).unwrap().len()).sum()
 }
 
-/// A typical stick: 128 MiB NiceVault partition holding Linux 28 MB, Windows 24 MB (+ .sig), the
-/// old macOS zip and its 42 MB app (0.0.5 everywhere): about 14 MB free. The channel has 0.2.0.
 fn tight_world(k: &Key, bad: &[&str], exe_in_client: bool) -> World {
     let new_mac = big_zip(42 * MB, 7);
     let url = serve_with(k, "0.2.0", bad, [blob(28 * MB + 300_000, 3), blob(24 * MB + 500_000, 4), new_mac]);
@@ -398,7 +375,6 @@ fn a_128_mib_stick_is_updated_one_program_at_a_time() {
     let k = Key::new();
     let w = tight_world(&k, &[], false);
     let data_before = snapshot(&w.data);
-    // before: the UI is told it is tight, with the numbers
     let s = &stick::sticks(w.ctx.ops.as_ref(), &w.ctx.local, None)[0];
     let sp = s.space.as_ref().expect("space");
     assert_eq!(sp.size, Some(128 << 20));
@@ -415,8 +391,7 @@ fn a_128_mib_stick_is_updated_one_program_at_a_time() {
     assert_eq!(order, [Os::Windows, Os::Linux, Os::Macos], "smallest first");
     assert_eq!(by(&o, Os::Macos).mode, Some(stick::Mode::Tight));
     assert_eq!(by(&o, Os::Windows).mode, Some(stick::Mode::Safe));
-    // the new programs, verified; macOS once (no zip); no leftovers; within the partition
-    assert_eq!(std::fs::read(w.client.join("NiceVault-linux-x86_64")).unwrap(), std::fs::read(&w.ctx.local.exe).unwrap());
+    assert_eq!(std::fs::read(w.client.join("NiceVault-linux-x86_64")).unwrap(), blob(28 * MB + 300_000, 3));
     assert_eq!(std::fs::read(w.client.join("NiceVault-windows-x86_64.exe")).unwrap(), blob(24 * MB + 500_000, 4));
     assert_eq!(std::fs::read(w.client.join("NiceVault.app/Contents/MacOS/nicevault")).unwrap(), blob(42 * MB, 7));
     assert!(!w.client.join("NiceVault-macos-universal.zip").exists() && !w.client.join("NiceVault-macos-universal.zip.sig").exists());
@@ -441,14 +416,12 @@ fn a_failed_tight_write_is_rewritten_by_the_next_update() {
     assert_eq!((mac.result, mac.mode, mac.to.as_deref()), (Change::Rewrite, Some(stick::Mode::Tight), None), "{mac:?}");
     assert_eq!(by(&o, Os::Windows).result, Change::Updated);
     assert_eq!(by(&o, Os::Linux).result, Change::Updated);
-    // the stick says so: no app, the marker and README list macOS as missing, still a device
     assert!(!w.client.join("NiceVault.app").exists() && leftovers(&w.client).is_empty());
     assert_eq!(marker(&w).clients.get("macos").cloned().flatten(), None);
     assert!(std::fs::read_to_string(w.client.join("README.txt")).unwrap().contains("programs for macOS are missing"));
     assert!(o.stick.complete && o.stick.outdated && !prog(&o.stick, Os::Macos).current);
     assert_eq!(snapshot(&w.data), data_before);
 
-    // retried: macOS written; the others already current
     set_fault(&w, None, None);
     let o = run(&w).unwrap();
     assert_eq!(by(&o, Os::Macos).result, Change::Updated, "{:?}", o.results);
@@ -475,7 +448,6 @@ fn running_from_a_tight_stick_never_removes_its_own_program() {
 fn a_program_that_does_not_fit_even_in_place_is_left_as_it_was() {
     let k = Key::new();
     let w = tight_world(&k, &[], false);
-    // no old zip to free, and the partition exactly full: no new program (each a bit larger) fits
     for f in ["NiceVault-macos-universal.zip", "NiceVault-macos-universal.zip.sig"] {
         std::fs::remove_file(w.client.join(f)).unwrap();
     }
@@ -501,7 +473,6 @@ fn a_program_that_does_not_fit_even_in_place_is_left_as_it_was() {
 fn scarica_ora_on_a_128_mib_stick_clears_leftovers_first() {
     let k = Key::new();
     let w = tight_world(&k, &[], false);
-    // a device made offline (no macOS) with an update cut short: big leftovers
     for f in ["NiceVault.app", "NiceVault-macos-universal.zip", "NiceVault-macos-universal.zip.sig"] {
         nicevault_app::device::client::remove_any(&w.client.join(f));
     }

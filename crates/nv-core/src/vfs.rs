@@ -1,53 +1,18 @@
-//! Offset VFS shim: the SQLCipher database lives at byte 128 KiB of the `.nvault` file,
-//! after the two header copies. This wraps the platform's default VFS and shifts every
-//! read / write / size / truncate of the MAIN database file by [`DB_OFFSET`]. Journal,
-//! WAL and shm files are opened through the same VFS but are not shifted.
-//!
-//! Everything else (locking, sync, shm) is forwarded untouched. Memory-mapped I/O
-//! (`xFetch`/`xUnfetch`, io_methods v3) is not offered, so SQLite never maps the file
-//! at the wrong offset.
-//!
-//! **Fixed mode** (`nvfixed`, volumes whose header has a `fixed` section): the file was
-//! preallocated to its capacity and never changes size. The database starts at
-//! [`FIXED_DB_OFFSET`]; between the header copies and it, a footer region records how many
-//! bytes of the database are in use (two 64-byte records, newest `seq` wins, each with its own
-//! checksum). The shim reports that logical size to SQLite (`xFileSize`), grows it on writes,
-//! "truncates" by lowering it (the file keeps its size), refuses writes past the capacity with
-//! `SQLITE_FULL`, and writes the record before every sync of the database, so the size on disk
-//! is always covered by the same fsync as the pages (a rollback after a crash lowers it again).
-//! The footer sits at the start of the file on purpose: writing at the end of a preallocated
-//! file makes Windows (NTFS / exFAT valid data length) zero-fill everything before it.
-
 use libsqlite3_sys as ffi;
 use std::ffi::{c_char, c_int, c_void};
 use std::sync::OnceLock;
 
-/// Where the database starts inside the volume file.
 pub const DB_OFFSET: i64 = 128 * 1024;
-/// Name the shim is registered under.
 pub const VFS_NAME: &str = "nvoffset";
-/// The same shim in fixed mode (preallocated volumes).
 pub const VFS_FIXED_NAME: &str = "nvfixed";
-/// Footer region of a fixed volume: right after the two header copies.
 pub const FOOTER_AT: i64 = DB_OFFSET;
-/// Where a fixed volume's database starts (header copies + a 64 KiB footer region).
 pub const FIXED_DB_OFFSET: i64 = DB_OFFSET + 64 * 1024;
-/// File control (`sqlite3_file_control`, arg `*mut u64`): give the open fixed-mode database a
-/// new capacity. Writes a record for it into the slot not holding the current one (which stays
-/// valid: until the header names the new capacity the volume opens at the old one), synced; `SQLITE_FULL` if the database in use does not fit. The caller allocates the file
-/// first (grow) and commits the capacity in the header after (vault resize, resize.rs).
 pub const FCNTL_SET_CAPACITY: c_int = 0x4E56_0001;
 
 std::thread_local! {
-    /// Capacity the next fixed-mode main database opened on this thread must have (0 = the
-    /// file's length). See [`expect_capacity`].
     static EXPECT_CAP: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
-/// Runs `f` (which opens a fixed volume's database on this thread) with the header's capacity
-/// as the one the shim takes: the footer record of that capacity is the current one and the file
-/// may be longer (a resize interrupted after the file grew, or before it was cut). Without it
-/// (an attached copy) the capacity is the file's length.
 pub fn expect_capacity<T>(capacity: u64, f: impl FnOnce() -> T) -> T {
     EXPECT_CAP.with(|c| c.set(capacity));
     let r = f();
@@ -55,12 +20,10 @@ pub fn expect_capacity<T>(capacity: u64, f: impl FnOnce() -> T) -> T {
     r
 }
 
-/// The two footer records, in different 4 KiB blocks.
 const FOOTER_SLOT: i64 = 4096;
 const FOOTER_MAGIC: [u8; 8] = *b"NVFIXED1";
 const FOOTER_REC: usize = 64;
 
-/// One footer record of a fixed volume: database bytes in use and the file's capacity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Footer {
     pub seq: u64,
@@ -88,7 +51,6 @@ fn decode_footer(b: &[u8]) -> Option<Footer> {
     (f.logical <= fixed_db_capacity(f.capacity)).then_some(f)
 }
 
-/// The newest valid record of the two (slot index, record).
 fn newest(recs: [Option<Footer>; 2]) -> Option<(usize, Footer)> {
     match recs {
         [Some(a), Some(b)] => Some(if b.seq > a.seq { (1, b) } else { (0, a) }),
@@ -98,14 +60,10 @@ fn newest(recs: [Option<Footer>; 2]) -> Option<(usize, Footer)> {
     }
 }
 
-/// Room for the database in a fixed volume of `capacity` bytes.
 pub fn fixed_db_capacity(capacity: u64) -> u64 {
     capacity.saturating_sub(FIXED_DB_OFFSET as u64)
 }
 
-/// Makes `file` (the header copies already written) a fixed volume of `capacity` bytes:
-/// allocates it (blocks reserved where the file system can, else just the length), clears the
-/// footer region and writes the first record (nothing in use), synced.
 pub fn init_fixed(file: &std::fs::File, capacity: u64) -> std::io::Result<()> {
     allocate(file, capacity)?;
     crate::write_at(file, FOOTER_AT as u64, &vec![0u8; (FIXED_DB_OFFSET - FOOTER_AT) as usize])?;
@@ -113,11 +71,8 @@ pub fn init_fixed(file: &std::fs::File, capacity: u64) -> std::io::Result<()> {
     file.sync_all()
 }
 
-/// Gives `file` the length `len` with its blocks reserved where the file system can (fallocate /
-/// F_PREALLOCATE / FileAllocationInfo), else just the length. Not synced.
 pub fn allocate(file: &std::fs::File, len: u64) -> std::io::Result<()> {
     if fs4::fs_std::FileExt::allocate(file, len).is_err() || file.metadata()?.len() != len {
-        // no allocation API on this file system (FAT/exFAT on older kernels): the length alone
         file.set_len(len)?;
     }
     Ok(())
@@ -134,39 +89,25 @@ fn read_records(file: &std::fs::File) -> [Option<Footer>; 2] {
     recs
 }
 
-/// The newest valid footer record of `file` for `capacity` (slot, record), whatever the file's
-/// length. During a resize the two records can name different capacities: the header decides
-/// which one is current ([`FCNTL_SET_CAPACITY`]).
 pub fn read_footer_for(file: &std::fs::File, capacity: u64) -> Option<(usize, Footer)> {
     newest(read_records(file).map(|r| r.filter(|f| f.capacity == capacity)))
 }
 
-/// Our `sqlite3_file`: SQLite allocates `szOsFile` bytes, we put the real VFS's file
-/// struct right after this header (`real` points there).
 #[repr(C)]
 struct ShimFile {
-    base: ffi::sqlite3_file, // must be first: SQLite only knows about this part
+    base: ffi::sqlite3_file,
     offset: i64,
     real: *mut ffi::sqlite3_file,
-    kind: usize, // index into IO (FileKind)
-    /// Fixed mode (main database of a preallocated volume): sizes below are db coordinates.
+    kind: usize,
     fixed: bool,
-    /// Database bytes in use (what xFileSize reports).
     logical: i64,
-    /// Largest database the file holds.
     cap: i64,
-    /// Physical file size (= the volume's capacity).
     phys: u64,
-    /// seq of the last footer record written / read.
     fseq: u64,
-    /// Slot holding that record: the next one goes to the other slot, so the current record
-    /// is never overwritten (a torn write leaves it valid).
     fslot: usize,
-    /// `logical` changed since the last record was written.
     fdirty: bool,
 }
 
-/// Which file of the store an I/O went to (index into [`io_counters`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileKind {
     Db = 0,
@@ -175,14 +116,10 @@ pub enum FileKind {
     Other = 3,
 }
 
-/// Process-wide I/O counters of every file opened through the shim (relaxed atomics:
-/// cheap enough to keep in release builds; used by benches and tests).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct IoCounters {
-    /// Bytes handed to xWrite, per [`FileKind`].
     pub write_bytes: [u64; 4],
     pub writes: [u64; 4],
-    /// xSync calls (each is an fsync / fdatasync / F_FULLFSYNC), per [`FileKind`].
     pub syncs: [u64; 4],
 }
 
@@ -193,7 +130,6 @@ impl IoCounters {
     pub fn total_syncs(&self) -> u64 {
         self.syncs.iter().sum()
     }
-    /// `self - earlier`, field by field.
     pub fn since(&self, earlier: &IoCounters) -> IoCounters {
         let d = |a: [u64; 4], b: [u64; 4]| std::array::from_fn(|i| a[i] - b[i]);
         IoCounters {
@@ -211,7 +147,6 @@ pub(crate) static W_BYTES: [AtomicU64; 4] = [Z; 4];
 pub(crate) static W_CALLS: [AtomicU64; 4] = [Z; 4];
 pub(crate) static SYNCS: [AtomicU64; 4] = [Z; 4];
 
-/// Snapshot of the process-wide shim I/O counters.
 pub fn io_counters() -> IoCounters {
     let l = |a: &[AtomicU64; 4]| std::array::from_fn(|i| a[i].load(Relaxed));
     IoCounters { write_bytes: l(&W_BYTES), writes: l(&W_CALLS), syncs: l(&SYNCS) }
@@ -219,12 +154,9 @@ pub fn io_counters() -> IoCounters {
 
 static VFS: OnceLock<Result<(), c_int>> = OnceLock::new();
 
-/// Register the shim (idempotent). Returns the SQLite error code on failure.
 pub fn register() -> Result<(), c_int> {
     *VFS.get_or_init(|| unsafe {
         crate::slowio::from_env();
-        // SAFETY: sqlite3_vfs_find(NULL) initializes SQLite and returns the default VFS,
-        // a static that outlives the process. We copy it and only replace what we need.
         let real = ffi::sqlite3_vfs_find(std::ptr::null());
         if real.is_null() {
             return Err(ffi::SQLITE_ERROR);
@@ -236,8 +168,6 @@ pub fn register() -> Result<(), c_int> {
         v.zName = c"nvoffset".as_ptr();
         v.pAppData = real as *mut c_void;
         v.xOpen = Some(x_open);
-        // Every other vfs method receives our vfs pointer; hand the real one to the
-        // real implementation (Windows' VFS reads pAppData in some of them).
         v.xDelete = Some(x_delete);
         v.xAccess = Some(x_access);
         v.xFullPathname = Some(x_full_pathname);
@@ -259,7 +189,6 @@ pub fn register() -> Result<(), c_int> {
         }
         let mut fixed = v;
         fixed.zName = c"nvfixed".as_ptr();
-        // leaked on purpose: SQLite keeps the pointers
         for v in [v, fixed] {
             match ffi::sqlite3_vfs_register(Box::into_raw(Box::new(v)), 0) {
                 ffi::SQLITE_OK => {}
@@ -280,12 +209,11 @@ unsafe fn shim(f: *mut ffi::sqlite3_file) -> &'static mut ShimFile {
 }
 #[inline]
 unsafe fn methods(f: *mut ffi::sqlite3_file) -> &'static ffi::sqlite3_io_methods {
-    // Only called after a successful open, where the real file's pMethods is non-null.
     unsafe { &*(*shim(f).real).pMethods }
 }
 
 static IO_METHODS: ffi::sqlite3_io_methods = ffi::sqlite3_io_methods {
-    iVersion: 2, // v2 = shm support, no xFetch/xUnfetch (mmap would bypass the offset)
+    iVersion: 2,
     xClose: Some(io_close),
     xRead: Some(io_read),
     xWrite: Some(io_write),
@@ -338,7 +266,6 @@ unsafe extern "C" fn x_open(
         if rc == ffi::SQLITE_OK && !(*real_file).pMethods.is_null() {
             let want = EXPECT_CAP.with(|c| c.replace(0));
             if fixed && !load_footer(&mut *s, want) {
-                // not a fixed volume of the size its footer says: never let SQLite grow it
                 ((*(*real_file).pMethods).xClose.unwrap())(real_file);
                 return ffi::SQLITE_CORRUPT;
             }
@@ -348,9 +275,6 @@ unsafe extern "C" fn x_open(
     }
 }
 
-/// Reads the footer of a fixed volume through the real file (right after it was opened).
-/// `want`: the capacity the header names (0 = the file's length); the file must be at least
-/// that long.
 unsafe fn load_footer(s: &mut ShimFile, want: u64) -> bool {
     unsafe {
         let m = &*(*s.real).pMethods;
@@ -381,8 +305,6 @@ unsafe fn load_footer(s: &mut ShimFile, want: u64) -> bool {
     }
 }
 
-/// Writes the next footer record (into the slot not holding the current one), not synced: the
-/// caller's sync covers it.
 unsafe fn write_footer(s: &mut ShimFile) -> c_int {
     unsafe {
         let f = Footer { seq: s.fseq + 1, logical: s.logical as u64, capacity: s.phys };
@@ -411,7 +333,6 @@ unsafe extern "C" fn io_read(f: *mut ffi::sqlite3_file, buf: *mut c_void, n: c_i
     unsafe {
         let s = shim(f);
         if s.fixed && off + n as i64 > s.logical {
-            // past the database in use: what a short file would give (zeros, SHORT_READ)
             let have = (s.logical - off).clamp(0, n as i64) as c_int;
             std::ptr::write_bytes((buf as *mut u8).add(have as usize), 0, (n - have) as usize);
             if have > 0 {
@@ -447,8 +368,6 @@ unsafe extern "C" fn io_truncate(f: *mut ffi::sqlite3_file, size: i64) -> c_int 
     unsafe {
         let s = shim(f);
         if s.fixed {
-            // the file keeps its size: only the database in use shrinks (or grows, zero-filled
-            // by the reads above until written)
             if size > s.cap {
                 return ffi::SQLITE_FULL;
             }
@@ -500,13 +419,12 @@ unsafe extern "C" fn io_check_reserved_lock(f: *mut ffi::sqlite3_file, out: *mut
 unsafe extern "C" fn io_file_control(f: *mut ffi::sqlite3_file, op: c_int, arg: *mut c_void) -> c_int {
     unsafe {
         if op == ffi::SQLITE_FCNTL_SIZE_HINT && shim(f).fixed {
-            return ffi::SQLITE_OK; // already allocated
+            return ffi::SQLITE_OK;
         }
         if op == FCNTL_SET_CAPACITY {
             return set_capacity(shim(f), arg as *const u64);
         }
         if op == ffi::SQLITE_FCNTL_SIZE_HINT && !arg.is_null() {
-            // The hint is a db size; translate it to a file size.
             let mut sz = *(arg as *mut i64) + shim(f).offset;
             return (methods(f).xFileControl.unwrap())(shim(f).real, op, &mut sz as *mut i64 as *mut c_void);
         }
@@ -533,7 +451,6 @@ unsafe fn set_capacity(s: &mut ShimFile, arg: *const u64) -> c_int {
             rc = ((*(*s.real).pMethods).xSync.unwrap())(s.real, ffi::SQLITE_SYNC_FULL);
         }
         if rc != ffi::SQLITE_OK {
-            // the next record (if any) names the old capacity again
             (s.phys, s.cap) = (phys, cap);
             s.fdirty = true;
         }
@@ -577,8 +494,6 @@ unsafe extern "C" fn io_shm_unmap(f: *mut ffi::sqlite3_file, del: c_int) -> c_in
         }
     }
 }
-
-// --- vfs-level pass-throughs (swap our vfs pointer for the real one) ---
 
 pub(crate) unsafe extern "C" fn x_delete(v: *mut ffi::sqlite3_vfs, z: *const c_char, sync_dir: c_int) -> c_int {
     unsafe { let r = real_vfs(v); ((*r).xDelete.unwrap())(r, z, sync_dir) }
@@ -637,7 +552,6 @@ mod tests {
         register().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("t.db");
-        // Pre-fill the header area with a sentinel the shim must never touch.
         std::fs::write(&p, vec![0xAB; DB_OFFSET as usize]).unwrap();
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
         {
@@ -651,7 +565,6 @@ mod tests {
         let raw = std::fs::read(&p).unwrap();
         assert!(raw[..DB_OFFSET as usize].iter().all(|&b| b == 0xAB), "header area touched");
         assert_eq!(&raw[DB_OFFSET as usize..][..16], b"SQLite format 3\0");
-        // Reopen and truncate path: VACUUM shrinks the file through xTruncate.
         let c = Connection::open_with_flags_and_vfs(&p, flags, VFS_NAME).unwrap();
         assert_eq!(c.query_row("SELECT length(x) FROM t", [], |r| r.get::<_, i64>(0)).unwrap(), 100000);
         c.execute_batch("DELETE FROM t; PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);").unwrap();

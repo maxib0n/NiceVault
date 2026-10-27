@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Checks the prebuilt MinGW delay-import library third_party/winfsp-sys/winfsp/lib-gnu/libwinfsp-x64.a
-# against what it claims to be, with llvm-nm only (no MinGW binutils needed):
-#   1. winfsp-x64.def lists exactly the exports of upstream's MSVC import lib (lib/winfsp-x64.lib);
-#   2. the .a defines one thunk per .def export (+ the tail-merge stub) and nothing else as code;
-#   3. its only external reference is MinGW's __delayLoadHelper2;
-#   4. prints the SHA-256 recorded in lib-gnu/README.
-# Regenerating it byte for byte needs binutils' x86_64-w64-mingw32-dlltool (see that README).
 set -euo pipefail
 D=$(cd "$(dirname "$0")/../third_party/winfsp-sys/winfsp/lib-gnu" && pwd)
 NM=${NM:-llvm-nm}

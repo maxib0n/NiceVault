@@ -1,7 +1,3 @@
-// English sample content for the in-browser mock (`?demo=1`): the volumes, files, tags and
-// password-manager entries the README screenshots and GIFs are made from (e2e/shots/).
-// The normal suite keeps the Italian seed.
-
 import type { PmEntryInput } from './passwords';
 
 type Seed = [name: string, sizeOrChildren: number | Seed[], asset?: string];
@@ -9,7 +5,6 @@ type Seed = [name: string, sizeOrChildren: number | Seed[], asset?: string];
 const MB = 1024 * 1024;
 const photo = (n: number) => `/mock/photo-${String(n).padStart(2, '0')}.jpg`;
 
-/** The stick NiceVault "runs from": the data partition of a NiceVault device. */
 export const DEMO_STICK = '/run/media/alex/VaultData';
 export const DEMO_STICK_LABEL = 'VaultData';
 export const DEMO_HOME = '/home/alex/Documents';
@@ -127,7 +122,6 @@ export const DEMO_JOURNAL: Seed[] = [
 export const DEMO_NAMES = { documents: 'Documents', tax: 'Tax Archive', journal: 'Journal', old: 'Old laptop' };
 export const DEMO_SLOTS = { main: 'Main', spare: 'Spare, in the safe', duress: 'Duress' };
 
-/** [name, colour, names of the nodes carrying it] */
 export const DEMO_TAGS: [string, string, string[]][] = [
   ['Important', 'velluto', ['Lease agreement.pdf', 'Passport scan.jpg', 'Keys']],
   ['Travel', 'ottanio', ['Alps 2025', 'Alpine lake.jpg', 'Lake reflection.jpg', 'Pier at noon.jpg']],

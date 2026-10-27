@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# One-time setup for `pnpm e2e` (no sudo).
-#
-# Installs Playwright's Chromium + WebKit. On Fedora (not an officially
-# supported Playwright host) the WebKit build, made for Ubuntu 24.04, misses
-# two libraries: ICU 74 and the libjpeg8 ABI. They are taken from Fedora's own
-# repositories (ICU 74 = Fedora 40's libicu; libjpeg8 = Fedora's libjpeg-turbo
-# source rebuilt with -DWITH_JPEG8=1) and dropped into the bundle's private
-# lib dir (minibrowser-*/sys/lib), which its launcher puts on LD_LIBRARY_PATH.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

@@ -1,7 +1,3 @@
-//! Android / iOS: there is no tray (the OS keeps the app in its task switcher). Same API as
-//! tray.rs, doing nothing, so callers stay the same on every platform: `active()` is always
-//! false, so closing never hides instead of quitting.
-
 use tauri::{AppHandle, Manager};
 
 #[derive(Default)]
@@ -27,12 +23,10 @@ pub fn host_available() -> bool {
     false
 }
 
-/// Closing never hides: there is no tray to come back from.
 pub fn hides_on_close(_app: &AppHandle) -> bool {
     false
 }
 
-/// The OS shows the app; nothing to wait for.
 pub fn show_unless_hosted(_app: &AppHandle) {}
 
 pub fn show_window(app: &AppHandle) {

@@ -1,17 +1,4 @@
-<!--
-  Saddle stitching sewn round a card, a cover or along a seam (ornament/stitch.ts): an even
-  pitch with a whole number of stitches, following the corners' radius, so no stitch is ever
-  cut; each one a length of thread with its drop shadow and the light along its top edge, set
-  in the faint groove the pricking iron pressed. Fills its positioned parent (absolute, inset 0);
-  shown only where the theme stitches (--stitch-alpha). Drawn once per size: one SVG, no canvas.
-    shape="box"   a closed track `inset` from the parent's edges, corners of `radius`
-    shape="seam"  a straight seam down the middle of the parent (a strip as tall as the seam)
-    track={(w, h) => Track}  any other needle line (the document's, round its medallions)
-  Without `radius`, each corner of the box is concentric with the parent's own rounded corner
-  (its border-radius less the inset): the stitching and the cut edge always curve together.
--->
 <script lang="ts" module>
-  // one observer for every stitched element on screen
   const watchers = new WeakMap<Element, (w: number, h: number) => void>();
   let ro: ResizeObserver | null = null;
   function observe(el: Element, cb: (w: number, h: number) => void): () => void {
@@ -31,8 +18,6 @@
     };
   }
 
-  // the geometry per (spec, size): a page opened again (Impostazioni, Sblocca, the board's
-  // passports) draws its stitching from here instead of walking the track once more
   export interface Geo {
     groove: string;
     shadow: string;
@@ -51,7 +36,6 @@
   export function cachedGeo(key: string, make: () => Geo): Geo {
     let g = geoCache.get(key);
     if (g) {
-      // most recently used last
       geoCache.delete(key);
     } else {
       g = make();
@@ -79,25 +63,20 @@
     pitch,
   }: {
     shape?: 'box' | 'seam';
-    /** px from each edge: one value or [top, right, bottom, left] */
     inset?: number | [number, number, number, number];
-    /** the corners' radius; default: concentric with the parent's border-radius */
     radius?: Radii;
     len?: number;
     gap?: number;
     width?: number;
     slant?: number;
-    /** the thread's colour (a CSS colour expression) */
     thread?: string;
     track?: (w: number, h: number) => Track;
-    /** the stitch length and gap for this size (instead of len / gap) */
     pitch?: (w: number, h: number) => { len: number; gap: number };
   } = $props();
 
   let el: SVGSVGElement | undefined = $state();
   let w = $state(0);
   let h = $state(0);
-  /** the parent's corner radii (tl, tr, br, bl), read with its size */
   let outer = $state<[number, number, number, number]>([0, 0, 0, 0]);
 
   onMount(() =>
@@ -112,7 +91,6 @@
     }),
   );
 
-  /** each corner: the given radius, or the parent's less the insets that meet there */
   function radii(it: number, ir: number, ib: number, il: number): Radii {
     if (radius !== undefined) return radius;
     const c = (o: number, a: number, b: number) => Math.max(0, o - (a + b) / 2);
@@ -165,7 +143,6 @@
     fill: none;
     stroke-linecap: round;
   }
-  /* the needle line pressed into the material */
   .groove {
     stroke: var(--relief-lo);
     stroke-width: calc(var(--sw) * 1.6);
@@ -179,7 +156,6 @@
     stroke: var(--thread);
     stroke-width: var(--sw);
   }
-  /* the light along each stitch's top edge */
   .light {
     stroke: rgb(255 255 255 / 0.26);
     stroke-width: calc(var(--sw) * 0.4);

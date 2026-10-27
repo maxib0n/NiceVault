@@ -1,8 +1,3 @@
-<!--
-  A wax seal in the volume's ink: an irregular pool of wax, glossy, its edge
-  slumped where it cooled, a small rosette pressed into it by the matrix.
-  broken: the seal of an opened envelope, cracked across where the flap came away.
--->
 <script lang="ts">
   import { prng } from './lathe';
 
@@ -10,7 +5,6 @@
 
   const uid = `wax-${Math.random().toString(36).slice(2, 8)}`;
 
-  // the pool's outline: a circle with a few soft lobes where the wax ran
   const blob = $derived.by(() => {
     const r = prng(seed * 7919 + 17);
     const n = 64;
@@ -31,7 +25,6 @@
     return d + 'Z';
   });
 
-  // where it cracked: a jagged line across, a little below the middle (the flap's edge)
   const crack = $derived.by(() => {
     const r = prng(seed * 104729 + 5);
     let d = '';
@@ -44,7 +37,6 @@
     return d;
   });
 
-  // the matrix's impression: a small rosette of petals
   const rosette = $derived.by(() => {
     let d = '';
     const k = 8;
@@ -69,17 +61,14 @@
       <stop offset="1" stop-color="#fff" stop-opacity="0" />
     </radialGradient>
   </defs>
-  <!-- the pool, its contact shadow, its gloss -->
   <path d={blob} transform="translate(2.5 4)" fill="rgb(0 0 0 / 0.28)" />
   <path d={blob} fill="url(#{uid}-g)" />
-  <!-- the matrix pressed a well in the middle: shade above-left, a lit rim below-right -->
   <circle cx="50" cy="50" r="29" fill="none" stroke="rgb(0 0 0 / 0.28)" stroke-width="2.6" transform="translate(-0.8 -1)" />
   <circle cx="50" cy="50" r="29" fill="none" stroke="rgb(255 255 255 / 0.32)" stroke-width="1.6" transform="translate(0.9 1.1)" />
   <path d={rosette} fill="none" stroke="rgb(0 0 0 / 0.3)" stroke-width="2" transform="translate(-0.6 -0.7)" />
   <path d={rosette} fill="none" stroke="rgb(255 255 255 / 0.3)" stroke-width="1.4" transform="translate(0.6 0.7)" />
   <path d={blob} fill="url(#{uid}-s)" />
   {#if broken}
-    <!-- the crack: a dark parting, its lower lip catching the light -->
     <path d={crack} fill="none" stroke="rgb(0 0 0 / 0.55)" stroke-width="3.2" stroke-linejoin="round" />
     <path d={crack} fill="none" stroke="rgb(255 255 255 / 0.28)" stroke-width="1.2" stroke-linejoin="round" transform="translate(0 2.2)" />
   {/if}

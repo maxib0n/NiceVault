@@ -1,12 +1,3 @@
-<!--
-  Tags of the selection (context menu "Tag…", the toolbar's Tag key): every tag of the volume
-  with a box that says whether all the selected items carry it, some of them (mixed) or none;
-  a press gives it to all of them, or takes it from all when they all have it. The field finds
-  a tag, or creates it ("Crea «…»", the next ink) and gives it at once. Enter in the field:
-  the first tag found, else the new one.
-  Hooks: [data-testid=tag-picker], [data-testid=tag-picker-input], options [data-tag]
-  (role=checkbox, aria-checked true | mixed | false), [data-testid=tag-create].
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Plus, Search, Tags } from '@lucide/svelte';

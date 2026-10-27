@@ -1,20 +1,12 @@
-// Touch gestures of the full-screen preview (QuickLook): swipe left/right between the files of
-// the folder, swipe down to close, pinch / double-tap to zoom a picture. Pointer Events only
-// (touch and pen; a mouse drags nothing here), transform-only while the finger moves.
-
 export interface SwipeOptions {
   onLeft?: () => void;
   onRight?: () => void;
   onDown?: () => void;
-  /** a tap (no movement): shows / hides the chrome */
   onTap?: () => void;
-  /** false while a picture is zoomed: its pan wins */
   enabled?: () => boolean;
 }
 
-/** Minimum travel (CSS px) and the dominant-axis ratio for a swipe. */
 export const SWIPE_MIN = 56;
-/** A flick: shorter than SWIPE_MIN but at least this far, this fast (px/ms) at release. */
 export const FLICK_MIN = 24;
 export const FLICK_SPEED = 0.45;
 const TAP_SLOP = 10;
@@ -22,12 +14,10 @@ const TAP_SLOP = 10;
 export interface Stroke {
   dx: number;
   dy: number;
-  /** velocity at release, px/ms (optional: a slow stroke) */
   vx?: number;
   vy?: number;
 }
 
-/** What a finished one-finger stroke means. */
 export function classify({ dx, dy, vx = 0, vy = 0 }: Stroke): 'left' | 'right' | 'down' | 'tap' | null {
   const ax = Math.abs(dx);
   const ay = Math.abs(dy);
@@ -39,7 +29,6 @@ export function classify({ dx, dy, vx = 0, vy = 0 }: Stroke): 'left' | 'right' |
   return null;
 }
 
-/** Rubber band past the end of a drag: the further, the stiffer. */
 export function rubber(d: number, limit: number): number {
   const a = Math.abs(d);
   return Math.sign(d) * (limit * a) / (limit + a);
@@ -47,10 +36,6 @@ export function rubber(d: number, limit: number): number {
 
 const reduced = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/**
- * The page in the finger's hand: transform only, and the release / settle animations go through the
- * registered --nv-t / --nv-o (styles/motion.css: never an animation of transform or opacity itself).
- */
 function glide(node: HTMLElement, from: string, to: string, o: [number, number] | null, ms: number, easing: string, hold?: (a: Animation) => void): Promise<void> {
   if (reduced() || typeof node.animate !== 'function') return Promise.resolve();
   node.style.transform = 'var(--nv-t)';
@@ -58,14 +43,12 @@ function glide(node: HTMLElement, from: string, to: string, o: [number, number] 
   const frames = o ? [{ '--nv-t': from, '--nv-o': String(o[0]) }, { '--nv-t': to, '--nv-o': String(o[1]) }] : [{ '--nv-t': from }, { '--nv-t': to }];
   const a = node.animate(frames as Keyframe[], { duration: ms, easing, fill: 'forwards' });
   hold?.(a);
-  // a cancelled glide (a new touch took the page) resolves too: its caller just stops
   return a.finished.then(
     () => a.cancel(),
     () => undefined,
   );
 }
 
-/** A touch this soon after the document scrolled stops its momentum: not a tap (ms). */
 const FLING_STOP = 180;
 
 const scrolls = (el: Element, axis: 'x' | 'y') => {
@@ -74,7 +57,6 @@ const scrolls = (el: Element, axis: 'x' | 'y') => {
   if (ov !== 'auto' && ov !== 'scroll') return false;
   return axis === 'y' ? el.scrollHeight > el.clientHeight + 1 : el.scrollWidth > el.clientWidth + 1;
 };
-/** The nearest element between `from` and `root` that scrolls along `axis`, if any. */
 export function scrollerOf(from: Element | null, root: Element, axis: 'x' | 'y'): Element | null {
   for (let el = from; el && el !== root; el = el.parentElement) if (scrolls(el, axis)) return el;
   return null;
@@ -83,21 +65,15 @@ const interactive = (t: Element | null) => !!t?.closest('a[href], button, input,
 
 export function swipe(node: HTMLElement, opts: SwipeOptions) {
   let o = opts;
-  /** ys / xs: the document under the finger scrolls that way (its own stroke, not ours) */
-  /** top: the document under it is at its top, so a pull down is ours (close), not its scroll */
   let start: { id: number; x: number; y: number; ys: Element | null; xs: Element | null; top: boolean; flung: boolean; target: Element | null } | null = null;
-  /** the stroke is ours (decided): the browser must not pan with it */
   let owned = false;
   let scrolledAt = -1e9;
   let last: { x: number; y: number; t: number; vx: number; vy: number } | null = null;
   let axis: 'x' | 'y' | null = null;
   let multi = false;
-  // leaving: the page is on its way out, the callback still to come (touches wait)
   let settling = false;
-  // arriving / springing back: a new touch takes the page where it is
   let anim: Animation | null = null;
   const hold = (a: Animation) => (anim = a);
-  // each touch starts a new generation: a glide that resolves after a newer touch leaves the page alone
   let gen = 0;
   const touches = new Set<number>();
   const rest = () => {
@@ -114,7 +90,7 @@ export function swipe(node: HTMLElement, opts: SwipeOptions) {
     }
     touches.add(e.pointerId);
     if (touches.size > 1) {
-      multi = true; // a pinch, not a swipe
+      multi = true;
       start = null;
       rest();
       return;
@@ -133,13 +109,9 @@ export function swipe(node: HTMLElement, opts: SwipeOptions) {
     const dy = e.clientY - start.y;
     if (last) {
       const dt = Math.max(1, e.timeStamp - last.t);
-      // a smoothed velocity: the last few moves, not one noisy sample
       last = { x: e.clientX, y: e.clientY, t: e.timeStamp, vx: last.vx * 0.4 + ((e.clientX - last.x) / dt) * 0.6, vy: last.vy * 0.4 + ((e.clientY - last.y) / dt) * 0.6 };
     }
-    // the axis is decided once, after a few pixels: a page never wobbles diagonally
     if (!axis && Math.hypot(dx, dy) > TAP_SLOP) {
-      // sideways only when clearly sideways (a document scrolled with a slightly slanted thumb
-      // stays a scroll); a document that scrolls that way keeps the stroke: it is its scroll
       axis = Math.abs(dx) > Math.abs(dy) * (start.ys ? 2 : 1) ? 'x' : 'y';
       const mine = axis === 'x' ? !start.xs : !start.ys || (start.top && dy > 0);
       owned = mine;
@@ -150,8 +122,6 @@ export function swipe(node: HTMLElement, opts: SwipeOptions) {
         return;
       }
     }
-    // the page follows the finger 1:1 sideways (it is the next page that comes in), and down
-    // with a little give; up resists (nothing is there)
     if (axis === 'x') node.style.transform = `translate3d(${dx}px, 0, 0) scale(1)`;
     else if (axis === 'y') {
       const y = dy > 0 ? dy : rubber(dy, 40);
@@ -185,16 +155,13 @@ export function swipe(node: HTMLElement, opts: SwipeOptions) {
     const what = classify(s);
     if (what === 'tap') {
       rest();
-      // a touch that stopped a scroll's momentum is not a tap on the page
       if (s0flung) return;
-      // a link or a key in the document is its own tap, not the chrome's
       return interactive(tgt) ? undefined : o.onTap?.();
     }
     const w = node.clientWidth || window.innerWidth;
     if (what === 'left' || what === 'right') {
       const sign = what === 'left' ? -1 : 1;
       settling = true;
-      // out with the finger's speed, the next one in from the other side
       void glide(node, held || 'translate3d(0, 0, 0) scale(1)', `translate3d(${sign * w}px, 0, 0) scale(1)`, null, 150, 'cubic-bezier(0.3, 0, 0.8, 0.6)')
         .then(() => {
           rest();
@@ -216,14 +183,10 @@ export function swipe(node: HTMLElement, opts: SwipeOptions) {
     }
     void settle(held, heldO, done);
   };
-  // not far enough: back to rest, with a little spring
   function settle(held: string, heldO: number | null, done: () => void) {
     if (!held) return rest();
     return glide(node, held, 'translate3d(0, 0, 0) scale(1)', heldO === null || heldO === 1 ? null : [heldO, 1], 260, 'cubic-bezier(0.2, 0.9, 0.25, 1.08)', hold).then(done);
   }
-  // a pull down on a document at its top: with touch-action pan-y the browser would claim the
-  // stroke (an overscroll that goes nowhere) and cancel our pointer; a cancelled touchmove keeps
-  // it ours. Only then: everything else stays the document's own scroll.
   const tmove = (e: TouchEvent) => {
     if (!start || multi || e.touches.length !== 1 || !e.cancelable || o.enabled?.() === false) return;
     const t = e.touches[0];
@@ -231,8 +194,6 @@ export function swipe(node: HTMLElement, opts: SwipeOptions) {
     const dy = t.clientY - start.y;
     if (owned || (!axis && start.ys && start.top && dy >= 6 && dy >= Math.abs(dx))) e.preventDefault();
   };
-  // momentum follows a finger: a scroll counts only within a few seconds of the last stroke
-  // (a PDF laying out its pages, scroll anchoring, a key: not a fling a tap could stop)
   let strokeAt = -1e9;
   const scrolled = () => {
     if (performance.now() - strokeAt < 3000) scrolledAt = performance.now();
@@ -266,13 +227,11 @@ export interface ZoomState {
 
 export const ZOOM_MAX = 6;
 
-/** The scale after a pinch from `d0` to `d1` finger distance, clamped to 1..ZOOM_MAX. */
 export function pinchScale(from: number, d0: number, d1: number): number {
   if (d0 <= 0) return from;
   return Math.min(ZOOM_MAX, Math.max(1, from * (d1 / d0)));
 }
 
-/** Pinch to zoom, pan while zoomed, double-tap toggles 2x. Reports whether it is zoomed. */
 export function pinchZoom(node: HTMLElement, onZoom?: (zoomed: boolean) => void) {
   let z: ZoomState = { scale: 1, x: 0, y: 0 };
   const pts = new Map<number, { x: number; y: number }>();
@@ -296,7 +255,7 @@ export function pinchZoom(node: HTMLElement, onZoom?: (zoomed: boolean) => void)
       pan = null;
     } else if (pts.size === 1 && z.scale > 1) {
       pan = { x: e.clientX, y: e.clientY, ox: z.x, oy: z.y };
-      e.stopPropagation(); // zoomed: the finger pans, it doesn't swipe
+      e.stopPropagation();
     }
   };
   const move = (e: PointerEvent) => {

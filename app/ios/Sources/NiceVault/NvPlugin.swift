@@ -1,18 +1,3 @@
-// NiceVault's own bridge to iOS (app/src-tauri/src/mobile.rs), the twin
-// of the Android NvPlugin.kt:
-//  - pickPhotos / loadPhoto / cancelPhotos: the camera roll through PHPicker (photos and videos,
-//    several at once, no photo-library permission). The pick is kept here; mobile.rs loads its
-//    items one by one, four at a time (an iCloud-only photo is downloaded first, its progress
-//    reported through nv_mobile_pick_progress), each copied into a staging folder Rust gives,
-//    under its original name, with the original bytes (HEIC / HEVC as they are);
-//  - pickDocuments: the document picker opened in place (security-scoped URLs, no copy left in
-//    the app's Inbox), copied into the staging folder under the file's real name;
-//  - displayNames, share: the names of file URLs, the share sheet (UIActivityViewController)
-//    for "Condividi" / "Apri con";
-//  - privacy: a cover over the window while the app is not active (app switcher snapshot,
-//    Control Center, Siri) or the screen is being recorded / mirrored, and every open volume
-//    locked after 30 s in the background (nv_mobile_lock_all in mobile.rs), before the cover
-//    comes off.
 import Photos
 import PhotosUI
 import Tauri
@@ -32,7 +17,6 @@ struct LoadArgs: Decodable {
   let dir: String
 }
 
-/// A download (iCloud) that makes no progress this long is given up and retried by mobile.rs.
 let stallSeconds: TimeInterval = 180
 
 struct PickArgs: Decodable {
@@ -54,16 +38,12 @@ struct ShareArgs: Decodable {
   let title: String?
 }
 
-/// In the background this long: every open volume is locked (= BACKGROUND_LOCK_MS, lib/mobile.ts).
 let backgroundLockSeconds: TimeInterval = 30
-/// A page that doesn't answer this long after a return to the foreground is loaded again.
 let pageAnswerSeconds: TimeInterval = 2.5
-/// The privacy cover never stays longer than this while locking.
 let coverMaxSeconds: TimeInterval = 8
 
 class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate {
   private var pending: Invoke?
-  /// The last camera-roll pick (mobile.rs loads its items one by one) and the loads in flight.
   private let photoLock = NSLock()
   private var picked: [PHPickerResult] = []
   private var photoSession = 0
@@ -76,14 +56,9 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
   private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
   private var locking = false
   private weak var webView: WKWebView?
-  /// Probes of the page after a return to the foreground (a newer one supersedes the older).
   private var probeSeq = 0
-  /// The app went to the background since it was last active (a probe is due on return).
   private var wasInBackground = false
-  /// The latest lockAll (its cover cap applies to it only).
   private var lockGen = 0
-
-  // MARK: pickers
 
   private func begin(_ invoke: Invoke) -> PickArgs? {
     guard let args = try? invoke.parseArgs(PickArgs.self) else {
@@ -114,7 +89,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     top.present(vc, animated: true)
   }
 
-  /// `dir/<k>/<name>`: each pick in its own folder (two may share a name).
   private static func slot(_ dir: URL, _ k: Int, _ name: String) throws -> URL {
     let sub = dir.appendingPathComponent(String(k), isDirectory: true)
     try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
@@ -124,14 +98,11 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
   }
 
   @objc public func pickPhotos(_ invoke: Invoke) {
-    // called on Tauri's IPC queue: the picker state lives on the main thread
     DispatchQueue.main.async {
       guard let args = self.begin(invoke) else { return }
-      // no photoLibrary: out of process, no permission prompt, no asset identifiers
       var config = PHPickerConfiguration()
       config.selectionLimit = args.multiple ? 0 : 1
       config.filter = .any(of: [.images, .videos])
-      // the original file (HEIC, HEVC, ProRAW...), never a compatible re-encode
       config.preferredAssetRepresentationMode = .current
       let picker = PHPickerViewController(configuration: config)
       picker.delegate = self
@@ -144,8 +115,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     guard let invoke = pending else { return }
     pending = nil
     pendingDir = nil
-    // nothing is loaded here: mobile.rs asks for each item (loadPhoto), four at a time, and
-    // imports it as soon as it is there (an iCloud-only photo is downloaded first)
     photoLock.lock()
     for (_, p) in loads { p.cancel() }
     loads.removeAll()
@@ -157,7 +126,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     invoke.resolve(["session": session, "names": names])
   }
 
-  /// The original representation: the first registered type that is a picture or a movie.
   private static func mediaType(_ p: NSItemProvider) -> String? {
     p.registeredTypeIdentifiers.first { id in
       guard let t = UTType(id) else { return false }
@@ -165,8 +133,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     }
   }
 
-  /// What went wrong, as a code mobile.rs / pick_queue.rs knows (offline, icloud, stalled,
-  /// unsupported, no_space, cancelled, other); looks through the underlying errors.
   private static func errorCode(_ error: Error?) -> String {
     var e = error as NSError?
     var depth = 0
@@ -184,7 +150,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
       case NSPOSIXErrorDomain:
         if n.code == Int(ENOSPC) { return "no_space" }
       case "PHPhotosErrorDomain":
-        // 3164 networkAccessRequired, 3169 networkError
         if n.code == 3164 || n.code == 3169 { return "offline" }
         sawPhotos = true
       default:
@@ -196,10 +161,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     return sawPhotos ? "icloud" : "other"
   }
 
-  /// One picked item into `dir` (mobile.rs pick queue). The photo library downloads it from
-  /// iCloud first when the phone has only an optimised copy (the picker's results come with
-  /// network access): this waits for it however long it takes while it makes progress,
-  /// reporting the fraction; no progress for `stallSeconds` = "stalled" (retried by Rust).
   @objc public func loadPhoto(_ invoke: Invoke) {
     guard let args = try? invoke.parseArgs(LoadArgs.self) else {
       invoke.reject("bad arguments")
@@ -222,7 +183,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     let dir = URL(fileURLWithPath: args.dir, isDirectory: true)
     var stalled = false
     var finished = false
-    // the URL is a temporary copy deleted when the handler returns: copied here
     let progress = p.loadFileRepresentation(forTypeIdentifier: type) { [weak self] url, error in
       self?.photoLock.lock()
       finished = true
@@ -253,7 +213,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     photoLock.lock()
     loads[index] = progress
     photoLock.unlock()
-    // the fraction for "Scarico da iCloud… N di M", and the stall watch
     var last = -1.0
     var lastMove = Date()
     func tick() {
@@ -278,7 +237,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     DispatchQueue.global(qos: .utility).async { tick() }
   }
 
-  /// Annulla: the downloads in flight stop now.
   @objc public func cancelPhotos(_ invoke: Invoke) {
     photoLock.lock()
     cancelledSession = photoSession
@@ -289,10 +247,8 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
   }
 
   @objc public func pickDocuments(_ invoke: Invoke) {
-    // called on Tauri's IPC queue: the picker state lives on the main thread
     DispatchQueue.main.async {
       guard let args = self.begin(invoke) else { return }
-      // asCopy false: open in place (security-scoped), so iOS keeps no copy in tmp/<id>-Inbox
       let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: false)
       picker.allowsMultipleSelection = args.multiple
       picker.delegate = self
@@ -308,7 +264,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
       for (k, url) in urls.enumerated() {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        // coordinated: a file in iCloud Drive or another provider is downloaded first
         var err: NSError?
         var copyError: Error?
         NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &err) { u in
@@ -332,7 +287,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     finish([])
   }
 
-  /// Swiped down without choosing.
   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
     finish([])
   }
@@ -343,11 +297,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     invoke.resolve(["names": names])
   }
 
-  // MARK: gallery
-
-  /// "Salva nella Galleria" (mobile.rs mobile_save_gallery): the decrypted copy Rust staged in
-  /// <cache>/tmp/nv-gallery is MOVED into the photo library (shouldMoveFile), add-only access
-  /// (NSPhotoLibraryAddUsageDescription; iOS asks once). Rust wipes the staging folder after.
   @objc public func saveToGallery(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(GalleryArgs.self)
     let url = URL(fileURLWithPath: args.path)
@@ -388,8 +337,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     }
   }
 
-  // MARK: share sheet
-
   @objc public func share(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(ShareArgs.self)
     let urls = args.paths.map { URL(fileURLWithPath: $0) }
@@ -401,13 +348,10 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
       var top = root
       while let p = top.presentedViewController { top = p }
       let sheet = UIActivityViewController(activityItems: urls, applicationActivities: nil)
-      // the decrypted copies go as soon as the sheet is done (the receiver has its own copy);
-      // what is left is wiped by mobile.rs ten minutes later / at the next start
       sheet.completionWithItemsHandler = { _, _, _, _ in
         for u in urls { try? FileManager.default.removeItem(at: u.deletingLastPathComponent()) }
       }
       if let pop = sheet.popoverPresentationController {
-        // iPad: a popover anchored at the bottom centre
         pop.sourceView = top.view
         pop.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.maxY - 80, width: 1, height: 1)
         pop.permittedArrowDirections = []
@@ -416,8 +360,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
       invoke.resolve()
     }
   }
-
-  // MARK: privacy cover and background lock
 
   override func load(webview: WKWebView) {
     let nc = NotificationCenter.default
@@ -442,7 +384,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     guard cover == nil, let w = coverWindow() else { return }
     let v = UIView(frame: w.bounds)
     v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-    // the app's anthracite, the name in a Didone (the Bodoni of the UI): nothing of the page
     v.backgroundColor = UIColor(red: 0.106, green: 0.106, blue: 0.114, alpha: 1)
     let label = UILabel()
     label.text = "NiceVault"
@@ -459,7 +400,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
   }
 
   private func hideCover() {
-    // kept while locking, or while the screen is recorded / mirrored
     if locking || UIScreen.main.isCaptured || UIApplication.shared.applicationState != .active { return }
     cover?.removeFromSuperview()
     cover = nil
@@ -469,22 +409,12 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
 
   @objc func didBecomeActive() {
     hideCover()
-    // only after a real stay in the background (the web content may have been killed there):
-    // a passing inactive state (Control Center, a system sheet, the Passwords AutoFill / Face ID
-    // over a password field) leaves the page alive, and a reload there would throw the person
-    // back to Benvenuto in the middle of typing; lib.rs reloads a killed page in any case
     guard wasInBackground else { return }
     wasInBackground = false
     reviveWebView()
     probePage()
   }
 
-  /// Back from a long stay in the background, WebKit may keep the page suspended for good: when
-  /// the background time runs out while it holds its process assertions it drops every activity of
-  /// the page, "View is visible" included, and nothing brings that one back on return (the view
-  /// never stopped being in its window), so the layers stay hidden: the grey screen (device log
-  /// 2026-10-25). Taking the web view out of its superview and putting it back at the same place
-  /// makes WebKit recompute the page's whole activity state (didMoveToWindow), visible again.
   private func reviveWebView() {
     guard let wv = webView, let sv = wv.superview else { return }
     let index = sv.subviews.firstIndex(of: wv) ?? sv.subviews.count
@@ -492,10 +422,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     sv.insertSubview(wv, at: min(index, sv.subviews.count))
   }
 
-  /// Back in the foreground: the page must answer. iOS may have killed the web content process
-  /// in the background (the view stays blank, grey, and never comes back by itself; lib.rs
-  /// catches the termination when WebKit reports it) or the page may be stuck: then every volume
-  /// is locked and the app is loaded again (Benvenuto / Sblocca), within a couple of seconds.
   private func probePage() {
     guard let wv = webView else { return }
     probeSeq += 1
@@ -530,7 +456,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     showCover()
     wasInBackground = true
     backgroundSince = Date()
-    // iOS lets a background task run for a while: lock when the 30 s are up if it still runs
     endBackgroundTask()
     backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "nv-background-lock") { [weak self] in
       self?.endBackgroundTask()
@@ -546,7 +471,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
     let since = backgroundSince
     backgroundSince = nil
     endBackgroundTask()
-    // the timer may not have run (the app was suspended): lock before the cover comes off
     if let since = since, Date().timeIntervalSince(since) >= backgroundLockSeconds {
       lockAll {}
     }
@@ -555,8 +479,6 @@ class NvPlugin: Plugin, PHPickerViewControllerDelegate, UIDocumentPickerDelegate
   private func lockAll(_ done: @escaping () -> Void) {
     locking = true
     showCover()
-    // never a cover for good: a lock that takes too long (vault_lock waits up to 5 s per volume
-    // for a reader) still ends with the page on screen; the volumes are unregistered by then
     lockGen += 1
     let gen = lockGen
     DispatchQueue.main.asyncAfter(deadline: .now() + coverMaxSeconds) { [weak self] in

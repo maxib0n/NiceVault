@@ -1,4 +1,3 @@
-// Live refresh of the file browser on fs-changed (changes made through the mounted drive).
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from '../api';
 import { MOCK_PASSWORD, MockBackend, STICK } from '../mock';
@@ -30,7 +29,7 @@ describe('FileBrowser live refresh (fs-changed)', () => {
     b.dispose();
     m.simulateExternalChange(ROOT, { add: ['dopo.txt'] });
     await new Promise((r) => setTimeout(r, 20));
-    expect(names()).not.toContain('dopo.txt'); // unsubscribed
+    expect(names()).not.toContain('dopo.txt');
   });
 
   it('keeps selection, anchor and focus on items that still exist; drops the removed ones', async () => {
@@ -79,12 +78,10 @@ describe('FileBrowser live refresh (fs-changed)', () => {
     const foto = b.byId.get(id('Foto')) as FsNode;
     await b.openDir(foto);
     await b.openDir(b.byId.get(id('Vacanze 2024'))!);
-    // Foto renamed from the file manager: same id, new crumb label, still inside
     await api.fsRename(info.id, foto.id, ROOT, 'Fotografie');
     expect(await b.externalChange([ROOT])).toBe(true);
     expect(b.trail.map((c) => c.name)).toEqual(['Documenti', 'Fotografie', 'Vacanze 2024']);
     expect(names()).toContain('Dolomiti 01.jpg');
-    // then deleted: back to the deepest folder that still exists
     m.simulateExternalChange(ROOT, { remove: ['Fotografie'], emit: false });
     expect(await b.externalChange([ROOT])).toBe(true);
     expect(b.trail.map((c) => c.name)).toEqual(['Documenti']);
@@ -101,7 +98,6 @@ describe('FileBrowser live refresh (fs-changed)', () => {
     const p3 = b.externalChange([ROOT]);
     expect(await Promise.all([p1, p2, p3])).toEqual([true, false, false]);
     expect(spy.mock.calls.filter((c) => c[0] === 'fs_list')).toHaveLength(1);
-    // one arriving while a re-list is in flight runs after it
     const p4 = b.externalChange([ROOT]);
     await Promise.resolve();
     m.simulateExternalChange(ROOT, { add: ['c.txt'], emit: false });

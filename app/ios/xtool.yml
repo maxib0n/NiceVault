@@ -1,6 +1,4 @@
 version: 1
-# The Tauri identifier (tauri.conf.json). A free (personal) team gets this App ID registered
-# by xtool as-is if no other team owns it, see scripts/build-ios.sh.
 bundleID: app.nicevault.desktop
 product: NiceVault
 infoPath: Info.plist

@@ -1,7 +1,3 @@
-// The app's own look and size (Impostazioni > Aspetto dell'app), app_settings_*: theme and ink
-// worn wherever no volume's look applies (lib/worn.ts, applied by look.svelte.ts), and the
-// interface size. In the real app the size is the webview's zoom, set by the backend (before
-// the first paint at start, and on every change); in the browser (mock) a root CSS zoom.
 import * as api from '../api';
 import type { AppSettings, AppSettingsPatch } from '../api';
 import { DEFAULT_ACCENT, isAccent, type AccentId } from '../accents';
@@ -21,7 +17,6 @@ class AppLook {
   adopt(s: Pick<AppSettings, 'app_theme' | 'app_accent' | 'ui_scale' | 'new_like_app'> & { sounds?: boolean; video_arrows?: api.VideoArrows }) {
     this.theme = s.app_theme ?? 'dark';
     this.accent = isAccent(s.app_accent) ? s.app_accent : DEFAULT_ACCENT;
-    // phones: always 100% (the phone layout is drawn for its own width; other sizes break it)
     this.scale = !isMobile && (api.UI_SCALES as readonly number[]).includes(s.ui_scale) ? s.ui_scale : 100;
     this.newLikeApp = s.new_like_app ?? true;
     this.sounds = s.sounds ?? true;
@@ -37,7 +32,6 @@ class AppLook {
     else document.documentElement.style.setProperty('zoom', String(z));
   }
 
-  /** Optimistic: worn at once, saved, put back if the save fails. Resolves with the saved settings. */
   async set(patch: Pick<AppSettingsPatch, 'app_theme' | 'app_accent' | 'ui_scale' | 'new_like_app' | 'sounds' | 'video_arrows'>): Promise<AppSettings | null> {
     const prev = { app_theme: this.theme, app_accent: this.accent, ui_scale: this.scale, new_like_app: this.newLikeApp, sounds: this.sounds, video_arrows: this.videoArrows };
     this.adopt({ ...prev, ...patch });
@@ -52,7 +46,6 @@ class AppLook {
     }
   }
 
-  /** Ctrl/Cmd+Shift+= / - / 0: one size up, down, back to 100%. */
   step(dir: 1 | -1 | 0) {
     if (isMobile) return;
     const all = api.UI_SCALES as readonly number[];

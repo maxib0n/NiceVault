@@ -8,5 +8,6 @@ target-pm/
 target-lock/
 .tmp-e2e/
 target-updater/
-# volume-format compatibility fixtures are committed on purpose
 !crates/nv-core/tests/fixtures/compat/*/*.nvault
+.cache/
+target-cross-glibc/

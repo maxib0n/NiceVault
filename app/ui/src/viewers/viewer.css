@@ -1,7 +1,3 @@
-/* Shared look of the in-app viewers (src/viewers/*.svelte): sheets of paper laid on the
-   quick look's stage, a paper strip of controls at the foot, data in the mono. Only design
-   tokens; motion is transform/opacity only. Every rule is under .vw so nothing leaks out. */
-
 .vw {
   position: relative;
   width: 100%;
@@ -18,7 +14,6 @@
   padding: var(--space-5) var(--space-4) calc(var(--space-7) + 24px);
   overscroll-behavior: contain;
 }
-/* a sheet of paper on the stage */
 .vw-sheet {
   max-width: 860px;
   margin: 0 auto;
@@ -35,7 +30,6 @@
 .vw-sheet.wide {
   max-width: 1040px;
 }
-/* the strip of controls, floating at the foot of the stage */
 .vw-bar {
   position: absolute;
   left: 0;
@@ -56,7 +50,6 @@
     inset 0 1px 0 var(--key-lip),
     0 0 0 1px var(--key-edge),
     var(--lift-key-hover);
-  /* entrance through motion.css (class nv-enter): never opacity/transform themselves */
   animation: nv-enter var(--dur-ui) var(--ease-out) backwards;
   --enter-from: translateY(6px);
   --enter-to: translateY(0);
@@ -103,7 +96,6 @@
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
-/* centred states: loading, too big, cannot show */
 .vw-state {
   flex: 1;
   display: flex;
@@ -148,7 +140,6 @@
   justify-content: center;
   gap: var(--space-2);
 }
-/* a field of glyphs only after a blink (fast files never flash it); class nv-enter */
 .vw-loading {
   animation: nv-enter 1ms linear 300ms backwards;
 }
@@ -157,7 +148,6 @@
   font-size: var(--text-md);
   --ascii-skeleton: var(--ink-4);
 }
-/* key/value facts (info panel, document properties) */
 .vw-facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -193,7 +183,6 @@
   border: 0;
   background: var(--paper-rule);
 }
-/* a ledger table (archive listing, spreadsheets, CSV) */
 .vw-table {
   width: 100%;
   border-collapse: collapse;

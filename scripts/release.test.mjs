@@ -1,4 +1,3 @@
-// node --test scripts/release.test.mjs   (also run by `pnpm test` in app/ui)
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { existsSync, readFileSync } from "node:fs";
@@ -163,7 +162,6 @@ describe("ghReleaseArgs", () => {
   });
 });
 
-// the legacy key stays in the private repo only (the public copy has no bridge to run)
 const LEGACY_KEY = new URL("./legacy/release-pack.key", import.meta.url);
 describe("release packs", { skip: !existsSync(LEGACY_KEY) }, () => {
   const secret = existsSync(LEGACY_KEY) ? parsePackSecret(readFileSync(LEGACY_KEY, "utf8")) : Buffer.alloc(32);
@@ -209,7 +207,6 @@ describe("release packs", { skip: !existsSync(LEGACY_KEY) }, () => {
     assert.deepEqual(m.pack, { v: 1, salt: "c2FsdA==" });
     assert.equal(m.platforms["darwin-x86_64"].url, "https://h/v1.2.3/NiceVault-macos-universal.zip.nvpack");
     assert.equal(m.platforms["linux-x86_64"].signature, "S");
-    // no pack: plain as before
     const plain = buildLatestJson({ version: "1.2.3", notes: { it: "n", en: "n" }, pubDate: "x", assets: [{ filename: "NiceVault-linux-x86_64", signature: "S" }], assetBase: (v) => `https://h/v${v}` });
     assert.equal(plain.pack, undefined);
     assert.equal(plain.platforms["linux-x86_64"].url, "https://h/v1.2.3/NiceVault-linux-x86_64");

@@ -1,8 +1,3 @@
-<!--
-  The active volume opened OLDER than this computer last saw it (VaultInfo.rolled_back):
-  the file was replaced by an earlier copy of itself. Stays until "Tieni questa versione"
-  (vault_accept_rollback) or "Non ora" (this session only: it comes back at the next unlock).
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { History } from '@lucide/svelte';

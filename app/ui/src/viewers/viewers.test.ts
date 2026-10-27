@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { detectEncoding, validUtf8 } from './encoding';
 import { languageFor, toLines, tokenize } from './highlight';
-import { parseInline, parseMarkdown, safeHref } from './markdown';
+import { safeHref } from './links';
 import { memorySource, urlSource } from './source';
 import { listZip, readEntry } from './zip';
 import { listTar, looksLikeTar } from './tar';
@@ -27,7 +27,7 @@ describe('encoding', () => {
     expect(validUtf8(b.subarray(0, b.length - 1), true)).toBe(true);
     expect(validUtf8(b.subarray(0, b.length - 1), false)).toBe(false);
     expect(validUtf8(new Uint8Array([0xc0, 0xaf]))).toBe(false);
-    expect(validUtf8(new Uint8Array([0xed, 0xa0, 0x80]))).toBe(false); // surrogate
+    expect(validUtf8(new Uint8Array([0xed, 0xa0, 0x80]))).toBe(false);
   });
 });
 
@@ -56,30 +56,7 @@ describe('highlight', () => {
   });
 });
 
-describe('markdown', () => {
-  it('blocks', () => {
-    const b = parseMarkdown(new TextDecoder().decode(sample('guida.md')));
-    const kinds = b.map((x) => x.t);
-    expect(kinds).toContain('h');
-    expect(kinds).toContain('list');
-    expect(kinds).toContain('code');
-    expect(kinds).toContain('table');
-    expect(kinds).toContain('quote');
-    expect(kinds).toContain('hr');
-    const tasks = b.filter((x) => x.t === 'list').flatMap((l) => (l.t === 'list' ? l.items.map((i) => i.task) : []));
-    expect(tasks).toContain(true);
-    expect(tasks).toContain(false);
-  });
-  it('raw HTML stays text, links only http(s)/mailto, images never fetched', () => {
-    const txt = JSON.stringify(parseMarkdown('<script>alert(1)</script>\n\n[x](javascript:alert(1)) ![i](https://t.example/p.png)'));
-    expect(txt).toContain('"t":"text","s":"<script>alert(1)</script>"');
-    const p = parseInline('[x](javascript:alert(1)) [y](https://a.example/b) <mailto:a@b.it> ![i](https://t.example/p.png)');
-    const links = p.filter((n) => n.t === 'link');
-    expect(links.map((l) => (l.t === 'link' ? l.href : ''))).toEqual([null, 'https://a.example/b', 'mailto:a@b.it']);
-    expect(p.find((n) => n.t === 'img')).toMatchObject({ alt: 'i' });
-    expect(safeHref('file:///etc/passwd')).toBeNull();
-    expect(safeHref('HTTPS://ok.example')).toBe('https://ok.example/');
-  });
+describe('markdown links', () => {
   it('links are normalised like viewers.rs checked_link', () => {
     expect(safeHref('mailto:a@b.it?subject=Ciao%20Mario&attach=/etc/passwd&body=x')).toBe('mailto:a@b.it?subject=Ciao%20Mario&body=x');
     expect(safeHref('mailto:a@b.it?Attachment=~/.ssh/id_ed25519')).toBe('mailto:a@b.it');
@@ -90,8 +67,10 @@ describe('markdown', () => {
     expect(safeHref('https://user:pw@example.org/')).toBeNull();
     expect(safeHref('HTTPS://Example.ORG/x?y=1#f')).toBe('https://example.org/x?y=1#f');
   });
-  it('emphasis, code spans, snake_case', () => {
-    expect(parseInline('**b** *i* `c*d*` snake_case_name ~~s~~').map((n) => n.t)).toEqual(['strong', 'text', 'em', 'text', 'code', 'text', 'del']);
+  it('only http(s) and mailto', () => {
+    expect(safeHref('javascript:alert(1)')).toBeNull();
+    expect(safeHref('file:///etc/passwd')).toBeNull();
+    expect(safeHref('HTTPS://ok.example')).toBe('https://ok.example/');
   });
 });
 

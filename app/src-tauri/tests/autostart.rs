@@ -1,7 +1,3 @@
-//! "Avvia all'accesso" / "Avvia ridotto" through the same functions the Tauri commands call:
-//! the setting in settings.json, the OS entry (here in a temp folder) written, rewritten and
-//! removed with it, the `--minimized` flag it carries, portable mode ignoring both.
-
 use nicevault_app::autostart::{self, Autostart, Target};
 use nicevault_app::global::AppSettingsPatch;
 use nicevault_app::store::{Locations, Store};
@@ -30,7 +26,6 @@ fn exec_line(file: &Path) -> String {
     body.lines().find_map(|l| l.strip_prefix("Exec=")).unwrap().to_owned()
 }
 
-/// The Exec value split the way a desktop launcher does (quotes, then backslash escapes).
 fn exec_args(exec: &str) -> Vec<String> {
     let unescaped = exec.replace("\\\\", "\\");
     let (mut out, mut cur, mut quoted, mut chars) = (vec![], String::new(), false, unescaped.chars());
@@ -55,18 +50,15 @@ fn toggles_write_the_entry_and_persist() {
     let a = st.app_settings_get();
     assert_eq!((a.start_at_login, a.start_minimized), (false, false));
 
-    // "Avvia ridotto" alone: no entry (nothing starts at login), the setting is kept
     let a = st.app_settings_set(patch(r#"{"start_minimized": true}"#)).unwrap();
     assert_eq!((a.start_at_login, a.start_minimized), (false, true));
     assert!(!file.exists());
 
-    // "Avvia all'accesso": the entry, with the flag
     st.app_settings_set(patch(r#"{"start_at_login": true}"#)).unwrap();
     let args = exec_args(&exec_line(&file));
     assert_eq!(args, ["/opt/Nice Vault/nicevault", "--minimized"]);
     assert!(autostart::launched_minimized(&args), "the binary started by the entry starts hidden");
 
-    // "Avvia ridotto" off: rewritten without the flag
     st.app_settings_set(patch(r#"{"start_minimized": false}"#)).unwrap();
     let args = exec_args(&exec_line(&file));
     assert_eq!(args, ["/opt/Nice Vault/nicevault"]);
@@ -75,7 +67,6 @@ fn toggles_write_the_entry_and_persist() {
     let raw: serde_json::Value = serde_json::from_slice(&std::fs::read(cfg.join("settings.json")).unwrap()).unwrap();
     assert_eq!((raw["start_at_login"].as_bool(), raw["start_minimized"].as_bool()), (Some(true), Some(false)));
 
-    // off: removed
     let a = st.app_settings_set(patch(r#"{"start_at_login": false}"#)).unwrap();
     assert!(!a.start_at_login);
     assert!(!file.exists());
@@ -89,13 +80,11 @@ fn a_new_run_reads_them_back_and_follows_the_entry() {
     let st = app(Store::new(installed(&cfg)).with_autostart(Some(entry(t.path(), "/old/nicevault"))));
     st.app_settings_set(patch(r#"{"start_at_login": true, "start_minimized": true}"#)).unwrap();
 
-    // next start, the binary moved: the entry points at the new one
     let mut s = Store::new(installed(&cfg)).with_autostart(Some(entry(t.path(), "/new/nicevault")));
     s.startup_check();
     assert_eq!(s.startup(), (true, true));
     assert_eq!(exec_args(&exec_line(&file)), ["/new/nicevault", "--minimized"]);
 
-    // the entry removed from the OS's startup settings: the setting turns off, persisted
     std::fs::remove_file(&file).unwrap();
     let mut s = Store::new(installed(&cfg)).with_autostart(Some(entry(t.path(), "/new/nicevault")));
     s.startup_check();
@@ -108,7 +97,6 @@ fn a_new_run_reads_them_back_and_follows_the_entry() {
 fn a_failed_write_changes_nothing() {
     let t = tempfile::tempdir().unwrap();
     let cfg = t.path().join("cfg");
-    // the entry's folder is a file: the write fails
     std::fs::write(t.path().join("autostart"), b"").unwrap();
     let st = app(Store::new(installed(&cfg)).with_autostart(Some(entry(t.path(), "/opt/nv"))));
     let e = st.app_settings_set(patch(r#"{"start_at_login": true}"#)).unwrap_err();
@@ -145,10 +133,7 @@ fn portable_ignores_them_and_writes_nothing() {
 
 #[test]
 fn the_override_folder_gets_this_platforms_entry() {
-    // NICEVAULT_AUTOSTART_DIR is read by detect(); set in this test binary only
     let t = tempfile::tempdir().unwrap();
-    // SAFETY: no other test in this binary reads the environment concurrently with this write
-    // except through detect(), which only this test calls.
     unsafe { std::env::set_var("NICEVAULT_AUTOSTART_DIR", t.path()) };
     let a = Autostart::detect().expect("an entry");
     assert_eq!(a.exe, std::env::current_exe().unwrap());
@@ -166,14 +151,11 @@ fn the_override_folder_gets_this_platforms_entry() {
     assert!(!a.exists());
 }
 
-/// "Resta nel vassoio quando chiudi la finestra": on by default when installed, kept in
-/// settings.json next to the keys it does not know; portable: off and not settable.
 #[test]
 fn close_to_tray_defaults_on_installed_and_persists_additively() {
     let t = tempfile::tempdir().unwrap();
     let cfg = t.path().join("cfg");
     std::fs::create_dir_all(&cfg).unwrap();
-    // a settings.json from an older build (no close_to_tray) with a key from a newer one
     std::fs::write(cfg.join("settings.json"), br#"{ "language": "it", "from_the_future": 7 }"#).unwrap();
     let st = app(Store::new(installed(&cfg)));
     assert!(st.app_settings_get().close_to_tray, "default on when installed");
@@ -184,10 +166,8 @@ fn close_to_tray_defaults_on_installed_and_persists_additively() {
     assert_eq!(raw["close_to_tray"].as_bool(), Some(false));
     assert_eq!(raw["from_the_future"].as_i64(), Some(7), "unknown keys survive");
     assert_eq!(raw["language"].as_str(), Some("it"));
-    // the other startup settings are untouched by it
     assert_eq!((a.start_at_login, a.start_minimized), (false, false));
 
-    // read back by a new run
     let again = app(Store::new(installed(&cfg)));
     assert!(!again.app_settings_get().close_to_tray);
     again.app_settings_set(patch(r#"{"close_to_tray": true}"#)).unwrap();

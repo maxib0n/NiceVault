@@ -1,7 +1,3 @@
-//! Deleting as a job (delete.rs): "616 elementi, 1,1 GB — sembra non fare nulla". The delete
-//! runs in committed batches with progress, can be cancelled (what went stays gone) and reports
-//! the items that could not go.
-
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events};
 use nv_fs::{Fs, Kind, NodeId, ROOT};
@@ -15,7 +11,6 @@ use std::time::Duration;
 struct Rec {
     events: Mutex<Vec<(String, Value)>>,
     cv: Condvar,
-    /// block the job thread on the first `fs-changed` (a committed batch) until released
     gate: Mutex<Gate>,
     gate_cv: Condvar,
 }
@@ -126,7 +121,6 @@ fn deletes_in_committed_batches_with_progress() {
     assert_eq!(out["errors"].as_array().unwrap().len(), 0);
     assert_eq!(count(&*v, ROOT), 0);
 
-    // batches: 600 items at 128 per commit, the 40 MiB file cut 4 MiB per commit
     let changed = rec.of("fs-changed");
     assert!(changed.len() >= 5, "{} batches", changed.len());
     assert!(changed.iter().any(|c| c["dirs"].as_array().unwrap().contains(&album.id.into())));
@@ -140,7 +134,6 @@ fn deletes_in_committed_batches_with_progress() {
         "the big file is freed step by step"
     );
 
-    // durable: gone after lock / reopen
     drop(v);
     st.vault_lock(&id, "user").unwrap();
     let id = st.vault_open(path.to_str().unwrap(), pw()).unwrap().id;
@@ -190,7 +183,6 @@ fn an_item_that_cannot_go_is_reported_and_its_folders_stay() {
     let other = v.create(ROOT, "nota.txt", Kind::File).unwrap();
     v.flush().unwrap();
 
-    // while the job runs, something lands in Sub (a copy through the mounted drive)
     rec.gate.lock().unwrap().armed = true;
     let job = nicevault_app::delete::fs_delete(&st, &id, vec![album.id, other.id]).unwrap();
     rec.wait_gate();
@@ -203,7 +195,6 @@ fn an_item_that_cannot_go_is_reported_and_its_folders_stay() {
     assert_eq!(errs[0]["node"], sub.id);
     assert_eq!(errs[0]["code"], "not_empty");
     assert_eq!(done["outcome"]["deleted"], 351);
-    // Sub (with the newcomer) and Album stay; everything else went
     assert_eq!(v.readdir(ROOT).unwrap().iter().map(|n| n.name.clone()).collect::<Vec<_>>(), ["Album"]);
     assert_eq!(v.readdir(album.id).unwrap().iter().map(|n| n.name.clone()).collect::<Vec<_>>(), ["Sub"]);
     assert_eq!(v.readdir(sub.id).unwrap().iter().map(|n| n.name.clone()).collect::<Vec<_>>(), ["nuovo.txt"]);
@@ -218,13 +209,11 @@ fn root_and_overlapping_selections() {
     let v = st.vault(&id).unwrap();
     let a = v.create(ROOT, "A", Kind::Dir).unwrap();
     let b = v.create(a.id, "b.txt", Kind::File).unwrap();
-    // a child selected with its folder, and a node already gone
     let job = nicevault_app::delete::fs_delete(&st, &id, vec![b.id, a.id, 9999]).unwrap();
     let done = rec.wait_done(&job);
     assert!(done["error"].is_null(), "{done}");
     assert_eq!(done["outcome"]["deleted"], 2);
     assert_eq!(count(&*v, ROOT), 0);
-    // the synchronous form (mobile Files provider, tests) takes the same path
     let c = v.create(ROOT, "c", Kind::Dir).unwrap();
     files(&*v, c.id, "x", 3, 10);
     st.fs_delete(&id, &[c.id]).unwrap();

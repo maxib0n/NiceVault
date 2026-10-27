@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Minimal xcrun stand-in for Linux (OpenSSL's *-xcrun configs, cc-rs): `-sdk X` is
-# ignored (build-ios.sh sets SDKROOT), --show-sdk-path prints SDKROOT, `-f tool` /
-# `tool args...` run our wrappers. Only what the iOS build needs.
 here="$(cd "$(dirname "$0")" && pwd)"
 find=0
 while [ $# -gt 0 ]; do

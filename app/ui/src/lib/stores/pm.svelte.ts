@@ -1,14 +1,3 @@
-// Password manager state for ONE open volume (the Password screen): the list (no secrets),
-// search-as-you-type, filters (all / favourites / 2FA / a folder), the selection (one entry
-// shown in the detail, any number picked for "Sposta in cartella"), folder operations, site
-// icons, and the clipboard countdown after a copy.
-// Secrets are never kept here: values are revealed (pm_reveal) or copied (pm_copy) on demand.
-//
-// Performance (2,000+ entries): pm_list is loaded once (it carries everything a row shows,
-// icon ref included) and searched here, in memory, against a lowercase index built once per
-// load; the typed query is applied on the next animation frame (typing stays instant, the list
-// follows within a frame); folder counts come from one pass. The screen renders only the rows
-// in view (Passwords.svelte).
 import * as api from '../api';
 import type { EntryId, PmEntry, PmEntryInput, PmEntrySummary, PmSecretField } from '../api';
 import { errorText } from '../errors';
@@ -21,23 +10,18 @@ import { m } from '../../paraglide/messages.js';
 export type PmFilter = { kind: 'all' } | { kind: 'favorites' } | { kind: 'totp' } | { kind: 'folder'; folder: string };
 
 export interface PmCopiedState {
-  /** what was copied, as shown ("Password", "Utente"...) */
   label: string;
   field: PmSecretField;
-  /** Date.now() when the backend wipes the clipboard (null = never) */
   until: number | null;
-  /** the whole countdown, seconds */
   seconds: number;
 }
 
 const sameFilter = (a: PmFilter, b: PmFilter) => a.kind === b.kind && (a.kind !== 'folder' || a.folder === (b as { folder: string }).folder);
 
-/** What a search looks at (same as the backend's pm_search): title, user, websites, tags, folder. */
 export const haystack = (e: PmEntrySummary) => `${e.title}\n${e.username}\n${e.urls.join('\n')}\n${e.tags.join('\n')}\n${e.folder}`.toLowerCase();
 
 const inFolder = (folder: string, f: string) => folder === f || folder.startsWith(`${f}/`);
 
-/** Folder paths and all their parents, sorted ("Personale", "Personale/Banche"). */
 export function folderTree(entries: readonly PmEntrySummary[]): string[] {
   const set = new Set<string>();
   for (const e of entries) {
@@ -48,7 +32,6 @@ export function folderTree(entries: readonly PmEntrySummary[]): string[] {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
-/** Entries matching every whitespace-separated term of `q` (index = haystack per entry). */
 export function searchIn(entries: readonly PmEntrySummary[], index: readonly string[], q: string): PmEntrySummary[] {
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return entries as PmEntrySummary[];
@@ -66,15 +49,11 @@ const caf: (h: unknown) => void = typeof cancelAnimationFrame === 'function' ? (
 export class PmStore {
   readonly vault: VaultId;
   all = $state.raw<PmEntrySummary[]>([]);
-  /** what is typed in the search box (instant) */
   query = $state('');
-  /** the query the list shows (follows `query` on the next frame) */
   applied = $state('');
   filter = $state<PmFilter>({ kind: 'all' });
   loaded = $state(false);
-  /** the entry in the detail (also the keyboard cursor) */
   selectedId = $state<EntryId | null>(null);
-  /** entries picked for a bulk action (always includes selectedId when there is one) */
   sel = $state.raw<Selection<EntryId>>(selEmpty());
   detail = $state<PmEntry | null>(null);
   copied = $state<PmCopiedState | null>(null);
@@ -90,13 +69,10 @@ export class PmStore {
     this.vault = vault;
   }
 
-  /** lowercase search text per entry, parallel to `all` (rebuilt once per load) */
   index = $derived(this.all.map(haystack));
 
-  /** every folder path and its parents, sorted */
   folders = $derived(folderTree(this.all));
 
-  /** entries per filter, from one pass over the list */
   counts = $derived.by(() => {
     let favorites = 0;
     let totp = 0;
@@ -115,7 +91,6 @@ export class PmStore {
     return { all: this.all.length, favorites, totp, folder };
   });
 
-  /** what the list shows: the search (or everything), then the filter */
   visible = $derived.by(() => {
     const base = searchIn(this.all, this.index, this.applied);
     const f = this.filter;
@@ -125,7 +100,6 @@ export class PmStore {
     return base;
   });
 
-  /** id -> position in `visible` (aria-posinset, keyboard, scroll) */
   positions = $derived.by(() => {
     const map = new Map<EntryId, number>();
     this.visible.forEach((e, i) => map.set(e.id, i));
@@ -134,7 +108,6 @@ export class PmStore {
 
   selected = $derived(this.selectedId ? (this.all.find((e) => e.id === this.selectedId) ?? null) : null);
 
-  /** ids picked for a bulk action, in list order */
   picked = $derived(this.visible.filter((e) => this.sel.selected.has(e.id)).map((e) => e.id));
 
   countIn(f: PmFilter): number {
@@ -161,7 +134,6 @@ export class PmStore {
     }
   }
 
-  /** Starts listening for stored site icons and asks the backend for the ones that are due. */
   async startIcons() {
     if (!this.unlisten) {
       const un = await api.onPmIcons((p) => {
@@ -179,7 +151,6 @@ export class PmStore {
     void api.pmIconsRefresh(this.vault).catch(() => undefined);
   }
 
-  /** Search as you type: the box shows every key at once, the list follows on the next frame. */
   setQuery(q: string) {
     this.query = q;
     if (this.frame !== null) caf(this.frame);
@@ -198,7 +169,6 @@ export class PmStore {
     if (id && (mods.shift || mods.toggle)) {
       this.sel = selClick(this.sel, this.visible.map((e) => e.id), id, mods);
       if (!this.sel.selected.has(id)) {
-        // ctrl-click took it out: the detail keeps the last one still picked
         const rest = this.picked.at(-1) ?? null;
         if (rest !== this.selectedId) await this.show(rest);
         return;
@@ -209,7 +179,6 @@ export class PmStore {
     await this.show(id);
   }
 
-  /** Right-click / drag start: keeps a multi-selection that contains `id`. */
   async touch(id: EntryId) {
     if (this.sel.selected.has(id)) return;
     this.sel = ensureSelected(this.sel, id);
@@ -235,7 +204,6 @@ export class PmStore {
     }
   }
 
-  /** Move the selection through the visible list (arrow keys; shift extends). */
   step(delta: number, mods: Mods = {}) {
     const list = this.visible;
     if (!list.length) return;
@@ -254,7 +222,6 @@ export class PmStore {
     }
   }
 
-  /** Copy a secret of the selected entry: the backend wipes the clipboard after its countdown. */
   async copy(field: PmSecretField, label: string, id: EntryId | null = this.selectedId) {
     if (!id) return;
     try {
@@ -277,7 +244,6 @@ export class PmStore {
     }
   }
 
-  /** seconds until the clipboard is wiped (null: no countdown) */
   copyLeft = $derived(this.copied?.until ? Math.max(0, Math.ceil((this.copied.until - this.now) / 1000)) : null);
 
   async save(input: PmEntryInput, id: EntryId | null): Promise<string | null> {
@@ -324,11 +290,9 @@ export class PmStore {
       const d = await api.pmGet(this.vault, this.selectedId);
       if (this.selectedId === d.id) this.detail = d;
     } catch {
-      /* gone: load() clears it */
     }
   }
 
-  /** "Sposta in cartella": `ids` into `folder` ("" = no folder). */
   async move(ids: EntryId[], folder: string): Promise<boolean> {
     if (!ids.length) return false;
     try {
@@ -372,7 +336,6 @@ export class PmStore {
     }
   }
 
-  /** "Ripara voci importate" */
   async repair() {
     try {
       const n = await api.pmRepair(this.vault);

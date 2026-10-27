@@ -1,11 +1,3 @@
-// Real-app check: every common video kind plays and seeks in Anteprima without taking the app
-// down. Run by
-//   NV_E2E_SCRIPT=video-matrix.mjs bash e2e/real/e2e-real.sh      (pnpm e2e:real:videos; 8/8 on Xvfb and nested KWin, 2026-10-25)
-// Generates clips with ffmpeg (H.264 MP4 faststart, MOV with the moov at the end, HEVC 8/10 bit,
-// MKV, VP9 WebM, and two over MEDIA_RAM_MAX so they stream), creates a volume through the
-// wizard, imports them, then for each: open Anteprima, play, seek to 60 %, check it is playing
-// there, close. The app (WebDriver session) and its web process must survive every one.
-// NV_E2E_VIDEOS=<dir> plays the videos of that folder instead.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,7 +28,6 @@ function makeVideos() {
   return dir;
 }
 
-/** WebKitWebProcess pids of our app (their HOME is the suite's private one). */
 function webProcesses() {
   const pids = [];
   for (const p of readdirSync('/proc')) {
@@ -45,7 +36,6 @@ function webProcesses() {
       if (!readFileSync(`/proc/${p}/comm`, 'utf8').startsWith('WebKitWebProces')) continue;
       if (readFileSync(`/proc/${p}/environ`, 'utf8').split('\0').includes(`HOME=${WORK}/home`)) pids.push(p);
     } catch {
-      /* gone or not ours */
     }
   }
   return pids.sort();
@@ -86,7 +76,6 @@ wd = new WebDriver(process.env.NV_E2E_DRIVER);
 await wd.start({ 'tauri:options': { application: APP } });
 await waitFor('app ready', 'return document.querySelector("[data-ready=true]")');
 
-// a volume through the wizard (as run.mjs)
 await clickButton('Nuovo volume');
 await waitFor('wizard', 'return screen() === "create"');
 const name = await waitFor('name input', 'return byLabel("Nome")');
@@ -109,7 +98,6 @@ await wd.execAsync(
 await waitFor('videos imported', 'return arguments[0].every((n) => names().includes(n))', { args: [videos], timeout: 120000 });
 await sleep(1000);
 
-// regression: the loopback <video> is cross-origin; its frames must still reach a canvas (CORS)
 {
   const thumbs = await waitFor(
     'video thumbnails (blob: img)',
@@ -155,7 +143,6 @@ for (const v of videos) {
   } catch (e) {
     r.error = e.message;
   }
-  // the app must still answer, with the same web process
   try {
     await wd.exec('return 1');
     const procs = webProcesses();
@@ -174,7 +161,6 @@ for (const v of videos) {
       await waitFor('closed', 'return !dialog("Anteprima di")');
     }
   } catch {
-    /* reported above */
   }
 }
 await wd.quit().catch(() => undefined);

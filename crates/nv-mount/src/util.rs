@@ -1,5 +1,4 @@
-//! Helpers shared by the backends.
-#![allow(dead_code)] // each backend uses a different subset
+#![allow(dead_code)]
 
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
@@ -8,7 +7,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use crate::{MountError, Result};
 
-/// Turn a volume name into something safe as a single path component / volume label.
 pub(crate) fn sanitize_name(name: &str) -> String {
     let mut s: String = name
         .chars()
@@ -40,7 +38,6 @@ pub(crate) fn now_ns() -> i64 {
     system_time_to_ns(SystemTime::now())
 }
 
-/// A directory we mount on, remembering whether we created it (and so should remove it).
 #[cfg(unix)]
 #[derive(Debug)]
 pub(crate) struct MountDir {
@@ -50,7 +47,6 @@ pub(crate) struct MountDir {
 
 #[cfg(unix)]
 impl MountDir {
-    /// Remove the directory if we created it and it is empty again. Never recursive.
     pub fn cleanup(&self) {
         if self.created {
             let _ = std::fs::remove_dir(&self.path);
@@ -80,14 +76,11 @@ fn usable_existing(p: &Path) -> bool {
     }
 }
 
-/// `base` must be a real directory owned by us that nobody else can write (it may be a
-/// predictable /tmp path another user created first). Group/other read is tightened to 0700.
 #[cfg(unix)]
 fn private_base(base: &Path) -> Result<()> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let refuse = |why: &str| MountError::Mountpoint(format!("{}: {why}", base.display()));
     let md = std::fs::symlink_metadata(base).map_err(|e| refuse(&e.to_string()))?;
-    // SAFETY: geteuid has no preconditions.
     if !md.is_dir() || md.uid() != unsafe { libc::geteuid() } || md.mode() & 0o022 != 0 {
         return Err(refuse("not a private directory of this user"));
     }
@@ -97,8 +90,6 @@ fn private_base(base: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Pick `<base>/<name>` (or `<name> 2`, `<name> 3`, ...), creating `base` (0700) and the leaf.
-/// `on_stale` is given a chance to clean up a dead mount left by a crashed process.
 #[cfg(unix)]
 pub(crate) fn pick_dir_under(base: &Path, name: &str, on_stale: &dyn Fn(&Path)) -> Result<MountDir> {
     use std::os::unix::fs::DirBuilderExt;
@@ -130,7 +121,6 @@ pub(crate) fn pick_dir_under(base: &Path, name: &str, on_stale: &dyn Fn(&Path)) 
     Err(MountError::Mountpoint(format!("no free mountpoint under {}", base.display())))
 }
 
-/// Validate (or create) a caller-supplied mountpoint directory.
 #[cfg(unix)]
 pub(crate) fn explicit_dir(p: &Path, on_stale: &dyn Fn(&Path)) -> Result<MountDir> {
     if let Err(e) = std::fs::symlink_metadata(p)
@@ -155,7 +145,6 @@ pub(crate) fn explicit_dir(p: &Path, on_stale: &dyn Fn(&Path)) -> Result<MountDi
     }
 }
 
-/// Find an executable by name in `$PATH` plus the usual system dirs.
 #[cfg(unix)]
 pub(crate) fn find_exe(name: &str) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
@@ -167,7 +156,6 @@ pub(crate) fn find_exe(name: &str) -> Option<PathBuf> {
 }
 
 #[cfg(unix)]
-/// Run a command, returning Err(stderr+stdout) on non-zero exit.
 pub(crate) fn run(cmd: &mut std::process::Command) -> std::result::Result<(), String> {
     match cmd.stdin(std::process::Stdio::null()).output() {
         Ok(o) if o.status.success() => Ok(()),

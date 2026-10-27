@@ -1,7 +1,3 @@
-//! The disk operations behind an interface: the OS implementation (udisks2 / elevated helper /
-//! diskutil), a fake one for tests, e2e and mock parity (`NICEVAULT_FAKE_DISKS=<file.json>`),
-//! and a dry run (`NICEVAULT_DEVICE_DRY_RUN=1`) that logs every command it would run and runs none.
-
 use super::commands::{self, DbusCall};
 use super::job::Log;
 use super::{CLIENT_LABEL, DATA_LABEL, DataFs, Disk, NvState, Partition, Plan};
@@ -14,38 +10,26 @@ use std::time::Duration;
 
 pub trait DiskOps: Send + Sync {
     fn name(&self) -> &'static str;
-    /// Every whole disk (read-only, never prompts).
     fn disks(&self) -> Vec<Disk>;
-    /// The mkfs tool that is missing for `fs` (Linux; None = it can be created).
     fn missing_tool(&self, fs: DataFs) -> Option<String>;
-    /// The privileged part: unmount, partition table, both partitions formatted. `step(name)`
-    /// is called as each step starts.
     fn partition(&self, plan: &Plan, log: &Log, step: &mut dyn FnMut(&str)) -> ApiResult<()>;
-    /// Mounts both partitions (found by label): (NiceVault root, VaultData root).
     fn mount(&self, plan: &Plan, log: &Log) -> ApiResult<(PathBuf, PathBuf)>;
     fn eject(&self, disk: &Disk, log: &Log) -> ApiResult<()>;
-    /// Where `disk`'s NiceVault partition is mounted, if it is (read-only; the dry run: its
-    /// temp folder, never the real partition).
     fn client_root(&self, disk: &Disk) -> Option<PathBuf> {
         disk.by_label(CLIENT_LABEL)?.mountpoints.iter().find(|m| !m.is_empty()).map(PathBuf::from)
     }
-    /// Mounts only the NiceVault partition, without privileges ("Aggiorna i programmi").
     fn mount_client(&self, _disk: &Disk, _log: &Log) -> ApiResult<PathBuf> {
         Err(not_mounted())
     }
-    /// Tests: an error injected at a step (the fake's `fail` / `fail_at`).
     fn fault(&self, _step: &str) -> Option<ApiError> {
         None
     }
-    /// Room left on `disk`'s NiceVault partition mounted at `root` (None: unknown). The fake:
-    /// its partition's size less what its folder holds (so a 128 MiB stick is really 128 MiB).
     fn client_free(&self, _disk: &Disk, root: &Path) -> Option<u64> {
         let f = super::job::free_space(root);
         (f > 0).then_some(f)
     }
 }
 
-/// From the environment: fake file, dry run (over the OS or the fake), else the OS.
 pub fn detect() -> Box<dyn DiskOps> {
     let inner: Box<dyn DiskOps> = match std::env::var_os("NICEVAULT_FAKE_DISKS") {
         Some(p) if !p.is_empty() => Box::new(Fake::new(PathBuf::from(p))),
@@ -68,7 +52,6 @@ pub fn os() -> Box<dyn DiskOps> {
     Box::new(DryRun::new(Box::new(Fake::new(PathBuf::new()))))
 }
 
-/// Runs a program (tests swap it for a recorder).
 pub type Runner = Box<dyn Fn(&str, &[String]) -> std::io::Result<Output> + Send + Sync>;
 
 pub fn run_real(prog: &str, args: &[String]) -> std::io::Result<Output> {
@@ -84,7 +67,6 @@ pub(crate) fn ok_output(stdout: &str) -> Output {
     Output { status, stdout: stdout.as_bytes().to_vec(), stderr: vec![] }
 }
 
-/// Runs and logs one command; Err((exit code, stderr)) when it fails.
 fn logged(run: &Runner, log: &Log, prog: &str, args: &[String]) -> Result<String, (Option<i32>, String)> {
     let t0 = std::time::Instant::now();
     match run(prog, args) {
@@ -100,7 +82,6 @@ fn logged(run: &Runner, log: &Log, prog: &str, args: &[String]) -> Result<String
     }
 }
 
-/// Waits for `f` to give a value (udev / the OS mounting new partitions takes a moment).
 fn wait_for<T>(secs: u64, mut f: impl FnMut() -> Option<T>) -> Option<T> {
     let t0 = std::time::Instant::now();
     loop {
@@ -126,9 +107,6 @@ fn gone() -> ApiError {
     ApiError::new("device_gone", "The drive was disconnected.")
 }
 
-// ---------------------------------------------------------------------------------------------
-// Linux: udisks2 over gdbus
-
 pub struct Linux {
     run: Runner,
 }
@@ -147,7 +125,6 @@ impl Linux {
     }
 }
 
-/// An udisks / polkit error text -> the spec's code.
 pub fn udisks_error(step: &str, stderr: &str) -> ApiError {
     let e = stderr;
     if e.contains("NotAuthorizedDismissed") || e.contains("Error.Cancelled") {
@@ -167,7 +144,6 @@ pub fn udisks_error(step: &str, stderr: &str) -> ApiError {
     }
 }
 
-/// Where udisks keeps the mkfs tools.
 const SBIN: [&str; 4] = ["/usr/sbin", "/sbin", "/usr/bin", "/bin"];
 
 impl DiskOps for Linux {
@@ -178,7 +154,6 @@ impl DiskOps for Linux {
         if cfg!(target_os = "linux") { super::enumerate::os_disks() } else { vec![] }
     }
     fn missing_tool(&self, fs: DataFs) -> Option<String> {
-        // what udisks' CanFormat checks, without asking it (no D-Bus probe can prompt)
         let (tool, _) = fs.linux_tool()?;
         (!SBIN.iter().any(|d| Path::new(d).join(tool).exists())).then(|| tool.to_owned())
     }
@@ -209,7 +184,6 @@ impl DiskOps for Linux {
         Ok((roots.remove(0), roots.remove(0)))
     }
     fn mount_client(&self, disk: &Disk, log: &Log) -> ApiResult<PathBuf> {
-        // udisks Filesystem.Mount: filesystem-mount is allow_active=yes (no password locally)
         let part = disk.by_label(CLIENT_LABEL).ok_or_else(not_mounted)?;
         if let Some(m) = part.mountpoints.first() {
             return Ok(PathBuf::from(m));
@@ -243,9 +217,6 @@ impl DiskOps for Linux {
         self.call(log, &off).map(|_| ())
     }
 }
-
-// ---------------------------------------------------------------------------------------------
-// Windows: UAC-elevated helper (same exe, `--device-helper <plan.json>`)
 
 #[cfg(windows)]
 pub struct Windows;
@@ -292,7 +263,6 @@ mod win {
     }
 }
 
-/// Exit code of the helper -> error (None = success).
 pub fn helper_exit_error(code: u32, last_step: &str) -> Option<ApiError> {
     match code {
         0 => None,
@@ -333,7 +303,6 @@ impl DiskOps for Windows {
         info.lp_file = file.as_ptr();
         info.lp_parameters = par.as_ptr();
         info.n_show = SW_HIDE;
-        // SAFETY: the struct and the wide strings outlive the call; the handle is closed below.
         let ok = unsafe { ShellExecuteExW(&mut info) };
         if ok == 0 {
             let e = unsafe { GetLastError() };
@@ -393,9 +362,6 @@ impl DiskOps for Windows {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// macOS: diskutil, admin only if needed
-
 pub struct Mac {
     run: Runner,
 }
@@ -418,7 +384,6 @@ impl DiskOps for Mac {
     }
     fn partition(&self, plan: &Plan, log: &Log, step: &mut dyn FnMut(&str)) -> ApiResult<()> {
         step("check");
-        // BSD numbers can be reused after a replug: same identifier, size, still external
         match find_disk(self, plan) {
             Some(d) if super::is_external(&d) || d.is_virtual => {}
             Some(_) => return Err(ApiError::new("device_changed", "The drive changed since it was chosen.")),
@@ -473,22 +438,14 @@ impl DiskOps for Mac {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Fake: disks in a JSON file, partitions as folders
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FakeFile {
     pub disks: Vec<Disk>,
-    /// Folder for the partitions' contents (`<root>/<disk>/NiceVault`, `.../VaultData`).
     pub root: String,
-    /// An error code to fail with (elevation_denied, partition_failed, device_gone, ...) ...
     pub fail: Option<String>,
-    /// ... at this step (default: partition).
     pub fail_at: Option<String>,
-    /// mkfs tools to report missing.
     pub missing_tools: Vec<String>,
-    /// Milliseconds per privileged step (so the UI shows them).
     pub step_ms: Option<u64>,
 }
 
@@ -619,9 +576,6 @@ impl DiskOps for Fake {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Dry run: the full flow, every command logged, none executed
-
 pub struct DryRun {
     inner: Box<dyn DiskOps>,
 }
@@ -668,7 +622,6 @@ impl DiskOps for DryRun {
         Ok((c, d))
     }
     fn client_root(&self, disk: &Disk) -> Option<PathBuf> {
-        // never the real partition: its stand-in under the temp folder, once "mounted"
         let c = Self::dir(disk).join(CLIENT_LABEL);
         c.is_dir().then_some(c)
     }

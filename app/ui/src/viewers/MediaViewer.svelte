@@ -1,11 +1,3 @@
-<!--
-  Audio and video with real seeking. On Linux (WebKitGTK plays only http/blob URLs, and
-  buffers an http stream to /var/tmp while it plays) media up to 32 MB plays from an in-memory
-  Blob (lib/mediaBlob.ts), larger files from a one-off loopback stream with HTTP Range
-  (viewers.rs media_url) played with `loop` always set: WebKit never disk-buffers looping
-  media; this component stops it at the end
-  itself. Elsewhere the nvault:// URL plays directly. If none works, the info panel.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import type { FsNode, VaultInfo } from '../lib/types';
@@ -61,8 +53,6 @@
     };
   });
 
-  // sidecar subtitles (same folder, same base name, .srt / .vtt): read through the app, turned into
-  // WebVTT in memory and attached as <track> blobs; nothing is written anywhere (desktop only)
   $effect(() => {
     const el = mediaEl;
     if (!el || kind !== 'video' || isMobile) return;
@@ -93,7 +83,6 @@
 
   function error() {
     if (via === 'blob' || blobAbort) return onfail('unsupported');
-    // the scheme refused (no stream): replay from memory if it fits
     if (via === 'scheme' && isSourceRejected(mediaEl) && node.size <= MEDIA_BLOB_MAX) {
       const ac = (blobAbort = new AbortController());
       fetchAsBlob(url, node.size, ac.signal).then(
@@ -113,10 +102,6 @@
     onfail('unsupported');
   }
 
-  // The stream always loops (see the top): WebKit decides on disk buffering again at every
-  // play() and every new HTTP response, so `loop` can never be off, not even at the end. And
-  // its wrap back to 0 stalls on a stream: this stops 0.1 s before the end instead (a frame
-  // watch while playing), and the next play starts over from 0.
   let atEnd = false;
   let watch = 0;
   function endWatch() {
@@ -139,12 +124,11 @@
     }
     if (!watch) watch = requestAnimationFrame(endWatch);
   }
-  // playing counts as activity: the auto-lock never stops a film or a song halfway
   function playing() {
     if (mediaEl && !mediaEl.paused) idle.bump();
   }
   function seeking() {
-    atEnd = false; // the reader moved: play from there
+    atEnd = false;
   }
   $effect(() => () => {
     if (watch) cancelAnimationFrame(watch);
@@ -152,12 +136,10 @@
 
   const skip = skipper();
   function key(e: KeyboardEvent) {
-    // j / l: back / forward 10 s, k: play/pause (the arrows: see appLook.videoArrows)
     const el = mediaEl;
     if (!el || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
     if (t?.closest('input, textarea')) return;
-    // a film in full screen: ←/→ seek too, further with each quick press (lib/skip.ts)
     const film = kind === 'video' && appLook.videoArrows === 'seek' && !!document.querySelector('.quick-look[data-full]');
     if (film && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.shiftKey) {
       e.preventDefault();
@@ -177,9 +159,6 @@
 </script>
 
 <svelte:window onkeydown={key} />
-
-<!-- not started / paused: the first frame, not black (the tile's frame as poster while it loads;
-     `#t=0.001` makes WebKit decode and show the frame at the start with preload=metadata) -->
 
 
 <div class="vw media-vw" data-testid="viewer-media" data-kind={kind} data-via={via}>
@@ -218,8 +197,6 @@
     align-items: center;
     justify-content: center;
   }
-  /* the film takes the room above, letterboxed in it; the transport stays put at the foot,
-     whatever the film's shape */
   .player {
     display: flex;
     flex-direction: column;
@@ -237,15 +214,12 @@
     object-fit: contain;
     background: transparent;
   }
-  /* full screen: the film fills the window (contain), the transport floats over it above the dock
-     and goes with the head and the dock (same slide + fade, through --nv-o / --nv-t) */
   :global(.quick-look[data-full]) .player {
     position: relative;
     width: 100%;
     height: 100%;
     gap: 0;
   }
-  /* a film in full screen sits on pure black (letterbox bands, the sheet behind it) */
   :global(.quick-look[data-full][data-type='video']),
   :global(.quick-look[data-full][data-type='video'] .ql-body) {
     background: #000;
@@ -257,7 +231,6 @@
     position: absolute;
     left: 50%;
     bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    /* full screen: a long progress bar, grown smoothly from the window's 640 px */
     width: min(1200px, calc(100% - 64px));
     z-index: 2;
     will-change: opacity;
@@ -278,7 +251,6 @@
     --nv-t: translate3d(-50%, 18px, 0);
     pointer-events: none;
   }
-  /* a definite width in both modes, so entering full screen animates it (see above) */
   .player :global(.media-controls) {
     width: min(640px, 100%);
   }

@@ -1,5 +1,3 @@
-//! RFC 6238 TOTP: `otpauth://totp/...` URIs (what a 2FA QR code holds) or a bare base32 secret.
-
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -43,7 +41,6 @@ pub enum TotpError {
     Params,
 }
 
-/// A parsed TOTP generator. The secret is wiped on drop.
 #[derive(Clone)]
 pub struct Totp {
     secret: Zeroizing<Vec<u8>>,
@@ -60,17 +57,14 @@ impl std::fmt::Debug for Totp {
     }
 }
 
-/// One code with its validity window.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct TotpCode {
     pub code: String,
-    /// Seconds until the code changes (1..=period).
     pub remaining: u64,
     pub period: u64,
     pub digits: u32,
 }
 
-/// Non-secret description of a TOTP setup (for previews while editing).
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct TotpInfo {
     pub issuer: Option<String>,
@@ -80,7 +74,6 @@ pub struct TotpInfo {
     pub period: u64,
 }
 
-/// RFC 4648 base32; case-insensitive, ignores spaces, dashes and `=` padding.
 pub fn base32_decode(s: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() * 5 / 8);
     let (mut buf, mut bits) = (0u64, 0u32);
@@ -168,7 +161,6 @@ impl Totp {
         Ok(Totp { secret: Zeroizing::new(secret), algorithm, digits, period, issuer: None, account: None })
     }
 
-    /// Parses an `otpauth://totp/...` URI, or a bare base32 secret (SHA1, 6 digits, 30 s).
     pub fn parse(input: &str) -> Result<Totp, TotpError> {
         let s = input.trim();
         let lower = s.get(..10).map(|p| p.to_ascii_lowercase()).unwrap_or_default();
@@ -209,7 +201,6 @@ impl Totp {
         Ok(t)
     }
 
-    /// Canonical `otpauth://totp/` URI (what is stored in the volume).
     pub fn to_uri(&self) -> Zeroizing<String> {
         let label = match (&self.issuer, &self.account) {
             (Some(i), Some(a)) => format!("{}:{}", pct_encode(i), pct_encode(a)),
@@ -229,7 +220,6 @@ impl Totp {
         TotpInfo { issuer: self.issuer.clone(), account: self.account.clone(), algorithm: self.algorithm, digits: self.digits, period: self.period }
     }
 
-    /// The code for unix time `t` (seconds).
     pub fn code_at(&self, t: u64) -> String {
         let counter = (t / self.period).to_be_bytes();
         let mac: Zeroizing<Vec<u8>> = Zeroizing::new(match self.algorithm {
@@ -263,7 +253,6 @@ fn hmac_of<M: Mac + hmac::digest::KeyInit>(key: &[u8], msg: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    // RFC 6238 appendix B: seeds are ASCII "1234567890" repeated to the hash's block size.
     const S1: &[u8] = b"12345678901234567890";
     const S256: &[u8] = b"12345678901234567890123456789012";
     const S512: &[u8] = b"1234567890123456789012345678901234567890123456789012345678901234";
@@ -286,10 +275,8 @@ mod tests {
             assert_eq!(t256.code_at(t), b, "sha256 @ {t}");
             assert_eq!(t512.code_at(t), c, "sha512 @ {t}");
         }
-        // 6 digits = the last 6 of the 8-digit code.
         let t6 = Totp::new(S1.to_vec(), Algorithm::Sha1, 6, 30).unwrap();
         assert_eq!(t6.code_at(59), "287082");
-        // 60 s period: counter = t / 60.
         let t60 = Totp::new(S1.to_vec(), Algorithm::Sha1, 8, 60).unwrap();
         assert_eq!(t60.code_at(118), t1.code_at(59));
         let c = t60.code_at_full(61);
@@ -326,7 +313,6 @@ mod tests {
 
         let plain = Totp::parse("  JBSWY3DPEHPK3PXP ").unwrap();
         assert_eq!((plain.algorithm, plain.digits, plain.period), (Algorithm::Sha1, 6, 30));
-        // Defaults when the URI omits params; issuer from the label only.
         let d = Totp::parse("OTPAUTH://TOTP/GitHub:me?secret=JBSWY3DPEHPK3PXP").unwrap();
         assert_eq!((d.issuer.as_deref(), d.digits, d.period), (Some("GitHub"), 6, 30));
 

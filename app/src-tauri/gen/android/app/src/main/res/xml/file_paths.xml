@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the share staging folder (src-tauri/src/mobile.rs: <cache>/tmp/nv-share) is ever handed
-     to other apps, read-only, through the share sheet. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
   <cache-path name="share" path="tmp/nv-share/" />
 </paths>

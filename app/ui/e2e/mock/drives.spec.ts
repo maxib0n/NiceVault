@@ -1,6 +1,3 @@
-// Live drives (drives.rs): Benvenuto re-scans when a drive is plugged in or pulled out, and
-// "Nuovo volume" offers the drives as cards that follow the hot-plug. Driven by the mock's
-// __nv.mock.simulateDrive(add|remove), the stand-in for the OS listeners.
 import type { Page } from '@playwright/test';
 import { boot, expect, expectScreen, listed, test } from './helpers';
 
@@ -46,7 +43,6 @@ test.describe('live drives', () => {
     await boot(page, 'screen=create');
     const picker = page.getByRole('radiogroup', { name: 'Posizione' });
     const card = (name: string) => picker.getByRole('radio').filter({ has: page.getByTestId('drive-name').getByText(name, { exact: true }) });
-    // the stick NiceVault runs from is the default
     await expect(card('CHIAVETTA')).toHaveAttribute('aria-checked', 'true');
     await expect(card('CHIAVETTA')).toContainText('NiceVault è qui');
     await expect(card('CHIAVETTA')).toContainText('Rimovibile');
@@ -54,37 +50,31 @@ test.describe('live drives', () => {
     await expect(card('CHIAVETTA')).toContainText('exfat');
     await expect(page.getByText('/run/media/utente/CHIAVETTA/Nuovo volume.nvault')).toBeVisible();
 
-    // the internal disk puts the volume in Documenti
     await card('Questo computer').click();
     await expect(card('Questo computer')).toHaveAttribute('aria-checked', 'true');
     await expect(card('Questo computer')).toContainText('Interno');
     await expect(page.getByText('/home/utente/Documenti/Nuovo volume.nvault')).toBeVisible();
 
-    // keyboard: arrows move the choice
     await card('Questo computer').focus();
     await page.keyboard.press('ArrowLeft');
     await expect(card('CHIAVETTA')).toHaveAttribute('aria-checked', 'true');
     await expect(card('CHIAVETTA')).toBeFocused();
 
-    // a drive plugged in appears; choose it
     await drive(page, 'add');
     await card('BACKUP').click();
     await expect(page.getByText('/run/media/utente/BACKUP/Nuovo volume.nvault')).toBeVisible();
 
-    // pulled out while chosen: the choice falls back and says why
     await drive(page, 'remove', '/dev/sdc1');
     await expect(card('BACKUP')).toHaveCount(0);
     await expect(page.getByTestId('drive-gone')).toContainText('BACKUP');
     await expect(card('CHIAVETTA')).toHaveAttribute('aria-checked', 'true');
 
-    // any folder
     await picker.getByTestId('drive-other').click();
     await expect(picker.getByTestId('drive-other')).toHaveAttribute('aria-checked', 'true');
     await expect(picker.getByTestId('drive-other')).toContainText('/home/utente/Scrivania');
     await expect(page.getByText('/home/utente/Scrivania/Nuovo volume.nvault')).toBeVisible();
     await expect(page.getByTestId('drive-gone')).toHaveCount(0);
 
-    // and the volume is created where the card said
     await drive(page, 'add');
     await card('BACKUP').click();
     await page.getByRole('button', { name: 'Avanti' }).click();

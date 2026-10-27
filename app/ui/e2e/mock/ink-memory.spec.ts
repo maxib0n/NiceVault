@@ -1,14 +1,9 @@
-// Phones: the ink (ornament canvases) at the full pixel ratio must not stay resident as canvas
-// backing stores (the iPhone's web content process was killed for its memory, 2026-10-25). Each
-// sheet is engraved once, kept as an encoded image and shown as one; the canvases it was drawn on
-// give their pixels back. WebKit with a phone's pixel ratio 3 on the screens that crashed.
 import { boot, expect, test } from './helpers';
 
 test.use({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
 test.skip(({ browserName }) => browserName !== 'webkit', 'the iPhone engine');
 
 test.beforeEach(async ({ page }) => {
-  // every canvas a 2D context was taken on, and whether the ink took it (its call stack)
   await page.addInitScript(() => {
     const seen = new Map<HTMLCanvasElement, boolean>();
     (window as unknown as { __canvases: typeof seen }).__canvases = seen;
@@ -26,7 +21,6 @@ async function held(page: import('@playwright/test').Page) {
     let inkPx = 0;
     let otherPx = 0;
     for (const [c, inkish] of all) {
-      // the engraving plates' textures (engrave.ts): one 128×128 tile per pattern, kept for good
       if (inkish && c.width === 128 && c.height === 128) continue;
       if (inkish) inkPx += c.width * c.height;
       else otherPx += c.width * c.height;

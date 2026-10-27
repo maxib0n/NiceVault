@@ -1,9 +1,3 @@
-<!--
-  A photograph as a print on the light table: fitted, then zoom (wheel at the pointer, +/−,
-  double click, 0 = fit, 1 = actual pixels) and pan (drag) — all one transform on the print,
-  nothing re-laid out. EXIF orientation is applied by the webview (image-orientation); a
-  format the webview cannot decode (HEIC on most systems) falls back to the info panel.
--->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Maximize2, Minus, Plus, Scan } from '@lucide/svelte';
@@ -24,7 +18,6 @@
   let stage: HTMLDivElement | undefined = $state();
   let img: HTMLImageElement | undefined = $state();
   let natural = $state<{ w: number; h: number } | null>(null);
-  /** the print's laid-out (fitted) width, to say the zoom in real pixels */
   let fitW = $state(0);
   let s = $state(1);
   let tx = $state(0);
@@ -51,7 +44,6 @@
     if (s <= 1) tx = ty = 0;
   }
 
-  /** zoom to `next`, keeping the stage point (px, py) (relative to its centre) still */
   function zoomTo(next: number, px = 0, py = 0, smooth = true) {
     const n = Math.max(MIN, Math.min(MAX, next));
     const k = n / s;
@@ -78,17 +70,11 @@
     zoomTo(s * Math.exp(-delta * 0.0022), px, py, false);
   }
 
-  // ---- a mouse: drag pans (when zoomed) ---------------------------------------------------
-  // ---- fingers, as the Photos app: two pinch about their midpoint and carry the picture with
-  // them (past fit and past the largest size with a rubber band, back on release); one pans in
-  // every direction while zoomed, past the edges with resistance, and is let go with its speed
-  // (inertia, the edges bounce). All of it one transform (--nv-t); nothing is laid out per frame.
   const pointers = new Map<number, { x: number; y: number }>();
   let pinch: { d0: number; s0: number; mx: number; my: number; tx0: number; ty0: number } | null = null;
   let pan: { x: number; y: number; tx0: number; ty0: number } | null = null;
   let vel = { x: 0, y: 0, t: 0 };
   let raf = 0;
-  /** the smallest a finger may leave it (fit); the mouse and the keys keep MIN */
   const TOUCH_MIN = 1;
   const stopInertia = () => {
     if (raf) cancelAnimationFrame(raf);
@@ -98,7 +84,6 @@
     if (!stage || !img) return { x: 0, y: 0 };
     return { x: Math.max(0, (img.clientWidth * sc - stage.clientWidth) / 2), y: Math.max(0, (img.clientHeight * sc - stage.clientHeight) / 2) };
   }
-  /** past an edge the picture follows the finger less and less */
   const band = (v: number, max: number, give = 140) => (v > max ? max + (give * (v - max)) / (give + v - max) : v < -max ? -max - (give * (-max - v)) / (give - max - v) : v);
   const mid = () => {
     const [a, b] = [...pointers.values()];
@@ -121,7 +106,6 @@
     if (pointers.size === 2) startPinch();
     else if (pointers.size === 1 && zoomed) startPan(e.clientX, e.clientY);
     if (!zoomed && pointers.size < 2) return;
-    // the gesture is ours: no swipe-to-step / swipe-down-to-close underneath
     e.stopPropagation();
     dragging = true;
     animate = false;
@@ -136,12 +120,10 @@
       const p = mid();
       const [px, py] = centreOf({ clientX: p.x, clientY: p.y });
       let ns = (pinch.s0 * p.d) / pinch.d0;
-      // a rubber band below fit and above the largest size
       const lo = e.pointerType === 'mouse' ? MIN : TOUCH_MIN;
       if (ns < lo) ns = lo * Math.pow(ns / lo, 0.35);
       else if (ns > MAX) ns = MAX * Math.pow(ns / MAX, 0.35);
       const k = ns / pinch.s0;
-      // the point under the fingers' midpoint at the start stays under it, wherever it goes
       tx = px - (pinch.mx - pinch.tx0) * k;
       ty = py - (pinch.my - pinch.ty0) * k;
       s = ns;
@@ -155,7 +137,6 @@
     tx = band(pan.tx0 + e.clientX - pan.x, b.x);
     ty = band(pan.ty0 + e.clientY - pan.y, b.y);
   }
-  /** back inside the edges (and the scale inside its limits), with a short spring */
   function settle() {
     const lo = TOUCH_MIN;
     if (s < lo + 0.001) {
@@ -172,7 +153,6 @@
     ty = Math.max(-b.y, Math.min(b.y, ty));
     animate = true;
   }
-  /** let go with the finger's speed: it glides, slows (as iOS: ~0.998 per ms) and bounces off the edges */
   function glide(vx: number, vy: number) {
     let last = performance.now();
     const step = (now: number) => {
@@ -199,7 +179,6 @@
     pointers.delete(e.pointerId);
     if (pinch && pointers.size < 2) {
       pinch = null;
-      // one finger stays: it carries on panning from where it is
       const rest = [...pointers.values()][0];
       if (rest && s > 1.001) startPan(rest.x, rest.y);
       else pan = null;
@@ -208,7 +187,6 @@
     }
     if (pointers.size > 0) return;
     dragging = false;
-    // the last finger off: inside the limits again (a pinch past fit or past the largest size)
     if (!pan) {
       if (e.pointerType !== 'mouse') settle();
       return;
@@ -222,7 +200,6 @@
   }
   $effect(() => stopInertia);
 
-  // a double tap (touch): WebKit on iOS sends no dblclick for it on a page that cannot zoom
   let lastTap: { t: number; x: number; y: number } | null = null;
   let tapStart: { id: number; x: number; y: number } | null = null;
   let touchZoomAt = 0;
@@ -240,10 +217,8 @@
       toggleZoom(e, true);
     } else lastTap = { t: now, x: e.clientX, y: e.clientY };
   }
-  /** the double click / tap that opened the file lands here too: not a zoom */
   const born = performance.now();
   function dbl(e: MouseEvent) {
-    // the double tap already did it (a touch's own dblclick follows)
     if (performance.now() - born < 600 || performance.now() - touchZoomAt < 500) return;
     toggleZoom(e);
   }
@@ -252,8 +227,6 @@
     const [px, py] = centreOf(e);
     const real = natural && fitW && natural.w / fitW > 1.2 ? natural.w / fitW : 2.5;
     if (zoomed) fit();
-    // a finger, as the Photos app: always well in (the window-sized copy shown at fit may be
-    // only a little larger than the glass), the original loads behind it
     else zoomTo(finger ? Math.min(MAX, Math.max(2.5, real)) : real, px, py);
   }
 
@@ -269,7 +242,6 @@
     e.preventDefault();
   }
 
-  // the stage resizes (window, full screen): refit what "fitted" means
   $effect(() => {
     if (!stage) return;
     const ro = new ResizeObserver(() => {
@@ -354,8 +326,6 @@
   .stage.dragging {
     cursor: grabbing;
   }
-  /* a photograph is a print: white border, lying on the table; the picture develops inside
-     its border (the decode holds the picture, never the paper) */
   .print {
     --ascii-surface: var(--print-develop);
     display: block;
@@ -368,8 +338,6 @@
       0 2px 4px rgb(var(--cast) / 0.1),
       0 22px 44px -16px rgb(var(--cast) / 0.45),
       var(--print-glow);
-    /* zoom/pan through the registered --nv-t (motion.css), never a transition of transform
-       itself: WebKitGTK shows one stale mid-animation frame when those end */
     transform: var(--nv-t);
     transform-origin: 50% 50%;
     will-change: transform;
@@ -384,7 +352,6 @@
   }
   img {
     display: block;
-    /* the stage's content box, less the print's border (whatever size the stage is) */
     max-width: calc(100cqw - 16px);
     max-height: calc(100cqh - 16px);
     object-fit: contain;

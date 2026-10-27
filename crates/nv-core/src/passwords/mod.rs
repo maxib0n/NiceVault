@@ -1,9 +1,3 @@
-//! Built-in password manager: entries live in their own tables of the volume's SQLCipher
-//! database (so they are encrypted like everything else and never touch the host).
-//!
-//! Secrets (password, TOTP, notes, hidden custom fields, password history) are only handed out
-//! by [`Vault::pm_reveal`] / [`Vault::pm_totp`]; summaries and details never carry them.
-
 pub mod generate;
 pub mod import;
 pub mod tidy;
@@ -17,9 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use totp::{Totp, TotpCode, TotpError, TotpInfo};
 use zeroize::Zeroizing;
 
-/// Schema version of the password-manager tables, kept in `meta` under this key (ASCII integer).
 pub const SCHEMA_KEY: &str = "nv.pm_schema";
-/// Old passwords kept per entry.
 pub const HISTORY_KEEP: usize = 10;
 pub const MAX_TEXT: usize = 64 * 1024;
 pub const MAX_NOTES: usize = 1 << 20;
@@ -27,9 +19,6 @@ pub const MAX_FIELDS: usize = 100;
 pub const MAX_URLS: usize = 50;
 pub const MAX_TAGS: usize = 50;
 
-/// Ordered migrations: entry `i` takes the schema from version `i` to `i + 1`. Each step is
-/// idempotent (`IF NOT EXISTS`), so a volume whose tables exist but whose `nv.pm_schema` key
-/// went missing still opens.
 const MIGRATIONS: &[&str] = &["
 CREATE TABLE IF NOT EXISTS pm_entries (
   id       TEXT PRIMARY KEY,
@@ -56,12 +45,8 @@ CREATE INDEX IF NOT EXISTS pm_history_entry ON pm_history(entry, changed);
 
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 
-/// `meta` key set (ASCII "1") once [`repair_once`] went through this volume's entries.
 pub const REPAIR_KEY: &str = "nv.pm_repair";
 
-/// Site icons (see [`Vault::pm_icon_put`]). Created on the first icon stored, never at open, so
-/// the schema version (and what older builds see) does not change; reads treat a missing table
-/// as "no icons".
 const ICONS_TABLE: &str = "
 CREATE TABLE IF NOT EXISTS pm_icons (
   host    TEXT PRIMARY KEY,   -- lowercase DNS name, see icon_host
@@ -69,12 +54,8 @@ CREATE TABLE IF NOT EXISTS pm_icons (
   fetched INTEGER NOT NULL    -- unix ms of the last attempt
 );";
 
-/// Largest stored icon.
 pub const MAX_ICON: usize = 64 * 1024;
 
-/// Brings the password-manager tables up to [`SCHEMA_VERSION`] (run at every open/create,
-/// after the volume_id check). A volume written by a newer build (higher version, or a value
-/// this build cannot parse) is left alone; a missing key runs every (idempotent) step.
 pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     use rusqlite::types::Value;
     let raw: Option<Value> = conn.query_row("SELECT v FROM meta WHERE k = ?", [SCHEMA_KEY], |r| r.get(0)).optional()?;
@@ -88,7 +69,7 @@ pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             _ => None,
         } {
             Some(n) => n,
-            None => return Ok(()), // not a value this build wrote: not ours to rewrite
+            None => return Ok(()),
         },
     };
     if have >= SCHEMA_VERSION {
@@ -119,7 +100,6 @@ pub enum PmError {
     Invalid(String),
     #[error("invalid TOTP: {0}")]
     Totp(#[from] TotpError),
-    /// The stored value was written by a newer build in a form this one cannot edit safely.
     #[error("unsupported: {0}")]
     Unsupported(String),
     #[error(transparent)]
@@ -137,8 +117,6 @@ impl From<rusqlite::Error> for PmError {
 
 pub type PmResult<T> = std::result::Result<T, PmError>;
 
-/// Stored custom field. Keys a newer build added to a field are kept in `extra` and written
-/// back with it.
 #[derive(Clone, Serialize, Deserialize)]
 struct StoredField {
     name: String,
@@ -148,10 +126,6 @@ struct StoredField {
     extra: serde_json::Map<String, serde_json::Value>,
 }
 
-/// A JSON array column (`urls`, `tags`, `fields`) as stored. Elements of a shape this build
-/// does not know (a newer build's) are kept verbatim and written back after the known ones;
-/// a value that is not a JSON array at all is shown empty and never rewritten (a change to
-/// that column is refused with [`PmError::Unsupported`]).
 struct JsonCol<T> {
     items: Vec<T>,
     other: Vec<serde_json::Value>,
@@ -179,7 +153,6 @@ impl<T: serde::de::DeserializeOwned + Serialize> JsonCol<T> {
         JsonCol { items: Vec::new(), other: Vec::new(), unreadable: false }
     }
 
-    /// Replaces the known elements (`what` names the column in the error).
     fn set(&mut self, items: Vec<T>, what: &str) -> PmResult<()> {
         if self.unreadable {
             return Err(PmError::Unsupported(format!("{what} were saved by a newer NiceVault")));
@@ -201,7 +174,6 @@ impl Drop for StoredField {
     }
 }
 
-/// Custom field as shown in a detail view: hidden values are left out (`value: null`).
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct FieldView {
     pub name: String,
@@ -209,8 +181,6 @@ pub struct FieldView {
     pub value: Option<String>,
 }
 
-/// Custom field in a create/update. `value: None` keeps the current value of the field with
-/// the same name (so a hidden value never has to travel to the UI just to be saved back).
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct FieldInput {
     pub name: String,
@@ -220,7 +190,6 @@ pub struct FieldInput {
     pub hidden: bool,
 }
 
-/// List / search row: no secrets.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct EntrySummary {
     pub id: String,
@@ -234,12 +203,9 @@ pub struct EntrySummary {
     pub has_totp: bool,
     pub created: i64,
     pub updated: i64,
-    /// `"<host>/<fetched>"` when a site icon is stored for the first website (served by the app
-    /// as `nvault://<vault>/pm-icon/<host>/<fetched>`), else `None`.
     pub icon: Option<String>,
 }
 
-/// One entry without its secrets (notes are included: they are shown on the detail view).
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct EntryDetail {
     #[serde(flatten)]
@@ -250,8 +216,6 @@ pub struct EntryDetail {
     pub history_count: usize,
 }
 
-/// Create / update payload. In an update every `None` leaves that part unchanged; in a
-/// create it means empty. `totp`: otpauth URI or base32 secret, `""` removes it.
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct EntryPatch {
     pub title: Option<String>,
@@ -268,37 +232,30 @@ pub struct EntryPatch {
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct HistoryItem {
-    /// 0 = the most recent old password (`pm_reveal(id, "history:0")`).
     pub index: usize,
     pub changed: i64,
 }
 
-/// An entry coming from an importer, with its own history and times.
 #[derive(Debug, Default)]
 pub struct ImportedEntry {
     pub entry: EntryPatch,
-    /// (old password, when it was replaced, unix ms), any order.
     pub history: Vec<(Zeroizing<String>, i64)>,
     pub created: Option<i64>,
     pub updated: Option<i64>,
 }
 
-/// Which secret to reveal / copy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Secret {
     Username,
     Password,
     Notes,
-    /// The otpauth URI.
     Totp,
-    /// The current TOTP code.
     TotpCode,
     Field(usize),
     History(usize),
 }
 
 impl Secret {
-    /// `username | password | notes | totp | totp_code | field:<i> | history:<i>`.
     pub fn parse(s: &str) -> Option<Secret> {
         Some(match s {
             "username" => Secret::Username,
@@ -351,7 +308,6 @@ fn check_len(s: &str, max: usize, what: &str) -> PmResult<()> {
     if s.len() > max { Err(invalid(format!("{what} too long"))) } else { Ok(()) }
 }
 
-/// Canonical URI for a TOTP input (`""` = none).
 pub fn normalize_totp(s: &str) -> PmResult<Option<Zeroizing<String>>> {
     if s.trim().is_empty() {
         return Ok(None);
@@ -359,7 +315,6 @@ pub fn normalize_totp(s: &str) -> PmResult<Option<Zeroizing<String>>> {
     Ok(Some(Totp::parse(s)?.to_uri()))
 }
 
-/// Full row with secrets, used internally only.
 struct Row_ {
     summary: EntrySummary,
     password: Zeroizing<String>,
@@ -368,8 +323,6 @@ struct Row_ {
     urls: JsonCol<String>,
     tags: JsonCol<String>,
     fields: JsonCol<StoredField>,
-    /// Columns [`apply`] changed: an update writes only these (plus `updated`), so columns the
-    /// user did not touch keep their stored bytes, whatever a newer build put there.
     changed: Vec<&'static str>,
 }
 
@@ -414,7 +367,6 @@ fn sort_summaries(v: &mut [EntrySummary]) {
     v.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()).then_with(|| a.id.cmp(&b.id)));
 }
 
-/// Applies `p` to `row` (a fresh row for a create). Returns the replaced password when it changed.
 fn apply(row: &mut Row_, p: EntryPatch) -> PmResult<Option<Zeroizing<String>>> {
     let s = &mut row.summary;
     let ch = &mut row.changed;
@@ -521,11 +473,9 @@ fn empty_row(id: String, now: i64) -> Row_ {
     }
 }
 
-/// Column names in the order of the `?N` parameters of [`write_row`] (`?1` = id).
 const WRITE_COLS: [&str; 13] =
     ["id", "title", "username", "urls", "folder", "tags", "favorite", "password", "notes", "totp", "fields", "created", "updated"];
 
-/// Insert: every column. Update: only the columns in `row.changed`, plus `updated`.
 fn write_row(conn: &Connection, row: &Row_, insert: bool) -> rusqlite::Result<()> {
     let s = &row.summary;
     let urls = row.urls.to_json();
@@ -588,15 +538,11 @@ fn detail(conn: &Connection, row: &Row_) -> PmResult<EntryDetail> {
     })
 }
 
-/// Case-insensitive: every whitespace-separated term must occur in the title, username, a URL,
-/// a tag or the folder.
 pub fn matches(s: &EntrySummary, query: &str) -> bool {
     let hay = format!("{}\n{}\n{}\n{}\n{}", s.title, s.username, s.urls.join("\n"), s.tags.join("\n"), s.folder).to_lowercase();
     query.split_whitespace().all(|t| hay.contains(&t.to_lowercase()))
 }
 
-/// The DNS host whose icon an entry shows: the first website with an http(s) (or no) scheme
-/// and a real domain name (no IP literal, no `localhost` / `.local`, ASCII), lowercased.
 pub fn icon_host(urls: &[String]) -> Option<String> {
     urls.iter().find_map(|u| host_of(u))
 }
@@ -615,7 +561,7 @@ fn host_of(url: &str) -> Option<String> {
     let auth = rest.split(['/', '?', '#']).next()?;
     let host = auth.rsplit('@').next()?;
     if host.starts_with('[') {
-        return None; // IPv6 literal
+        return None;
     }
     let host = host.split(':').next()?.trim_end_matches('.').to_ascii_lowercase();
     let label_ok = |l: &str| !l.is_empty() && l.len() <= 63 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
@@ -631,7 +577,6 @@ fn host_of(url: &str) -> Option<String> {
     Some(host)
 }
 
-/// host -> fetched, for the hosts that have an icon (empty when the table does not exist yet).
 fn icon_map(conn: &Connection) -> std::collections::HashMap<String, i64> {
     let q = || -> rusqlite::Result<std::collections::HashMap<String, i64>> {
         let mut st = conn.prepare("SELECT host, fetched FROM pm_icons WHERE png IS NOT NULL")?;
@@ -648,7 +593,6 @@ fn icon_ref(map: &std::collections::HashMap<String, i64>, urls: &[String]) -> Op
     map.get(&h).map(|f| format!("{h}/{f}"))
 }
 
-/// Entries whose folder is `folder` or below it: (id, folder).
 fn in_folder(conn: &Connection, folder: &str) -> rusqlite::Result<Vec<(String, String)>> {
     let mut st = conn.prepare("SELECT id, folder FROM pm_entries WHERE folder = ?1 OR substr(folder, 1, length(?1) + 1) = ?1 || '/'")?;
     st.query_map([folder], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()
@@ -658,11 +602,6 @@ fn set_folder(conn: &Connection, id: &str, folder: &str) -> rusqlite::Result<usi
     conn.execute("UPDATE pm_entries SET folder = ?1 WHERE id = ?2 AND folder != ?1", params![folder, id])
 }
 
-/// Maps the known bookkeeping fields that older importers kept as custom fields (see [`tidy`]):
-/// website lists -> websites, creation / modification times -> the entry's times, a TOTP
-/// secret -> the 2FA code (when the entry has none). Only fields this build wrote (no keys of a
-/// newer build) and values that parse are converted; everything else stays. Idempotent.
-/// Returns the entries changed.
 pub(crate) fn repair_imported(conn: &Connection) -> rusqlite::Result<usize> {
     let ids: Vec<String> = {
         let mut st = conn.prepare("SELECT id FROM pm_entries WHERE fields != '[]'")?;
@@ -682,7 +621,6 @@ pub(crate) fn repair_imported(conn: &Connection) -> rusqlite::Result<usize> {
             let act = if f.extra.is_empty() { tidy::field(&f.name, &f.value, has_totp, &mut found) } else { tidy::Act::Keep };
             match (act, tidy::classify(&f.name)) {
                 (tidy::Act::Drop, Some(tidy::Known::Urls)) if row.urls.unreadable => kept.push(f),
-                // repair converts; hiding or dropping noise is for new imports only
                 (tidy::Act::Drop, Some(tidy::Known::Urls | tidy::Known::Created | tidy::Known::Updated | tidy::Known::Totp)) => dropped = true,
                 _ => kept.push(f),
             }
@@ -722,9 +660,6 @@ pub(crate) fn repair_imported(conn: &Connection) -> rusqlite::Result<usize> {
     Ok(changed)
 }
 
-/// Runs [`repair_imported`] once per volume (marked with [`REPAIR_KEY`]), right after open, only
-/// on a schema this build owns. Best effort: an error (read-only medium...) leaves the volume
-/// as it was and the next open tries again.
 pub(crate) fn repair_once(conn: &Connection) {
     let get = |k: &str| conn.query_row("SELECT v FROM meta WHERE k = ?", [k], |r| r.get::<_, Vec<u8>>(0)).optional().ok().flatten();
     if get(SCHEMA_KEY).as_deref() != Some(SCHEMA_VERSION.to_string().as_bytes()) || get(REPAIR_KEY).is_some() {
@@ -751,7 +686,6 @@ impl Vault {
         out.expect("closure ran")
     }
 
-    /// One atomic step (rolled back on any error), durable on return.
     fn pm_write<T>(&self, f: impl FnOnce(&Connection) -> PmResult<T>) -> PmResult<T> {
         let mut pm_err = None;
         let r = self.with(|i| {
@@ -771,7 +705,6 @@ impl Vault {
         }
     }
 
-    /// All entries (no secrets), sorted by title.
     pub fn pm_list(&self) -> PmResult<Vec<EntrySummary>> {
         self.pm(|c| {
             let mut st = c.prepare(&format!("SELECT {SUMMARY_COLS} FROM pm_entries"))?;
@@ -785,7 +718,6 @@ impl Vault {
         })
     }
 
-    /// Entries matching every term of `query` (see [`matches`]); empty query = all.
     pub fn pm_search(&self, query: &str) -> PmResult<Vec<EntrySummary>> {
         Ok(self.pm_list()?.into_iter().filter(|s| matches(s, query)).collect())
     }
@@ -804,7 +736,6 @@ impl Vault {
         })
     }
 
-    /// Applies `p`; a changed password moves the old one into the history (last [`HISTORY_KEEP`]).
     pub fn pm_update(&self, id: &str, p: EntryPatch) -> PmResult<EntryDetail> {
         self.pm_write(|tx| {
             let mut row = load_row(tx, id)?;
@@ -829,7 +760,6 @@ impl Vault {
         })
     }
 
-    /// Old passwords, newest first (values via `pm_reveal(id, History(i))`).
     pub fn pm_history(&self, id: &str) -> PmResult<Vec<HistoryItem>> {
         self.pm(|c| {
             load_row(c, id)?;
@@ -839,8 +769,6 @@ impl Vault {
         })
     }
 
-    /// One secret of an entry. `NotFound` when the entry, field or history item does not exist
-    /// (an empty password / no TOTP is `NotFound` too).
     pub fn pm_reveal(&self, id: &str, what: Secret) -> PmResult<Zeroizing<String>> {
         self.pm(|c| {
             let mut row = load_row(c, id)?;
@@ -871,14 +799,11 @@ impl Vault {
         })
     }
 
-    /// Current TOTP code of an entry.
     pub fn pm_totp(&self, id: &str) -> PmResult<TotpCode> {
         let uri = self.pm_reveal(id, Secret::Totp)?;
         Ok(Totp::parse(&uri)?.now())
     }
 
-    /// Moves entries into `folder` ("A/B", "" = none). Missing ids are skipped; returns how many
-    /// changed. `updated` is left alone: a move reorganises, it does not edit the entry.
     pub fn pm_move(&self, ids: &[String], folder: &str) -> PmResult<usize> {
         let folder = clean_folder(folder);
         check_len(&folder, MAX_TEXT, "folder")?;
@@ -891,7 +816,6 @@ impl Vault {
         })
     }
 
-    /// Renames folder `from` (and everything below it) to `to`; merges into `to` if it exists.
     pub fn pm_folder_rename(&self, from: &str, to: &str) -> PmResult<usize> {
         let (from, to) = (clean_folder(from), clean_folder(to));
         if from.is_empty() || to.is_empty() {
@@ -913,7 +837,6 @@ impl Vault {
         })
     }
 
-    /// Removes folder `folder`: its entries (and subfolders) move up into its parent.
     pub fn pm_folder_delete(&self, folder: &str) -> PmResult<usize> {
         let folder = clean_folder(folder);
         if folder.is_empty() {
@@ -934,14 +857,10 @@ impl Vault {
         })
     }
 
-    /// Converts the known bookkeeping fields older imports kept as custom fields (see
-    /// [`repair_imported`]); returns the entries changed. Safe to run any number of times.
     pub fn pm_repair_imported(&self) -> PmResult<usize> {
         self.pm_write(|tx| Ok(repair_imported(tx)?))
     }
 
-    /// Hosts (see [`icon_host`]) of every entry, each with when its icon was last fetched
-    /// (`None` = never), sorted.
     pub fn pm_icon_hosts(&self) -> PmResult<Vec<(String, Option<i64>)>> {
         self.pm(|c| {
             let mut st = c.prepare("SELECT urls FROM pm_entries")?;
@@ -961,8 +880,6 @@ impl Vault {
         })
     }
 
-    /// Stores the icon of `host` fetched at `when` (unix ms). `None` = none found: an icon
-    /// stored before is kept, only the attempt time changes.
     pub fn pm_icon_put(&self, host: &str, png: Option<&[u8]>, when: i64) -> PmResult<()> {
         if png.is_some_and(|p| p.len() > MAX_ICON || !p.starts_with(b"\x89PNG\r\n\x1a\n")) {
             return Err(invalid("icon is not a small PNG"));
@@ -980,7 +897,6 @@ impl Vault {
         })
     }
 
-    /// The stored icon of `host` (PNG).
     pub fn pm_icon_get(&self, host: &str) -> PmResult<Vec<u8>> {
         self.pm(|c| {
             c.query_row("SELECT png FROM pm_icons WHERE host = ? AND png IS NOT NULL", [host], |r| r.get::<_, Vec<u8>>(0))
@@ -991,7 +907,6 @@ impl Vault {
         })
     }
 
-    /// Inserts imported entries in one transaction; returns their ids.
     pub fn pm_insert_many(&self, items: Vec<ImportedEntry>) -> PmResult<Vec<String>> {
         let now = now_ms();
         let mut rows = Vec::with_capacity(items.len());
@@ -1073,7 +988,6 @@ mod tests {
             Err(PmError::Totp(_))
         ));
 
-        // list sorted case-insensitively; search across fields, all terms must match
         assert_eq!(v.pm_list().unwrap().iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), ["banca", "Posta Ufficio"]);
         assert_eq!(v.pm_search("MAIL.example").unwrap().len(), 1);
         assert_eq!(v.pm_search("lavoro rossi").unwrap().len(), 1);
@@ -1083,7 +997,6 @@ mod tests {
         assert_eq!(v.pm_search("  ").unwrap().len(), 2);
         assert!(v.pm_search("Zebra").unwrap().is_empty(), "passwords are not searchable");
 
-        // reveal
         assert_eq!(*v.pm_reveal(&id, Secret::Password).unwrap(), "ZebraCanguro#4471");
         assert_eq!(*v.pm_reveal(&id, Secret::Field(1)).unwrap(), "Fuffi-Segreto-889");
         assert!(v.pm_reveal(&id, Secret::Totp).unwrap().starts_with("otpauth://totp/"));
@@ -1095,7 +1008,6 @@ mod tests {
         assert_eq!((code.digits, code.period), (6, 30));
         assert!((1..=30).contains(&code.remaining));
 
-        // update: password history (newest first, capped), hidden field kept with value None
         for i in 0..12 {
             v.pm_update(&id, EntryPatch { password: z(&format!("nuova-{i}")), ..Default::default() }).unwrap();
         }
@@ -1122,7 +1034,6 @@ mod tests {
         assert_eq!(*v.pm_reveal(&id, Secret::Field(0)).unwrap(), "Fuffi-Segreto-889");
         assert!(e2.summary.updated >= e2.summary.created);
 
-        // persists across lock / unlock
         v.close().unwrap();
         let v = Vault::open(&path, &pw("pw")).unwrap();
         assert_eq!(v.pm_get(&id).unwrap().summary.title, "Posta");
@@ -1141,7 +1052,6 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("old.nvault");
         let v = Vault::create(&path, &pw("pw"), KdfPreset::Fast).unwrap();
-        // Turn it into a pre-password-manager volume: no tables, no schema key.
         v.with(|i| {
             i.conn
                 .execute_batch(&format!("DROP TABLE pm_history; DROP TABLE pm_entries; DELETE FROM meta WHERE k = '{SCHEMA_KEY}';"))
@@ -1157,7 +1067,6 @@ mod tests {
         assert_eq!(v.pm_list().unwrap()[0].id, e.summary.id);
         v.check_integrity().unwrap();
         v.close().unwrap();
-        // Idempotent: a second open does not re-run anything.
         let v = Vault::open(&path, &pw("pw")).unwrap();
         assert_eq!(v.pm_list().unwrap().len(), 1);
         v.close().unwrap();
@@ -1196,7 +1105,6 @@ mod tests {
         }
     }
 
-    /// One raw row, every column as text (NULL = "NULL"), for byte-exact comparisons.
     fn raw_row(v: &Vault, id: &str) -> Vec<(String, String)> {
         v.with(|i| {
             let mut st = i.conn.prepare("SELECT * FROM pm_entries WHERE id = ?").map_err(dberr)?;
@@ -1218,9 +1126,6 @@ mod tests {
         &row.iter().find(|(n, _)| n == name).unwrap().1
     }
 
-    /// A newer build stored shapes this one does not know (extra keys in a field, non-string
-    /// URLs, a non-array tags value, an unknown column, a TOTP kind it cannot parse). Reading
-    /// works; an update rewrites only the columns it changes; unknown parts survive.
     #[test]
     fn newer_row_shapes_round_trip() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1244,7 +1149,6 @@ mod tests {
         .unwrap();
         let before = raw_row(&v, &id);
 
-        // read: known parts shown, unknown ones hidden but kept
         let d = v.pm_get(&id).unwrap();
         assert_eq!(d.summary.urls, ["https://mail.example.it"]);
         assert!(d.summary.tags.is_empty());
@@ -1253,7 +1157,6 @@ mod tests {
         assert_eq!(*v.pm_reveal(&id, Secret::Field(1)).unwrap(), "Fuffi");
         assert_eq!(v.pm_list().unwrap()[0].urls, ["https://mail.example.it"]);
 
-        // a title change writes title + updated only
         v.pm_update(&id, EntryPatch { title: Some("Nuovo titolo".into()), ..Default::default() }).unwrap();
         let after = raw_row(&v, &id);
         for ((n, b), (_, a)) in before.iter().zip(&after) {
@@ -1261,7 +1164,6 @@ mod tests {
                 assert_eq!(a, b, "column {n} rewritten by a title change");
             }
         }
-        // the same for a password change (plus its history)
         v.pm_update(&id, EntryPatch { password: z("altra"), ..Default::default() }).unwrap();
         let after2 = raw_row(&v, &id);
         for ((n, b), (_, a)) in after.iter().zip(&after2) {
@@ -1270,7 +1172,6 @@ mod tests {
             }
         }
 
-        // changing fields / urls keeps the unknown elements and the unknown keys of a kept field
         v.pm_update(
             &id,
             EntryPatch {
@@ -1301,14 +1202,11 @@ mod tests {
         assert_eq!(col(&r, "future"), col(&before, "future"));
         assert_eq!(col(&r, "totp"), col(&before, "totp"));
 
-        // a value that is not an array at all is never replaced
         assert!(matches!(v.pm_update(&id, EntryPatch { tags: Some(vec!["t".into()]), ..Default::default() }), Err(PmError::Unsupported(_))));
         assert_eq!(col(&raw_row(&v, &id), "tags"), col(&before, "tags"));
         v.close().unwrap();
     }
 
-    /// Tables present but `nv.pm_schema` gone: the volume still opens, nothing is lost. A
-    /// schema value this build cannot parse (a newer build's) is left exactly as it is.
     #[test]
     fn missing_or_foreign_schema_key() {
         let tmp = tempfile::tempdir().unwrap();

@@ -1,9 +1,3 @@
-/*
- * Type, bundled (the app runs offline from a stick). SIL OFL 1.1, see SOURCES.md.
- *   Newsreader     display: names and titles, 18 px and up only (variable wght 200-800)
- *   IBM Plex Sans  every piece of UI text (variable wght 100-700)
- *   IBM Plex Mono  serials, the MRZ, sizes, dates, timecodes, printed labels (400/500/600)
- */
 @font-face {
   font-family: 'Newsreader';
   font-style: normal;

@@ -20,7 +20,6 @@ def z(name, files, compress=zipfile.ZIP_DEFLATED):
     W(name, buf.getvalue())
 
 
-# ---- code -----------------------------------------------------------------------------
 W('main.rs', '''//! Conta le parole di un file.
 use std::collections::HashMap;
 
@@ -116,13 +115,11 @@ cartella = "/mnt/backup"
 giorni = [1, 3, 5]
 ''')
 
-# ---- text in other encodings, CSV --------------------------------------------------------
 lettera = 'Caro Mario,\nti scrivo da Città di Castello: qui è già autunno, e il caffè è più buono.\nPerché non vieni a trovarci? Saluti a tutti — anche a zia Lucìa.\n\nCiao,\nAnna\n'
 W('lettera-1252.txt', lettera.encode('cp1252'))
 W('lettera-utf16.txt', b'\xff\xfe' + lettera.encode('utf-16-le'))
 W('spese.csv', 'Data;Descrizione;Categoria;Importo\n2024-05-02;Bolletta luce;Casa;84,20\n2024-05-06;"Spesa, supermercato";Alimentari;63,15\n2024-05-11;Benzina;Auto;55,00\n2024-05-18;"Cena da ""Gigi""";Svago;48,50\n2024-05-27;Assicurazione;Auto;312,00\n')
 
-# ---- Markdown (raw HTML, a remote image and a script link must stay inert) ---------------------
 W('guida.md', '''# Guida al volume
 
 Questo volume tiene **documenti di casa**, *foto* e ~~vecchie~~ note. Vedi anche il sito
@@ -164,7 +161,6 @@ echo "fatto"
 Fine della guida.
 ''')
 
-# ---- archives -------------------------------------------------------------------------------
 z('archivio.zip', [
     ('Documenti/', b''),
     ('Documenti/contratto.txt', 'Contratto di locazione\n' * 40),
@@ -185,10 +181,8 @@ with tarfile.open(fileobj=tb, mode='w', format=tarfile.USTAR_FORMAT) as tf:
             ti.size = len(d)
             tf.addfile(ti, io.BytesIO(d))
 W('backup.tar', tb.getvalue())
-# served as .bin: dev servers send .gz with Content-Encoding
 W('backup-tar-gz.bin', gzip.compress(tb.getvalue(), mtime=0))
 
-# ---- Office Open XML / OpenDocument ------------------------------------------------------------
 CT = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 core = CT + '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>{t}</dc:title><dc:creator>Anna Rossi</dc:creator><dcterms:modified xsi:type="dcterms:W3CDTF">2024-05-12T09:30:00Z</dcterms:modified></cp:coreProperties>'
 app = CT + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Microsoft Office Word</Application></Properties>'
@@ -251,7 +245,6 @@ z('lettera.odt', [
     ('meta.xml', CT + f'<office:document-meta {ODF}><office:meta><dc:title>Lettera al condominio</dc:title><meta:initial-creator>Anna Rossi</meta:initial-creator><dc:date>2024-05-12T09:30:00</dc:date><meta:generator>LibreOffice/7.6</meta:generator></office:meta></office:document-meta>'),
 ])
 
-# ---- not a known type, and an image the webview cannot decode -------------------------------
 W('dati.bin', bytes((i * 37 + 11) % 256 for i in range(3000)))
 W('scatto.heic', b'\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic' + bytes(range(256)) * 4)
 print('viewer samples ->', os.path.abspath(out))

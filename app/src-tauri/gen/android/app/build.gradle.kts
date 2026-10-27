@@ -31,8 +31,6 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            // the native library is stripped (debug info made it ~380 MB per ABI); for native
-            // debugging put the keepDebugSymbols lines of the Tauri template back
         }
         getByName("release") {
             optimization {

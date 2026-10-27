@@ -1,10 +1,3 @@
-<!--
-  A running band: one guilloché run across its surface. Document chrome (a page head, a dialog
-  head), never behind text. Printed in the ink on paper; pressed blind into anthracite (tone on
-  tone), a touch of the ink in its groove. It runs edge to edge of the surface it is printed on,
-  through the content's padding: the container says how far with --bleed-start / --bleed-end
-  (its own inline padding); text keeps its margins, the print does not.
--->
 <script lang="ts">
   import InkCanvas, { type InkEnv } from './InkCanvas.svelte';
   import { hair } from './ink.svelte';

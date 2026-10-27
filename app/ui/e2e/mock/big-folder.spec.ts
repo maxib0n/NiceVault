@@ -1,6 +1,3 @@
-// Big folders are virtualised (FileView: VIRTUAL_MIN entries and more): only the rows in view
-// exist, yet keyboard, scrolling and the status bar reach every entry. Impostazioni opens over
-// the volume without re-mounting it.
 import type { Page } from '@playwright/test';
 import { boot, expect, expectFolder, fileList, item, listed, test } from './helpers';
 
@@ -39,7 +36,6 @@ for (const layout of ['grid', 'list'] as const) {
     expect(rendered).toBeGreaterThan(5);
     expect(rendered).toBeLessThan(150);
 
-    // the keyboard walks the whole folder: End brings the last row into view and selects it
     await item(page, name(1)).click();
     await page.keyboard.press('End');
     await expect(item(page, name(N))).toBeInViewport();
@@ -47,11 +43,9 @@ for (const layout of ['grid', 'list'] as const) {
     await page.keyboard.press('Home');
     await expect(item(page, name(1))).toBeInViewport();
 
-    // the scrollbar reaches the end too, and the rows there exist
     await fileList(page).evaluate((el) => (el.scrollTop = el.scrollHeight));
     await expect(item(page, name(N))).toBeInViewport();
     expect(await options.count()).toBeLessThan(150);
-    // halfway: the rows of the middle, nothing of the top
     await fileList(page).evaluate((el) => (el.scrollTop = el.scrollHeight / 2 - el.clientHeight / 2));
     await expect(item(page, name(N / 2))).toBeAttached();
     await expect(item(page, name(1))).toHaveCount(0);

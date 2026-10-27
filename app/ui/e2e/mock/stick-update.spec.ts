@@ -1,5 +1,3 @@
-// "Aggiorna i programmi sulla chiavetta" (stickMock.ts): Dettagli > Volume card, the notices on
-// Benvenuto and on the cover, offline, not mounted, a failure.
 import { boot, expect, test } from './helpers';
 
 test('details: the stick card lists each OS, updates and shows the results', async ({ page }) => {
@@ -11,7 +9,6 @@ test('details: the stick card lists each OS, updates and shows the results', asy
   await expect(card.locator('[data-os="linux"]')).toContainText('0.1.0');
   await expect(card.locator('[data-os="macos"]')).toContainText('manca');
   await expect(card).toContainText('i volumi e VaultData non vengono toccati');
-  // the cover offers it too
   await expect(page.getByTestId('stick-notice')).toBeVisible();
   await card.getByTestId('stick-update').click();
   await expect(card).toHaveAttribute('data-state', 'running');
@@ -85,7 +82,6 @@ test('tight space (128 MiB): says so with the numbers, replaces one at a time, a
   await expect(card.locator('[data-os="macos"]')).toHaveAttribute('data-result', 'rewrite');
   await expect(card.locator('[data-os="macos"]')).toContainText('da riscrivere');
   await expect(card.locator('[data-os="windows"]')).toHaveAttribute('data-result', 'updated');
-  // again: macOS is written in place of nothing, the others are current
   await card.getByTestId('stick-update').click();
   await expect(card).toHaveAttribute('data-state', 'done', { timeout: 15_000 });
   await expect(card.locator('[data-os="macos"]')).toHaveAttribute('data-result', 'updated');

@@ -4,7 +4,7 @@
 
 | Output (in `dist/`, gitignored) | Target | How |
 |---|---|---|
-| `NiceVault-linux-x86_64`, `NiceVault-linux-x86_64.tar.gz` | `x86_64-unknown-linux-gnu` | native `cargo build` (the tar.gz holds the same binary) |
+| `NiceVault-linux-x86_64`, `NiceVault-linux-x86_64.tar.gz` | `x86_64-unknown-linux-gnu` | `cargo build` in an Ubuntu 22.04 podman container, see "The Linux build" (the tar.gz holds the same binary) |
 | `NiceVault-linux-x86_64.AppImage` | same | Tauri's AppImage bundler, see "The AppImage build" |
 | `NiceVault-windows-x86_64.exe`, `NiceVault-windows-x86_64.zip` | `x86_64-pc-windows-gnu` | `cargo zigbuild`, zig as C compiler and linker (the zip holds `NiceVault.exe`) |
 | `NiceVault-macos-universal.zip` | `aarch64-apple-darwin` + `x86_64-apple-darwin` | `cargo zigbuild` against the Xcode macOS SDK, `llvm-lipo`, hand-made `NiceVault.app`, ad-hoc signed with `rcodesign` |
@@ -152,6 +152,23 @@ installs AppImage/NSIS/MSI/.app.tar.gz, not the bare files):
   usual name `NiceVault-linux-x86_64`. The programs are plain files on the stick, so it keeps
   working offline.
 - Test against a local server: `NICEVAULT_UPDATE_URL=http://127.0.0.1:8000/latest.json`.
+
+### The Linux build (glibc 2.35 container)
+
+A binary linked on the build host needs that host's glibc (Fedora 44: 2.43) and fails on older
+distros ("GLIBC_2.43 not found"). So `scripts/build-all.sh` builds the Linux artefacts inside a
+rootless podman container made from `scripts/linux-build.Containerfile` (Ubuntu 22.04, glibc
+2.35, WebKitGTK 4.1; Rust, Node and pnpm pinned there): it runs itself again in there with
+`NV_LINUX_HOST=1 NV_SKIP_UI=1 ... linux`, the repo, `dist/` and the target dir mounted at their
+own paths. The image is tagged `localhost/nicevault-linux-build:<hash of the Containerfile>` and
+built on first use (and after every Containerfile change). After the build the script checks
+that the newest `GLIBC_` symbol version the binary needs is at most 2.35.
+
+| Variable | Default | |
+|---|---|---|
+| `NV_LINUX_TARGET_DIR` | `$CARGO_TARGET_DIR-glibc` (`target-cross-glibc`) | the container's target dir; never the host's (its build scripts are linked against the container's glibc) |
+| `NV_LINUX_CACHE` | `.cache/linux-build` | `cargo-registry`, `cargo-git` and `xdg` (Tauri's linuxdeploy downloads), kept between builds |
+| `NV_LINUX_HOST=1` | unset | build the Linux artefacts on this host instead (local testing only: they need its glibc) |
 
 ### The AppImage build
 

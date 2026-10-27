@@ -1,4 +1,3 @@
-// File classification by extension. Drives icons and quick-look viewers.
 import type { FsNode } from './types';
 import { m } from '../paraglide/messages.js';
 
@@ -41,8 +40,6 @@ export function fileType(node: Pick<FsNode, 'name' | 'kind'>): FileType {
   return MAP[ext] ?? 'other';
 }
 
-/** Types the quick-look overlay can render inline: every file (src/viewers; the info/hex
- *  panel for the rest). */
 export const PREVIEWABLE: ReadonlySet<FileType> = new Set(['image', 'video', 'audio', 'pdf', 'text', 'key', 'archive', 'document', 'spreadsheet', 'presentation', 'other']);
 
 export function canPreview(node: Pick<FsNode, 'name' | 'kind'>): boolean {
@@ -64,5 +61,4 @@ const TYPE_TEXT: Record<FileType, () => string> = {
   other: m.type_other,
 };
 
-/** "Immagine", "Foglio di calcolo"… in the UI language. */
 export const typeLabel = (t: FileType) => TYPE_TEXT[t]();

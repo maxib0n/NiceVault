@@ -1,6 +1,3 @@
-//! Tauri commands: the contract of app/ui/src/lib/api.ts. Each one moves the blocking work
-//! onto the blocking pool and forwards to `AppState`.
-
 use crate::appearance::{AppearanceState, Settings, SettingsPatch, Visibility};
 use crate::emblem::{Emblem, EmblemState};
 use crate::error::{ApiError, ApiResult};
@@ -111,8 +108,6 @@ pub async fn settings_set(st: St<'_>, settings: SettingsPatch, vault: Option<Str
     blocking(&st, move |s| s.settings_set(settings, vault.as_deref())).await
 }
 
-// fs_list: search.rs (with tags and optional filters)
-
 #[tauri::command(rename_all = "snake_case")]
 pub async fn fs_mkdir(st: St<'_>, vault: String, parent: NodeId, name: String) -> ApiResult<Node> {
     blocking(&st, move |s| s.fs_mkdir(&vault, parent, &name)).await
@@ -128,14 +123,12 @@ pub async fn fs_delete(st: St<'_>, vault: String, nodes: Vec<NodeId>) -> ApiResu
     blocking(&st, move |s| crate::delete::fs_delete(s, &vault, nodes)).await
 }
 
-// Android / iOS: mobile::fs_import (picked URIs are copied in first)
 #[cfg(desktop)]
 #[tauri::command(rename_all = "snake_case")]
 pub async fn fs_import(st: St<'_>, vault: String, parent: NodeId, host_paths: Vec<String>) -> ApiResult<String> {
     blocking(&st, move |s| crate::jobs::fs_import(s, &vault, parent, host_paths)).await
 }
 
-/// Total bytes of the host paths about to be imported (0 for what can't be read).
 #[tauri::command(rename_all = "snake_case")]
 pub async fn import_size(paths: Vec<String>) -> ApiResult<u64> {
     tauri::async_runtime::spawn_blocking(move || crate::jobs::import_size(&paths)).await.map_err(|e| ApiError::new("error", format!("Internal error: {e}")))
@@ -212,13 +205,10 @@ pub async fn vault_upgrade_format(st: St<'_>, vault: String) -> ApiResult<VaultI
     blocking(&st, move |s| s.vault_upgrade_format(&vault)).await
 }
 
-/// Keep a volume that opened older than this computer last saw it (see `VaultInfo.rolled_back`).
 #[tauri::command(rename_all = "snake_case")]
 pub async fn vault_accept_rollback(st: St<'_>, vault: String) -> ApiResult<VaultInfo> {
     blocking(&st, move |s| s.vault_accept_rollback(&vault)).await
 }
-
-// ---------------- auto-lock + duress ----------------
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn vault_touch(st: St<'_>, vault: String) -> ApiResult<()> {
@@ -236,8 +226,6 @@ pub async fn slot_add_duress(st: St<'_>, vault: String, password: String, label:
     blocking(&st, move |s| s.slot_add_duress(&vault, pw, label)).await
 }
 
-// ---------------- global settings (Impostazioni) ----------------
-
 #[tauri::command(rename_all = "snake_case")]
 pub async fn app_settings_get(st: St<'_>) -> ApiResult<crate::global::AppSettings> {
     blocking(&st, |s| Ok(s.app_settings_get())).await
@@ -250,12 +238,10 @@ pub async fn app_settings_set(
     webview: tauri::WebviewWindow,
     patch: crate::global::AppSettingsPatch,
 ) -> ApiResult<crate::global::AppSettings> {
-    // phones always draw at 100% (the phone layout breaks at other sizes)
     let rescale = patch.ui_scale.is_some() && cfg!(desktop);
     let (tray_mode, relabel) = (patch.start_minimized.is_some() || patch.close_to_tray.is_some(), patch.language.is_some());
     let unforce = patch.start_minimized.is_some();
     let out = blocking(&st, move |s| s.app_settings_set(patch)).await?;
-    // "Avvia ridotto" / "Resta nel vassoio" put the tray up or take it down; the language relabels its menu
     if tray_mode {
         if unforce && let Some(t) = tauri::Manager::try_state::<crate::tray::Tray>(&app) {
             t.unforce();
@@ -264,7 +250,6 @@ pub async fn app_settings_set(
     } else if relabel {
         crate::tray::refresh(&app);
     }
-    // the interface size is the webview's zoom (applied before the first paint at start, lib.rs)
     if rescale {
         let _ = webview.set_zoom(f64::from(out.ui_scale) / 100.0);
     }

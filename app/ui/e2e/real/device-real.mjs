@@ -1,11 +1,3 @@
-// "Crea dispositivo" in the real app, timed step by step, with a backend that writes nothing:
-// NICEVAULT_FAKE_DISKS=<file> (folders) and/or NICEVAULT_DEVICE_DRY_RUN=1 (every privileged
-// command logged, none run; copy + marker into temp folders). Started by e2e-real.sh:
-//   NICEVAULT_DEVICE_DRY_RUN=1 NICEVAULT_DEVICE_TRACE=1 NV_E2E_SCRIPT=device-real.mjs bash e2e/real/e2e-real.sh
-// Env: NV_DEVICE_DISK=<substring of the drive line> (default: the first drive offered),
-//      NV_DEVICE_STOP=options|confirm|type|done (default done).
-// It refuses to press "Cancella e crea" unless the app's own trace says the backend is the dry
-// run or the fake (the app's stderr lands in tauri-driver.log).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { WebDriver } from './webdriver.mjs';
@@ -75,7 +67,6 @@ try {
     await shot('type');
   }
   if (STOP === 'done') {
-    // strict: the real OS backend only ever behind the dry run; the fake only when asked for
     const safe = trace().includes('[device] backend: dry-run') || (!!process.env.NICEVAULT_FAKE_DISKS && trace().includes('[device] backend: fake'));
     if (!safe) throw new Error('the trace does not say dry-run / fake: not pressing Cancella e crea');
     await timed('Cancella e crea -> progress', 'document.querySelector("[data-testid=device-erase]").click()', 'const s=document.querySelector("[data-testid=device-wizard]").dataset.stage; return s === "progress" || s === "done" || s === "error"');

@@ -1,19 +1,5 @@
-// What a volume's document prints about itself, formatted from real data only:
-// where it lives, and the machine-readable zone (with real ICAO 9303 check digits).
-//   locked   (Sblocca): only what the file and its header say in plaintext: the document
-//            number (from the header's volume id), the file's size, when it was last opened
-//            here (already printed above the MRZ), how many keys open it, the key derivation.
-//   unlocked (Dettagli): what the volume holds as well: when it was made, how many files,
-//            when its file last changed.
 import { checkDigit, mrzText, pad } from './lathe';
 
-/**
- * Where the volume lives, as a place: the label of the drive it is on when that drive is
- * mounted as an external drive ("/run/media/u/STICK/x.nvault" -> "STICK", "/Volumes/Disk/..."),
- * else the folder it sits in ("C:\\Users\\me\\Docs\\x.nvault" -> "Docs"; a drive root -> "C:").
- * With `name`: '' when the place would only repeat the volume's name (SH2RE.nvault on a stick
- * called SH2RE), so a document never prints the same word twice.
- */
 export function placeOf(path: string, name?: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
   let place = '';
@@ -31,7 +17,6 @@ function yymmdd(ms: number | null | undefined): string {
   return `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}`;
 }
 
-/** A field with its check digit; unknown = filler (whose check digit is 0, as ICAO prints it). */
 function field(value: string): string {
   return value + checkDigit(value);
 }
@@ -40,12 +25,10 @@ function digits(n: number | null | undefined, width: number): string {
   return n === null || n === undefined || !Number.isFinite(n) || n < 0 ? '<'.repeat(width) : String(Math.min(Math.round(n), 10 ** width - 1)).padStart(width, '0');
 }
 
-/** The document number: the volume's tag (9 characters), else filler. */
 function docNumber(tag: string | null | undefined): string {
   return pad(mrzText(tag ?? '').slice(0, 9), 9);
 }
 
-/** "K" and the number of keys (two digits). */
 function keysField(n: number | null | undefined): string {
   return n === null || n === undefined ? '<<<' : `K${digits(n, 2)}`;
 }
@@ -65,12 +48,6 @@ export interface LockedFacts {
   kdf?: { m_kib: number; t: number; p: number } | null;
 }
 
-/**
- * The MRZ of a locked volume, two 44-character lines: identity (place, name); then the
- * document number, the file's size in MiB, the last opening (YYMMDD), each with its check
- * digit, the keys (K and a count), the key derivation (memory MiB, passes, lanes) and the
- * composite check digit.
- */
 export function mrzLines(v: LockedFacts): [string, string] {
   const size = v.size_bytes && v.size_bytes > 0 ? digits(Math.max(1, v.size_bytes / 1048576), 9) : '<<<<<<<<<';
   const kdf = v.kdf ? mrzText(`${Math.round(v.kdf.m_kib / 1024)}M${v.kdf.t}T${v.kdf.p}P`) : '';
@@ -80,19 +57,12 @@ export function mrzLines(v: LockedFacts): [string, string] {
 }
 
 export interface InsideFacts {
-  /** when the volume was made (unix ms; null = not recorded) */
   created?: number | null;
   files?: number | null;
-  /** when its file last changed (unix ms) */
   changed?: number | null;
   keys?: number | null;
 }
 
-/**
- * The MRZ of an open volume (Dettagli): identity, then the document number, the day it was
- * made, its files, the day its file last changed (each with its check digit), the keys and the
- * composite check digit.
- */
 export function mrzInside(v: { name: string; path: string; volume_tag?: string | null }, f: InsideFacts): [string, string] {
   const body = `${field(docNumber(v.volume_tag))}${field(yymmdd(f.created))}${field(digits(f.files, 9))}${field(yymmdd(f.changed))}${keysField(f.keys)}`;
   const l2 = pad(body, 43);

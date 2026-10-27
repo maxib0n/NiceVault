@@ -1,4 +1,3 @@
-<!-- One entry of the file view, as a grid tile or a list row. Behaviour lives in FileBrowser. -->
 <script lang="ts">
   import { m } from '../paraglide/messages.js';
   import { Check } from '@lucide/svelte';
@@ -20,31 +19,25 @@
 
   const selected = $derived(browser.sel.selected.has(node.id));
   const focused = $derived(browser.sel.focus === node.id);
-  // a phone renames in a sheet of its own (MobileRename, FileBrowserView)
   const renaming = $derived(browser.renaming === node.id && !isMobile);
   const type = $derived(fileType(node));
-  // pictures are asked for at the size they are shown (thumbs.rs), never smaller than before
   const px = $derived(layout === 'grid' ? thumbPx(viewSize.grid(browser.vault.id)) : Math.ceil(ROW[viewSize.density(browser.vault.id)].w * 2 * (window.devicePixelRatio || 1)));
   let dropTarget = $state(false);
   let count = $state<number | null>(null);
   const dirMeta = $derived(count === null ? m.fi_folder() : count === 0 ? m.fi_empty() : itemCount(count));
 
-  // tags: S tiles show only their dots; larger tiles and list rows up to two pills and "+n"
   const tags = $derived((node.tags ?? []).map((id) => browser.tags.byId.get(id)).filter((t): t is Tag => !!t));
   const dots = $derived(layout === 'grid' && viewSize.grid(browser.vault.id) === 's');
   const PILLS = 2;
   const pills = $derived(dots ? tags.slice(0, 4) : tags.slice(0, PILLS));
   const more = $derived(tags.length - pills.length);
   const tagsLabel = $derived(tags.length ? m.tag_chips_label({ names: tags.map((t) => t.name).join(', ') }) : undefined);
-  // a hit: its name with the matched parts marked, the folder holding it
   const parts = $derived(hit?.highlights.length ? highlightParts(node.name, hit.highlights) : null);
   const place = $derived(hit ? hit.path.split('/').filter(Boolean) : []);
   const placeText = $derived(place.length ? place.join(' › ') : browser.vault.name);
 
   function click(e: MouseEvent) {
     browser.click(node.id, { shift: e.shiftKey, toggle: e.ctrlKey || e.metaKey }, true);
-    // the keyboard lives on the listbox (aria-activedescendant), not on a row that a virtualised
-    // list may unmount: a click leaves the focus there
     if (browser.renaming === null) (e.currentTarget as HTMLElement).closest<HTMLElement>('[role=listbox]')?.focus({ preventScroll: true });
   }
 
@@ -59,7 +52,6 @@
     if (!browser.sel.selected.has(node.id)) browser.click(node.id, {});
     e.dataTransfer.setData(DRAG_MIME, JSON.stringify(browser.selectedIds));
     e.dataTransfer.effectAllowed = 'move';
-    // a compact picture under the pointer, not the snapshot of the whole tile / row
     setDragPreview(e, browser.selectedIds, node.id, node.name);
   }
 
@@ -89,7 +81,6 @@
   }
 </script>
 
-<!-- keyboard handling is on the listbox (aria-activedescendant), not on each option -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   id="item-{node.id}"
@@ -114,7 +105,6 @@
   ondrop={drop}
 >
   {#if isMobile && browser.selecting}
-    <!-- a phone picking several: the round check a finger taps (styles/mobile.css) -->
     <span class="pick" aria-hidden="true">{#if selected}<Check size={14} strokeWidth={2.6} />{/if}</span>
   {/if}
   <span class="visual" data-ascii="media">
@@ -172,7 +162,6 @@
     outline: none;
   }
 
-  /* ---- grid tile: the picture is the hero ---------------------------------- */
   .file-item[data-layout='grid'] {
     display: flex;
     flex-direction: column;
@@ -211,7 +200,6 @@
     overflow: hidden;
     overflow-wrap: anywhere;
   }
-  /* one line always (the virtual grid measures one tile for all): tags first, then the size */
   .meta {
     display: flex;
     align-items: center;
@@ -249,14 +237,12 @@
     font-size: 10px;
     color: var(--ink-3);
   }
-  /* list rows: the tags sit after the name, never wider than a third of the row */
   .file-item[data-layout='list'] .chips {
     max-width: 230px;
   }
   .file-item[data-layout='list'] .chips :global(.tag-chip) {
     max-width: 104px;
   }
-  /* a hit's name: the matched parts in the volume's ink, underscored by a hairline */
   .name mark {
     background: none;
     color: var(--accent);
@@ -269,7 +255,6 @@
   .file-item.selected .name mark {
     color: var(--accent);
   }
-  /* where a hit is: its folders, the nearest one in full; a press opens it */
   .place {
     display: flex;
     gap: 4px;
@@ -318,7 +303,6 @@
     outline-offset: -2px;
   }
 
-  /* selected: the volume's ink rings the piece, and the name is underlaid */
   .file-item[data-layout='grid'].selected .visual::after {
     content: '';
     position: absolute;
@@ -336,9 +320,6 @@
   .file-item[data-layout='grid'].selected .meta {
     color: var(--ink-2);
   }
-  /* the keyboard cursor, only while the list has keyboard focus: a ring round
-     the whole tile, clear of the selection ring round the picture */
-  /* (a selected tile already shows its ring: no second one round the whole tile) */
   :global(.file-view:focus-visible) .file-item.focused:not(.selected) {
     outline: 2px solid var(--focus);
     outline-offset: 1px;
@@ -354,7 +335,6 @@
     --nv-dy: -6%;
   }
 
-  /* ---- list row (columns match .list-header in FileView) --------------------- */
   .file-item[data-layout='list'] {
     display: grid;
     grid-template-columns: var(--list-cols);
@@ -370,7 +350,6 @@
   .file-item[data-layout='list']:hover {
     background: color-mix(in oklab, var(--ink) 4%, transparent);
   }
-  /* selected: a calm wash of the volume's ink, a hairline round it (no bar in the margin) */
   .file-item[data-layout='list'].selected {
     background: var(--select-wash);
     box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--select-ring) 22%, transparent);
@@ -391,7 +370,6 @@
   .file-item[data-layout='list'] .visual :global(.paper-file) {
     height: var(--row-vis-h, 26px);
   }
-  /* compact rows: one line of name, tighter padding */
   :global([data-density='compact']) .file-item[data-layout='list'] {
     padding-block: 1px;
   }
@@ -426,7 +404,6 @@
     color: var(--ink-3);
     white-space: nowrap;
   }
-  /* figures read as data: sizes and dates in the mono */
   .mtime {
     padding-left: 18px;
     font-family: var(--font-mono);

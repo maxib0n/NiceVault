@@ -1,32 +1,17 @@
-//! Live refresh for mounted drives: [`Notifying`] wraps the [`Fs`] handed to `nv_mount::mount`
-//! and reports which folders changed through the OS (a copy from Dolphin/Explorer/Finder, a
-//! delete, a rename, a mkdir), so the app's file browser can re-list them.
-//!
-//! Every successful create / size-changing write / set_size / set_mtime / rename / remove
-//! records the affected parent folder(s) (both parents for a rename). A background thread
-//! turns them into `fs-changed { vault, dirs }` events: it waits until the drive has been
-//! quiet for [`QUIET`], but never holds a change longer than [`MAX_WAIT`], and never emits
-//! two events for the same volume less than [`MAX_WAIT`] apart. A big copy therefore shows
-//! up as ~4 events per second, not one per FUSE write.
-
 use crate::state::AppState;
 use nv_fs::{Fs, Kind, Node, NodeId, Result, Stats};
 use std::collections::BTreeSet;
 use std::sync::{Arc, Condvar, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-/// Trailing debounce: emit once the drive has been quiet this long.
 pub const QUIET: Duration = Duration::from_millis(150);
-/// Upper bound on how long a change waits, and the minimum gap between two events.
 pub const MAX_WAIT: Duration = Duration::from_millis(250);
 
-/// Receives each coalesced batch of changed folders (sorted, deduplicated).
 pub type Sink = Box<dyn Fn(Vec<NodeId>) + Send + 'static>;
 
 #[derive(Default)]
 struct Pending {
     dirs: BTreeSet<NodeId>,
-    /// First / last change since the previous event.
     first: Option<Instant>,
     last: Option<Instant>,
     closed: bool,
@@ -38,13 +23,11 @@ struct Shared {
     cv: Condvar,
 }
 
-/// The decorator. Dropping it (the mount goes away) flushes what is pending and stops the thread.
 pub struct Notifying {
     inner: Arc<dyn Fs>,
     shared: Arc<Shared>,
 }
 
-/// `inner` wrapped so that changes emit `fs-changed { vault, dirs }` on `app`.
 pub fn for_vault(inner: Arc<dyn Fs>, app: Weak<AppState>, vault: String) -> Arc<dyn Fs> {
     Arc::new(Notifying::new(
         inner,
@@ -141,7 +124,6 @@ impl Fs for Notifying {
     fn write(&self, id: NodeId, offset: u64, data: &[u8]) -> Result<usize> {
         let before = self.inner.getattr(id).ok();
         let n = self.inner.write(id, offset, data)?;
-        // Only a size change shows in the listing; an in-place overwrite does not.
         if let Some(b) = before
             && offset + n as u64 > b.size
         {
@@ -205,7 +187,6 @@ mod tests {
         (tmp, v, n, rx)
     }
 
-    /// Everything that arrives until `quiet` passes with nothing new.
     fn drain(rx: &Receiver<Ev>, quiet: Duration) -> Vec<Ev> {
         let mut out = vec![];
         while let Ok(e) = rx.recv_timeout(quiet) {
@@ -217,7 +198,7 @@ mod tests {
     #[test]
     fn coalesces_a_burst_into_one_event_with_the_right_dirs() {
         let (_t, v, n, rx) = setup();
-        let a = v.create(ROOT, "A", Kind::Dir).unwrap(); // direct: not reported
+        let a = v.create(ROOT, "A", Kind::Dir).unwrap();
         let t0 = Instant::now();
         let f = n.create(a.id, "copia.bin", Kind::File).unwrap();
         for i in 0..20u64 {
@@ -238,9 +219,9 @@ mod tests {
         let f = v.create(a.id, "f.txt", Kind::File).unwrap();
         v.write(f.id, 0, b"ciao").unwrap();
 
-        n.write(f.id, 0, b"CIAO").unwrap(); // same size: the listing does not change
+        n.write(f.id, 0, b"CIAO").unwrap();
         n.read(f.id, 0, &mut [0u8; 4]).unwrap();
-        assert!(n.create(a.id, "f.txt", Kind::File).is_err()); // failures report nothing
+        assert!(n.create(a.id, "f.txt", Kind::File).is_err());
         assert!(drain(&rx, Duration::from_millis(400)).is_empty());
 
         n.rename(f.id, b.id, "g.txt").unwrap();
@@ -265,7 +246,6 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         let evs = drain(&rx, Duration::from_millis(600));
-        // not starved by the trailing debounce, not flooded either
         assert!((3..=7).contains(&evs.len()), "{} events", evs.len());
         for w in evs.windows(2) {
             assert!(w[1].0 - w[0].0 >= MAX_WAIT - Duration::from_millis(5), "gap {:?}", w[1].0 - w[0].0);

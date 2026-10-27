@@ -1,7 +1,3 @@
-// "Aggiorna i programmi sulla chiavetta": the NiceVault devices the app sees (for the active
-// volume and for Benvenuto), the update running on one of them, and which notices were put away.
-// Dettagli > Volume (StickPrograms.svelte) and the notices (StickNotice.svelte) share it, so an
-// update started in one shows its progress in the other.
 import * as api from '../api';
 import type { OsId } from '../device';
 import { errorText } from '../errors';
@@ -16,27 +12,19 @@ export interface StickRun {
   os: OsId | null;
   done_bytes: number;
   total_bytes: number;
-  /** per OS, once finished */
   results: StickOsResult[];
   error: string | null;
-  /** the stick before the update (versions "from") */
   before: Stick;
-  /** the room with the real sizes, once known (tight: one program at a time) */
   space?: StickSpace | null;
 }
 
-/** the key of a lookup: a volume's path, or '*' (every connected device) */
 const ALL = '*';
 
 class Sticks {
-  /** lookup key -> devices found (path: 0 or 1) */
   found = $state<Record<string, Stick[]>>({});
-  /** disk id -> the update in progress or just finished */
   runs = $state<Record<string, StickRun>>({});
-  /** disk id -> mount in progress / its error */
   mounting = $state<Record<string, boolean>>({});
   mountError = $state<Record<string, string | null>>({});
-  /** notices put away this session ("Non ora"), by disk id */
   dismissed = $state<Record<string, boolean>>({});
 
   private pending = new Map<JobId, StickProgress[]>();
@@ -60,7 +48,6 @@ class Sticks {
   private progressEvent(p: StickProgress) {
     const hit = this.runOf(p.job);
     if (!hit) {
-      // an update whose command has not answered yet: its first events may come first
       if (this.awaiting()) this.pending.set(p.job, [...(this.pending.get(p.job) ?? []), p].slice(-4));
       return;
     }
@@ -107,7 +94,6 @@ class Sticks {
     for (const k of Object.keys(this.found)) this.found[k] = this.found[k].map((x) => (x.disk_id === s.disk_id ? s : x));
   }
 
-  /** Looks up the device holding `path` (null/undefined: every connected one). Cheap, read-only. */
   async load(path?: string | null): Promise<Stick[]> {
     void this.listen();
     const key = path || ALL;
@@ -122,7 +108,6 @@ class Sticks {
     }
   }
 
-  /** What `load(path)` found (path: the one device or null). */
   forPath(path: string | null | undefined): Stick | null {
     return this.found[path || ALL]?.[0] ?? null;
   }
@@ -177,7 +162,6 @@ class Sticks {
     }
   }
 
-  /** forgets a finished run (its result line) */
   clear(id: string) {
     if (this.runs[id] && this.runs[id].phase !== 'running') delete this.runs[id];
   }

@@ -1,13 +1,3 @@
-//! "Durante i caricamenti lagga tantissimo": while an import writes into a volume, the calls the
-//! file view makes (fs_list, vault_list_open, a thumbnail's read) must not queue behind the
-//! import's slow I/O. Measured on an emulated slow USB stick (nv_core::slowio: writes land in the
-//! page cache, every sync waits for what is dirty to reach the device), into a fixed-size
-//! single-file volume, as on a USB stick.
-//!
-//! `listing_stays_fast_during_import` is the regression test (short, asserts). The measurement:
-//!   NV_LAG_MB=2000 NV_LAG_SLOW=15,4000,20 cargo test -p nicevault-app --test import_lag -- --ignored --nocapture
-//! (NV_LAG_SLOW=off: no emulation, the real disk.)
-
 use nicevault_app::store::{Locations, Store};
 use nicevault_app::{AppState, Events};
 use nv_core::slowio::{self, SlowIo};
@@ -35,7 +25,6 @@ impl Events for Sink {
     }
 }
 
-/// Incompressible bytes, as photos and videos are.
 fn fill(seed: u64, buf: &mut [u8]) {
     let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
     for w in buf.chunks_mut(8) {
@@ -90,8 +79,6 @@ struct Report {
     lats: Vec<Lat>,
 }
 
-/// Imports `files` x `mb_each` MB into a fresh fixed-size volume while a reader polls what the
-/// file view calls, every `every`; returns the latencies of those calls.
 fn run(slow: Option<SlowIo>, files: usize, mb_each: usize, every: Duration) -> Report {
     let dir = tempfile::tempdir().unwrap();
     let host = dir.path().join("host");
@@ -108,7 +95,6 @@ fn run(slow: Option<SlowIo>, files: usize, mb_each: usize, every: Duration) -> R
     let info = st
         .vault_create_sized(stick.join("VaultData.nvault").to_str().unwrap(), SecretString::from("pw".to_owned()), Some("fast"), Some(cap))
         .unwrap();
-    // a thumbnail to read meanwhile (a small picture already in the volume)
     let v = st.vault(&info.id).unwrap();
     let pic = v.create(ROOT, "foto.jpg", nv_fs::Kind::File).unwrap();
     let mut b = vec![0u8; 300 << 10];
@@ -119,7 +105,6 @@ fn run(slow: Option<SlowIo>, files: usize, mb_each: usize, every: Duration) -> R
 
     slowio::set(slow);
     let stop = Arc::new(AtomicBool::new(false));
-    // one thread per call, as the UI's calls do not wait for each other
     type Call = Box<dyn Fn(&AppState, &str) + Send>;
     let calls: Vec<(&'static str, Call)> = vec![
         ("fs_list", Box::new(|st, id| drop(st.fs_list(id, ROOT).unwrap()))),
@@ -176,10 +161,6 @@ fn print(label: &str, r: &Report) {
     }
 }
 
-/// The regression test: a slow stick (20 MB/s, everything stays in the page cache until a sync),
-/// 240 MB imported; what the file view asks meanwhile answers in under 100 ms each (a few
-/// outliers allowed for a loaded machine: the 98th percentile and the median are checked, and
-/// the worst call must stay well under the seconds it used to take).
 #[test]
 fn listing_stays_fast_during_import() {
     let r = run(Some(SlowIo { bytes_per_sec: 20e6, dirty_cap: 4_000_000_000, sync_ms: 20 }), 3, 80, Duration::from_millis(20));

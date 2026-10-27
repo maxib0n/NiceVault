@@ -1,16 +1,3 @@
-//! Windows backend: WinFsp (user-mode file system driver), loaded at runtime.
-//!
-//! `winfsp-x64.dll` is never a load-time import, so the executable starts without WinFsp. We look
-//! the DLL up in the registry (`HKLM\SOFTWARE\WOW6432Node\WinFsp\InstallDir`, written by the
-//! WinFsp installer), `LoadLibraryW` it by full path, and only then call `winfsp_init`.
-//! MSVC builds delay-load it; MinGW builds (the Linux cross build) bind every entry point with
-//! `GetProcAddress` (`winfsp_sys::nv_bind_module`, NiceVault's patch of winfsp-sys), so a
-//! missing or old DLL is a reason code (`winfsp_missing`, `winfsp_unsupported`), never a crash.
-//!
-//! NOTE for the final executable: Cargo does not forward `rustc-link-arg` from dependencies, so
-//! the binary crate's `build.rs` must emit the delay-load flags itself (see `build.rs` here, or
-//! call `winfsp::build::winfsp_link_delayload()`), otherwise the exe gets a hard import on the DLL.
-
 use std::ffi::c_void;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,7 +23,6 @@ const FILE_ATTRIBUTE_READONLY: u32 = 0x01;
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const FILE_ATTRIBUTE_ARCHIVE: u32 = 0x20;
 const ALLOCATION_UNIT: u64 = 4096;
-/// 100 ns intervals between 1601-01-01 and 1970-01-01.
 const FILETIME_UNIX_EPOCH: i64 = 116_444_736_000_000_000;
 
 fn nt(s: wf::NTSTATUS) -> FspError {
@@ -64,9 +50,6 @@ fn filetime_to_ns(ft: u64) -> i64 {
     (ft as i64 - FILETIME_UNIX_EPOCH).saturating_mul(100)
 }
 
-// ---------------------------------------------------------------------------------------------
-// DLL discovery
-
 fn reg_install_dir() -> Option<PathBuf> {
     use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
     let value: Vec<u16> = "InstallDir\0".encode_utf16().collect();
@@ -74,7 +57,6 @@ fn reg_install_dir() -> Option<PathBuf> {
         let key: Vec<u16> = key.encode_utf16().collect();
         let mut buf = [0u16; 1024];
         let mut size = (buf.len() * 2) as u32;
-        // SAFETY: all pointers are valid for the sizes given.
         let rc = unsafe {
             RegGetValueW(
                 HKEY_LOCAL_MACHINE,
@@ -113,8 +95,6 @@ fn dll_path() -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
-/// The exports winfsp-rs calls on our mount path; without any of them the installed WinFsp is
-/// too old (or not WinFsp) and mounting is refused with `winfsp_unsupported`.
 #[cfg(target_env = "gnu")]
 const REQUIRED: &[&str] = &[
     "FspFileSystemCreate",
@@ -136,14 +116,12 @@ const REQUIRED: &[&str] = &[
     "FspNtStatusFromWin32",
 ];
 
-/// File version of the DLL ("2.1.25156.0"), for messages and the log.
 fn dll_version(path: &std::path::Path) -> Option<String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
         GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
     };
     let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-    // SAFETY: buffers sized as the API reports; VerQueryValueW returns a pointer into `buf`.
     unsafe {
         let n = GetFileVersionInfoSizeW(wide.as_ptr(), std::ptr::null_mut());
         if n == 0 {
@@ -173,13 +151,8 @@ fn dll_version(path: &std::path::Path) -> Option<String> {
     }
 }
 
-/// Why WinFsp cannot be used: (reason code, English detail).
-/// Codes: `winfsp_missing` (not installed), `winfsp_unsupported` (too old / not WinFsp),
-/// `winfsp_load_failed` (installed but LoadLibrary failed).
 pub(crate) type Why = (&'static str, String);
 
-/// Load the DLL by full path once and bind every entry point to it. Cached: later calls are
-/// free. Never panics; every failure is a reason code.
 fn init() -> std::result::Result<FspInit, Why> {
     static INIT: OnceLock<std::result::Result<FspInit, Why>> = OnceLock::new();
     INIT.get_or_init(|| {
@@ -192,7 +165,6 @@ fn init() -> std::result::Result<FspInit, Why> {
         let version = dll_version(&path);
         log::info!("winfsp: found {} version {}", path.display(), version.as_deref().unwrap_or("?"));
         let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        // SAFETY: NUL-terminated wide path. The module stays loaded for the process lifetime.
         let module = unsafe { LoadLibraryW(wide.as_ptr()) };
         if module.is_null() {
             let e = std::io::Error::last_os_error();
@@ -201,8 +173,6 @@ fn init() -> std::result::Result<FspInit, Why> {
         }
         #[cfg(target_env = "gnu")]
         {
-            // SAFETY: module is the loaded WinFsp DLL, never freed; nothing has called WinFsp yet
-            // (we are inside the OnceLock that every WinFsp use goes through).
             let missing = unsafe { winfsp_sys::nv_bind_module(module) };
             let fatal: Vec<&str> = REQUIRED.iter().copied().filter(|r| missing.contains(r)).collect();
             if !missing.is_empty() {
@@ -230,7 +200,6 @@ fn init() -> std::result::Result<FspInit, Why> {
     .clone()
 }
 
-/// What the UI asks for: the oldest WinFsp release whose API this build uses.
 pub(crate) const MIN_VERSION: &str = crate::WINFSP_MIN_VERSION;
 
 pub(crate) fn available() -> bool {
@@ -241,14 +210,10 @@ pub(crate) fn unavailable_reason() -> Option<Why> {
     init().err()
 }
 
-// ---------------------------------------------------------------------------------------------
-// Security descriptor: SYSTEM, Administrators and the mounting user get full access.
-
 fn current_user_sid() -> Option<String> {
     use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
     use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
     use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-    // SAFETY: standard token query; every buffer is sized as reported by the API.
     unsafe {
         let mut token = std::ptr::null_mut();
         if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
@@ -274,7 +239,6 @@ fn current_user_sid() -> Option<String> {
     }
 }
 
-/// No fallback: without the user's SID, or if the SDDL does not convert, the mount is refused.
 fn build_security_descriptor() -> Result<Vec<u8>> {
     use windows_sys::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
@@ -284,7 +248,6 @@ fn build_security_descriptor() -> Result<Vec<u8>> {
     let wide: Vec<u16> = sddl.encode_utf16().chain(Some(0)).collect();
     let mut psd: *mut c_void = std::ptr::null_mut();
     let mut len = 0u32;
-    // SAFETY: valid NUL-terminated SDDL; the returned buffer is copied then LocalFree'd.
     unsafe {
         if ConvertStringSecurityDescriptorToSecurityDescriptorW(wide.as_ptr(), SDDL_REVISION_1, &mut psd, &mut len)
             == 0
@@ -297,9 +260,6 @@ fn build_security_descriptor() -> Result<Vec<u8>> {
         Ok(v)
     }
 }
-
-// ---------------------------------------------------------------------------------------------
-// FileSystemContext
 
 pub(crate) struct Handle {
     id: NodeId,
@@ -315,15 +275,12 @@ struct WinFs {
     read_only: bool,
 }
 
-/// `\a\b\c` -> ["a", "b", "c"].
 fn components(name: &U16CStr) -> FspResult<Vec<String>> {
     let s = name.to_string().map_err(|_| nt(wf::STATUS_OBJECT_NAME_INVALID))?;
     Ok(s.split('\\').filter(|c| !c.is_empty()).map(str::to_string).collect())
 }
 
 impl WinFs {
-    /// Exact match first, then a case-insensitive scan (Windows semantics on a case-sensitive store)
-    /// that also matches the `host_name` shown by read_directory.
     fn child(&self, parent: NodeId, name: &str) -> std::result::Result<Node, Error> {
         match self.fs.lookup(parent, name) {
             Err(Error::NotFound) => {
@@ -347,7 +304,6 @@ impl WinFs {
         Ok(node)
     }
 
-    /// (parent node, leaf name)
     fn resolve_parent(&self, name: &U16CStr) -> FspResult<(Node, String)> {
         let mut parts = components(name)?;
         let leaf = parts.pop().ok_or_else(|| nt(wf::STATUS_OBJECT_NAME_INVALID))?;
@@ -417,7 +373,6 @@ impl FileSystemContext for WinFs {
             if buf.len() < self.sd.len() {
                 return Err(nt(wf::STATUS_BUFFER_OVERFLOW));
             }
-            // SAFETY: buf has at least sd.len() bytes.
             unsafe { std::ptr::copy_nonoverlapping(self.sd.as_ptr(), buf.as_mut_ptr().cast::<u8>(), self.sd.len()) };
         }
         Ok(FileSecurity { reparse: false, sz_security_descriptor: self.sd.len() as u64, attributes: self.attributes(&n) })
@@ -467,13 +422,10 @@ impl FileSystemContext for WinFs {
 
     fn cleanup(&self, context: &Handle, _file_name: Option<&U16CStr>, flags: u32) {
         if FspCleanupFlags::FspCleanupDelete.is_flagged(flags) {
-            // set_delete already verified a directory is empty.
             if let Err(e) = self.fs.remove(context.id) {
                 log::warn!("delete on close failed: {e}");
             }
         }
-        // Closing a handle is not a durability point (FlushFileBuffers is, see `flush`); the Fs
-        // makes everything durable within a few seconds anyway.
     }
 
     fn flush(&self, context: Option<&Handle>, file_info: &mut FileInfo) -> FspResult<()> {
@@ -493,7 +445,6 @@ impl FileSystemContext for WinFs {
             if buf.len() < self.sd.len() {
                 return Err(nt(wf::STATUS_BUFFER_OVERFLOW));
             }
-            // SAFETY: buf has at least sd.len() bytes.
             unsafe { std::ptr::copy_nonoverlapping(self.sd.as_ptr(), buf.as_mut_ptr().cast::<u8>(), self.sd.len()) };
         }
         Ok(self.sd.len() as u64)
@@ -522,7 +473,6 @@ impl FileSystemContext for WinFs {
         if context.kind != Kind::Dir {
             return Err(nt(wf::STATUS_NOT_A_DIRECTORY));
         }
-        // Fill the (sorted, marker-searchable) buffer on the first call of an enumeration.
         if let Ok(lock) = context.dir_buffer.acquire(marker.is_none(), None) {
             let me = self.fs.getattr(context.id).map_err(fsp_err)?;
             let mut entries: Vec<(String, Node)> = Vec::new();
@@ -539,7 +489,7 @@ impl FileSystemContext for WinFs {
                 di.reset();
                 self.fill(n, di.file_info_mut());
                 if di.set_name(name).is_err() {
-                    continue; // longer than 255 UTF-16 units: cannot be represented
+                    continue;
                 }
                 lock.write(&mut di)?;
             }
@@ -604,7 +554,6 @@ impl FileSystemContext for WinFs {
         file_info: &mut FileInfo,
     ) -> FspResult<()> {
         if set_allocation_size {
-            // Allocation is virtual; only honour a shrink below the current end of file.
             let n = self.fs.getattr(context.id).map_err(fsp_err)?;
             if new_size < n.size {
                 self.fs.set_size(context.id, new_size).map_err(fsp_err)?;
@@ -636,7 +585,6 @@ impl FileSystemContext for WinFs {
         let size = self.fs.getattr(context.id).map_err(fsp_err)?.size;
         let offset = if write_to_eof { size } else { offset };
         let data = if constrained_io {
-            // Paging I/O must not extend the file.
             if offset >= size {
                 self.refill(context.id, file_info)?;
                 return Ok(0);
@@ -659,18 +607,12 @@ impl FileSystemContext for WinFs {
     }
 
     fn set_volume_label(&self, _volume_label: &U16CStr, out: &mut VolumeInfo) -> FspResult<()> {
-        // The label is the vault name; renaming the drive is not supported.
         self.get_volume_info(out)
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Mount
-
-/// First unused drive letter, from Z: down to D:.
 fn free_drive() -> Option<String> {
     use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
-    // SAFETY: no preconditions.
     let used = unsafe { GetLogicalDrives() };
     (3..26u32).rev().find(|i| used & (1 << i) == 0).map(|i| format!("{}:", (b'A' + i as u8) as char))
 }

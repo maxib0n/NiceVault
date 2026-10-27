@@ -1,5 +1,3 @@
-// "Salva nella Galleria" on a phone (stores/gallery.svelte.ts, GalleryAsk.svelte; mock parity of
-// mobile.rs mobile_save_gallery): the item sheet's action, Esporta asking once, the Impostazioni switch.
 import { boot, expect, item, listed, test, toasts } from './helpers';
 import type { Locator, Page } from '@playwright/test';
 
@@ -44,7 +42,6 @@ test('Esporta asks once; "Nella Galleria" is remembered and shown in Impostazion
   await expect(ask).toBeHidden();
   await expect(toasts(page)).toContainText('Salvati nella Galleria: 1');
   expect(await setting(page)).toBe(true);
-  // the second time: no question
   await longPress(item(page, 'Copertina.jpg'));
   await page.getByRole('menuitem', { name: /^Esporta/ }).click();
   await expect.poll(() => saved(page)).toBe(2);

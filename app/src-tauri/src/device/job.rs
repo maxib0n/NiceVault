@@ -1,11 +1,3 @@
-//! The device job: one worker thread through the plan's steps, `job-progress {job, step,
-//! done_bytes, total_bytes}` and one `job-done {job, error, outcome}`. Resumable: a run that
-//! stopped after partitioning ("Completa") mounts, copies and writes the marker again.
-//!
-//! The log (`device-<ts>.log`, JSON lines, in the OS cache dir; portable: the temp dir, never
-//! the stick) records the plan, every command with its arguments, exit code, output and time.
-//! Never a password: none passes through here.
-
 use super::backend::DiskOps;
 use super::client::{self, Builds, Local};
 use super::{DataFs, Disk, HostCtx, Os, Plan, VolumeOpts};
@@ -32,7 +24,6 @@ impl Log {
         let file = std::fs::File::create(&path).ok();
         Log { path, file: Mutex::new(file) }
     }
-    /// Discards everything (tests, probes).
     pub fn null() -> Log {
         Log { path: PathBuf::new(), file: Mutex::new(None) }
     }
@@ -47,12 +38,10 @@ impl Log {
         }
     }
     pub fn command(&self, prog: &str, args: &[String], code: Option<i32>, out: &str, err: &str, took: Duration) {
-        // an -EncodedCommand argument is the script itself: logged decoded for auditing
         self.event("command", json!({ "prog": prog, "args": args, "exit": code, "stdout": out, "stderr": err, "ms": took.as_millis() as u64 }));
     }
 }
 
-/// What a finished (or already complete) device gives the UI.
 #[derive(Clone, Debug, Serialize, Default)]
 pub struct Outcome {
     pub disk_id: String,
@@ -60,14 +49,12 @@ pub struct Outcome {
     pub data_mount: String,
     pub data_fs: Option<DataFs>,
     pub data_free: u64,
-    /// Size of a "Tutta la partizione" volume.
     pub whole_volume_size: u64,
     pub missing: Vec<Os>,
     pub first_volume: Option<VolumeOpts>,
     pub log: String,
 }
 
-/// Tauri-managed state of the feature.
 pub struct DeviceCtx {
     pub ops: Box<dyn DiskOps>,
     pub plans: Mutex<HashMap<String, Plan>>,
@@ -108,7 +95,6 @@ pub(crate) fn free_space(p: &Path) -> u64 {
     {
         use std::os::unix::ffi::OsStrExt;
         let Ok(c) = std::ffi::CString::new(p.as_os_str().as_bytes()) else { return 0 };
-        // SAFETY: statvfs fills a zeroed struct from a NUL-terminated path.
         unsafe {
             let mut s: libc::statvfs = std::mem::zeroed();
             if libc::statvfs(c.as_ptr(), &mut s) != 0 {
@@ -125,7 +111,6 @@ pub(crate) fn free_space(p: &Path) -> u64 {
         }
         let w: Vec<u16> = p.as_os_str().to_string_lossy().encode_utf16().chain([0]).collect();
         let (mut a, mut t, mut f) = (0u64, 0u64, 0u64);
-        // SAFETY: NUL-terminated path, out-pointers to locals.
         unsafe { GetDiskFreeSpaceExW(w.as_ptr(), &mut a, &mut t, &mut f) };
         a
     }
@@ -165,7 +150,6 @@ impl Run<'_> {
     }
 }
 
-/// The steps themselves (also run synchronously by the tests).
 pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, plan: &Plan, resume: bool, log: &Log) -> ApiResult<Outcome> {
     let mut r = Run { st, job, cancel, last: Instant::now() };
     let ops = ctx.ops.as_ref();
@@ -173,7 +157,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, p
     log.event("plan", serde_json::to_value(plan).unwrap_or_default());
     log.event("backend", json!({ "name": ops.name(), "resume": resume }));
 
-    // check: the same disk, still allowed
     r.step("check", 0, 0, true);
     fault("check")?;
     let now = ops.disks().into_iter().find(|d| d.id == plan.disk.id).ok_or_else(|| ApiError::new("device_gone", "The drive was disconnected."))?;
@@ -185,7 +168,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, p
     }
     r.cancelled()?;
 
-    // download (before anything is erased: a failure here changes nothing)
     let builds: Builds = if plan.download {
         r.step("download", 0, 0, true);
         fault("download")?;
@@ -213,7 +195,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, p
     fault("mount")?;
     let (client_dir, data_dir) = ops.mount(plan, log).map_err(gone_or)?;
     if plan.data_fs.unix_perms() {
-        // any user of any Linux machine can write the data folder
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -229,7 +210,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, p
 
     r.step("verify", 0, 0, true);
     fault("verify").map_err(gone_or)?;
-    // (macOS' bundle was checked against its zip as it was written; the zip is not kept)
     for f in builds.files.iter().filter(|f| f.os != super::Os::Macos) {
         let back = std::fs::read(client_dir.join(&f.name)).map_err(|e| gone_or(ApiError::new("copy_failed", e.to_string())))?;
         if back != f.bytes {
@@ -246,7 +226,6 @@ pub fn execute(ctx: &DeviceCtx, st: &AppState, job: &str, cancel: &AtomicBool, p
     Ok(outcome(plan, &client_dir, &data_dir, builds.missing(), log.path()))
 }
 
-/// Starts the job thread. Returns the job id.
 pub fn start(ctx: Arc<DeviceCtx>, st: Arc<AppState>, plan: Plan, resume: bool) -> String {
     let job = random_id();
     let cancel = Arc::new(AtomicBool::new(false));

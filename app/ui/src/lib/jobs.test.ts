@@ -35,7 +35,6 @@ describe('jobs store', () => {
       jobs.doneEvent({ job: 'd1', error: null, outcome: { deleted: 616, total: 616, freed_bytes: 4000, errors: [] } });
       expect(jobs.items.find((j) => j.id === 'd1')).toBeUndefined();
 
-      // a quick one that left something behind shows up with it
       jobs.track('d2', 'delete', 'v1', 'Foto');
       jobs.doneEvent({
         job: 'd2',

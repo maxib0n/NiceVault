@@ -1,17 +1,3 @@
-<!--
-  Crea dispositivo NiceVault, a full-window sheet: 1 Unità (external drives only, the
-  partitions that will be erased) → 2 Opzioni (partition table, VaultData's file system with where
-  it is readable, programs, first volume) → 3 Conferma (summary, "Mostra comandi", then the drive
-  name typed) → 4 Creazione (resumable steps, bytes for download / copy) → 5 Fatto (the first
-  volume, Apri VaultData, Espelli). "Completa" resumes a device whose creation stopped midway.
-  Every call it waits on is shown (the pressed key turns its lathes and says what it does, the
-  footer's status line counts the seconds, reassures after 2 s, offers Annulla / Riprova after
-  30 s); Indietro and Esc always work before the erase (a stale answer is dropped by its token).
-  The privileged steps say that the system's password window may appear. A drive holding
-  NiceVault volumes names them and asks for one more explicit consent.
-  Mock: ?screen=device&device_step=disk|options|confirm|type|progress|done|error,
-  device_slow=candidates|options|plan|create|auth, device_volumes, device_stuck_ms (switches.ts).
--->
 <script lang="ts">
   import { ArrowLeft, Check, ChevronDown, ChevronRight, CircleAlert, HardDrive, LoaderCircle, RefreshCw, ShieldCheck, TriangleAlert, Usb, X } from '@lucide/svelte';
   import { onMount } from 'svelte';
@@ -100,7 +86,6 @@
   let failure = $state<ApiError | null>(null);
   let outcome = $state<DeviceOutcome | null>(null);
   let error = $state<string | null>(null);
-  // what the wizard is waiting on: one call at a time; `token` drops an abandoned call's answer
   let pending = $state<dev.Pending | null>(null);
   let token = 0;
   let since = $state(0);
@@ -112,10 +97,8 @@
   let saving = $state(false);
   const busy = $derived(pending !== null || saving);
   const stuckMs = switches.device_stuck_ms ?? STUCK_MS;
-  /** the erase also needs this when the drive holds NiceVault volumes */
   let ack = $state(false);
   let ejected = $state(false);
-  // the first volume, on Fatto
   let password = $state('');
   let confirm = $state('');
   let strength = $state<Strength | null>(null);
@@ -133,7 +116,6 @@
   const volumes = $derived(plan?.volumes ?? []);
   const eraseOk = $derived(typedOk && (volumes.length === 0 || ack));
   const authWait = $derived(stage === 'progress' && dev.waitingFor(current));
-  /** the footer's status line: what is being waited on, and since when */
   const wait = $derived.by((): { label: string; since: number; abandon: boolean } | null => {
     if (pending) return { label: BUSY[pending](), since, abandon: pending === 'options' || pending === 'plan' || pending === 'candidates' };
     if (stage === 'progress' && authWait) return { label: m.dev_auth_wait(), since: stepSince, abandon: false };
@@ -147,7 +129,6 @@
     const i = setInterval(() => (now = Date.now()), 500);
     return () => clearInterval(i);
   });
-  /** the drive the ledger describes */
   const ledgerDisk = $derived(plan?.disk ?? selected);
   const confirmWord = $derived(m.dev_type_word());
   const finished = $derived(stage === 'done' ? 'ok' : stage === 'error' ? 'error' : null);
@@ -172,7 +153,6 @@
     pending = null;
     retry = null;
   }
-  /** Drop what is being waited on (its answer, if it ever comes, is ignored). */
   function abandon() {
     token++;
     pending = null;
@@ -217,7 +197,6 @@
     return () => off.forEach((f) => f());
   });
 
-  /** Mock: show any step directly (screenshots, e2e). */
   async function jumpTo(s: NonNullable<typeof switches.device_step>) {
     if (s === 'disk' || !disks[0]) return;
     selectedId = disks[0].id;
@@ -307,10 +286,8 @@
     return errorText(e);
   }
 
-  // events can arrive before the command that started the job returns its id: kept, then replayed
   const early = new Map<string, (DeviceProgress | DeviceDone)[]>();
 
-  /** The progress view at once (before the command answers): the system may ask for a password. */
   function showProgress(list: DeviceStep[]) {
     job = null;
     steps = list;
@@ -336,7 +313,6 @@
     early.set(e.job, l);
   }
 
-  // the job starts as device_create / device_resume answer: never abandoned (no stale token)
   async function start() {
     if (!plan || !eraseOk || pending) return;
     const p = plan;
@@ -347,7 +323,6 @@
     } catch (e) {
       error = errorText(e);
       stage = 'type';
-      // the drive changed or went: back to the list, nothing was touched
       if (['device_changed', 'device_not_found', 'device_refused', 'not_found'].includes(errorCode(e) ?? '')) {
         stage = 'disk';
         await loadDisks();
@@ -357,7 +332,6 @@
     }
   }
 
-  /** "Completa": a device whose creation stopped midway (no reformat). */
   async function resume(d: DiskCandidate) {
     if (pending) return;
     const t = begin_('resume', null);
@@ -440,7 +414,6 @@
     }
   }
 
-  /** Indietro / Annulla / Esc: always usable before the erase; a pending call is dropped. */
   function back() {
     abandon();
     error = null;
@@ -696,7 +669,6 @@
                   {/if}
                 </section>
                 {#if stage === 'type'}
-                  <!-- next to the typed name: the erase also waits on this consent -->
                   {#if volumes.length}<VolumesWarning {volumes} bind:ack />{/if}
                   <form class="field typed" onsubmit={(e) => (e.preventDefault(), start())}>
                     <label for="dev-typed">{m.dev_type_prompt({ name: plan.confirm_name || confirmWord })}</label>
@@ -825,8 +797,6 @@
 </main>
 
 <style>
-  /* a full-window sheet on the board: head, the step (scrolls), the footer with the status line
-     (always on screen). Wide: the ledger on the left, the step on the right. */
   .wizard {
     position: relative;
     z-index: 2;
@@ -849,8 +819,6 @@
     border-radius: var(--radius-stitched);
     box-shadow: var(--shadow-sheet);
   }
-  /* the first step is a short list: the sheet closes round it (centred on the board) instead of
-     leaving a blank page under two cards; it grows again, up to the window, with a long list */
   .wizard[data-stage='disk'] .form-sheet {
     flex: 0 1 auto;
     align-self: center;
@@ -1113,7 +1081,6 @@
     box-shadow: inset 0 1px 2px var(--field-shade);
   }
 
-  /* ---- drives: cards pressed into the paper, like the drive picker ------------- */
   .disks {
     display: flex;
     flex-direction: column;
@@ -1232,7 +1199,6 @@
     color: var(--ink-2);
   }
 
-  /* ---- file systems: one card each, where it can be read --------------------- */
   .fs-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -1307,7 +1273,6 @@
     gap: var(--space-3);
   }
 
-  /* ---- confirm ----------------------------------------------------------------- */
   .summary {
     display: flex;
     flex-direction: column;
@@ -1356,7 +1321,6 @@
     box-shadow: inset 0 1px 2px var(--field-shade);
   }
 
-  /* ---- progress ---------------------------------------------------------------- */
   .progress-steps {
     list-style: none;
     margin: 0;
@@ -1427,7 +1391,6 @@
     font-weight: 600;
   }
 
-  /* ---- done -------------------------------------------------------------------- */
   [data-stage='done'] .columns {
     max-width: 640px;
   }
@@ -1438,7 +1401,6 @@
     gap: var(--space-2);
     text-align: center;
   }
-  /* the same engraved seal as every finished act (rotate-key, create) */
   .done-seal {
     display: grid;
     color: var(--accent);

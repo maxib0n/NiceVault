@@ -1,4 +1,3 @@
-// Job tray, mount switch, locking (user / idle / removal), theme, details.
 import { boot, expect, expectScreen, fileList, item, jobTray, listed, test, toasts } from './helpers';
 
 test.describe('job tray', () => {
@@ -7,7 +6,7 @@ test.describe('job tray', () => {
     const tray = jobTray(page);
     await expect(tray).toBeVisible();
     const head = tray.getByRole('button', { expanded: true });
-    await expect(head).toBeVisible(); // ?jobs=1 opens it
+    await expect(head).toBeVisible();
     const running = tray.getByRole('listitem').filter({ hasText: '3 elementi' });
     await expect(running).toHaveAttribute('data-status', 'running');
     const bar = running.getByRole('progressbar', { name: 'Avanzamento 3 elementi' });
@@ -17,7 +16,6 @@ test.describe('job tray', () => {
     await expect(tray.getByRole('status')).toHaveText(/^Trasferimento · \d+%$/);
     await expect(tray.getByRole('progressbar', { name: 'Avanzamento complessivo' })).toBeVisible();
 
-    // finished ones: done and failed with the backend message
     await expect(tray.getByRole('listitem').filter({ hasText: 'Scansione.pdf' })).toHaveAttribute('data-status', 'done');
     const failed = tray.getByRole('listitem').filter({ hasText: 'Film.mkv' });
     await expect(failed).toHaveAttribute('data-status', 'error');
@@ -26,7 +24,6 @@ test.describe('job tray', () => {
     await tray.getByRole('button', { name: 'Annulla 3 elementi' }).click();
     await expect(running).toHaveAttribute('data-status', 'cancelled');
     await expect(running).toContainText('Annullato');
-    // only the export keeps running
     await expect(tray.getByRole('status')).toHaveText(/^Esportazione · \d+%$/);
 
     await tray.getByRole('button', { name: 'Togli Scansione.pdf dall’elenco' }).click();
@@ -53,7 +50,6 @@ test.describe('job tray', () => {
   test('cancelling a running import adds nothing to the folder', async ({ page }) => {
     await boot(page, 'screen=vault&view=list');
     await listed(page);
-    // slow the mock so there is time to cancel
     await page.evaluate(() => ((window as unknown as { __nv: { mock: { opts: { speed: number } } } }).__nv.mock.opts.speed = 8));
     await page.getByRole('button', { name: 'Importa', exact: true }).click();
     await jobTray(page).getByRole('button', { expanded: false }).click();
@@ -156,7 +152,6 @@ test.describe('locking', () => {
     await page.getByLabel('Password', { exact: true }).fill('demo');
     await page.keyboard.press('Enter');
     await expectScreen(page, 'vault');
-    // reason is gone after a successful unlock; the timer restarted
     await page.getByRole('button', { name: 'Blocca' }).click();
     await expect(page.locator('[data-reason]')).toHaveCount(0);
   });
@@ -165,7 +160,7 @@ test.describe('locking', () => {
     await boot(page, 'screen=vault&autolock=3');
     for (let i = 0; i < 5; i++) {
       await page.waitForTimeout(900);
-      await page.keyboard.press('Shift'); // any key resets the idle timer
+      await page.keyboard.press('Shift');
     }
     await expectScreen(page, 'vault');
   });
@@ -273,6 +268,5 @@ test('locking the last volume clears toasts that name its files', async ({ page 
   await expect(toasts(page).getByText('Importato: 2 elementi.')).toBeVisible({ timeout: 8000 });
   await page.evaluate(() => (window as unknown as { __nv: { mock: { simulateRemoval: () => void } } }).__nv.mock.simulateRemoval());
   await expectScreen(page, 'unlock');
-  // immediately, not after the toast's own 3.5 s timeout
   await expect(toasts(page).getByText('Importato: 2 elementi.')).toHaveCount(0, { timeout: 500 });
 });

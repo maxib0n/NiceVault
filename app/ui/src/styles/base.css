@@ -27,6 +27,31 @@ body {
 
 #app {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+:root {
+  --tb-h: 0px;
+  --tb-lead: 12px;
+}
+:root:is([data-frame='linux'], [data-frame='windows']) {
+  --tb-h: 34px;
+}
+:root[data-frame='macos'] {
+  --tb-h: calc(28px / var(--ui-zoom, 1));
+  --tb-lead: calc(80px / var(--ui-zoom, 1));
+}
+:root[data-fullscreen] {
+  --tb-h: 0px;
+}
+:root[data-frame='linux']:not([data-maximized]) body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.45), inset 0 0 0 2px rgb(255 255 255 / 0.05);
 }
 
 @property --lathe {

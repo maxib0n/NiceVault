@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://maxib0n.github.io/NiceVault/sitemap.xml

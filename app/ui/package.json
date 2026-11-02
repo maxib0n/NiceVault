@@ -2,7 +2,7 @@
   "name": "nicevault-ui",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "shots": "node e2e/shots/shots.mjs",
     "tauri": "tauri",
     "e2e": "PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 playwright test",
+    "scimmia": "PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 playwright test -c playwright.scimmia.config.ts",
     "e2e:setup": "bash e2e/setup-webkit.sh",
     "e2e:real": "bash e2e/real/e2e-real.sh",
     "e2e:real:tray": "NV_E2E_DBUS=1 NV_E2E_SCRIPT=tray.mjs bash e2e/real/e2e-real.sh",

@@ -2,7 +2,7 @@
   <img src="docs/media/banner.webp" alt="NiceVault: encrypted volumes in a single file" width="100%">
 </p>
 
-NiceVault keeps your files in an encrypted volume. A volume is one file with the extension `.nvault`: you can copy it, back it up, put it in a synced folder or carry it on a USB stick. You open it with a password and browse it in a built-in file manager. Linux and Windows are the supported desktop systems; macOS builds but is not fully tested. iOS and Android are in development and are not on the App Store or Google Play yet (see [Platform status](#platform-status)). If the operating system allows it, you can also mount it as a normal drive.
+NiceVault keeps your files in an encrypted volume. A volume is one file with the extension `.nvault`: you can copy it, back it up, put it in a synced folder or carry it on a USB stick. You open it with a password and browse it in a built-in file manager. It runs on Linux, Windows and macOS. iOS and Android are in development and are not on the App Store or Google Play yet (see [Platform status](#platform-status)). If the operating system allows it, you can also mount it as a normal drive.
 
 It is meant for people who move sensitive files between machines (scans, contracts, photos, key files, recovery codes) and want something closer to a VeraCrypt container than to a cloud service, without installing a driver or needing administrator rights to look at their own files.
 
@@ -181,7 +181,7 @@ Linux: `NiceVault-linux-x86_64.AppImage`, from the releases page of this reposit
 | --- | --- |
 | Linux (x86_64) | Main development platform. File manager, FUSE mount (needs `fusermount3`), device creation through udisks2. Released as an AppImage. |
 | Windows (x86_64) | Builds as a single `.exe` and uses the system WebView2. Mounting needs WinFsp installed. Device creation goes through a UAC prompt. |
-| macOS (universal) | Builds as an ad-hoc signed `.app`, not notarized, so Gatekeeper needs a manual approval. Mounting uses the built-in NFS client. Not fully tested. |
+| macOS (universal) | Builds as an ad-hoc signed `.app`, not notarized, so Gatekeeper needs a manual approval. Mounting uses the built-in NFS client. |
 | iOS | In development. Not on the App Store; test builds are sideloaded. |
 | Android | In development. Not on Google Play; a debug APK builds and runs on the emulator. |
 

@@ -62,6 +62,7 @@ export interface RecentEntry {
   key_slots?: number | null;
   kdf?: { m_kib: number; t: number; p: number } | null;
   emblem_frame?: string | null;
+  recipients?: string[];
 }
 
 export type NodeKind = 'file' | 'dir';
@@ -123,7 +124,16 @@ export interface Backend {
   min_version?: string | null;
 }
 
-export type SlotKind = 'password' | 'recipient' | 'fido2' | 'duress';
+export type SlotKind = 'password' | 'recipient' | 'device' | 'fido2' | 'duress';
+
+export interface BioStatus {
+  available: boolean;
+  kind: 'fingerprint' | 'face' | 'biometric';
+  reason: string;
+  device: string;
+  enabled: boolean;
+  stale: boolean;
+}
 
 export interface SlotInfo {
   index: number;
@@ -132,6 +142,18 @@ export interface SlotInfo {
   kdf?: { m_kib: number; t: number; p: number } | null;
   fingerprint?: string | null;
   in_use: boolean;
+}
+
+export interface MyKey {
+  public: string | null;
+  fingerprint: string | null;
+  created_ms: number | null;
+  persisted: boolean;
+}
+
+export interface RecipientCheck {
+  public: string;
+  fingerprint: string;
 }
 
 export interface VaultStats {

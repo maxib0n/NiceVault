@@ -81,6 +81,11 @@ fi
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
 export XDG_RUNTIME_DIR="$WORK/run" NO_AT_BRIDGE=1 HOME="$WORK/home"
 export NICEVAULT_FAKE_DRIVES="$WORK/drives.json"
+if [ -z "${WL:-}" ] && [ "${NV_E2E_WM:-}" = metacity ]; then
+  metacity --sm-disable --replace >"$WORK/wm.log" 2>&1 &
+  PIDS+=($!)
+  sleep 1
+fi
 [ "${NV_E2E_DBUS:-0}" = 1 ] || export NICEVAULT_ALLOW_MULTI=1
 [ "${NV_E2E_SCRIPT:-}" = reveal.mjs ] && export NICEVAULT_TEST_LIST_DELAY_MS=400 NICEVAULT_TEST_RECENTS_DELAY_MS=600
 [ "${NV_E2E_SCRIPT:-run.mjs}" = run.mjs ] && export NICEVAULT_TEST_MEDIA_RAM_MAX=0

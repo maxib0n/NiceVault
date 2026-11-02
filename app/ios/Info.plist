@@ -36,6 +36,8 @@
 	</dict>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>NiceVault salva nella Galleria le foto e i video che esporti da un volume.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>NiceVault usa Face ID per sbloccare i volumi in cui hai attivato lo sblocco con Face ID.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>

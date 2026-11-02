@@ -6,7 +6,11 @@
   import { errorText } from '../lib/errors';
   import { preloadStrength, type Strength } from '../lib/strength';
   import { switches } from '../lib/switches';
+  import { formatBytes } from '../lib/format';
+  import { radioKeys } from '../lib/radio';
+  import { FIXED_MAX, FIXED_MIN, GIB, down4k, fromBytes, toBytes, unitFor, UNIT_BYTES, type SizeUnit } from '../lib/resize';
   import { app } from '../lib/stores/app.svelte';
+  import { driveName, driveOf, drives } from '../lib/stores/drives.svelte';
   import { vaults } from '../lib/stores/vaults.svelte';
   import type { VaultInfo } from '../lib/types';
   import DrivePicker from '../components/DrivePicker.svelte';
@@ -42,6 +46,7 @@
         }
       : null,
   );
+  let createdSize = $state<number | null>(null);
   let emblemOpen = $state(false);
   const createdInfo = $derived(vaults.open.find((v) => v.id === created?.id) ?? created);
   let nameInput: HTMLInputElement | undefined = $state();
@@ -57,7 +62,40 @@
   );
   const fullPath = $derived(dir ? `${dir.replace(/[\\/]+$/, '')}${sep}${cleanName}.nvault` : '');
   const exists = $derived(app.recents.some((r) => r.path === fullPath));
-  const step1Ok = $derived(!nameError && !!dir && !exists);
+  let fixed = $state(false);
+  let sizeValue = $state(1);
+  let sizeUnit = $state<SizeUnit>('GB');
+  let sizeTouched = false;
+  const drive = $derived(dir ? driveOf(drives.list, dir) : null);
+  const sizeMax = $derived(drive ? Math.min(down4k(drive.free_bytes), FIXED_MAX) : null);
+  const sizeBytes = $derived(toBytes(sizeValue, sizeUnit));
+  const sizeError = $derived(
+    !fixed
+      ? null
+      : !Number.isFinite(sizeBytes)
+        ? m.create_size_invalid()
+        : sizeBytes < FIXED_MIN
+          ? m.create_size_too_small({ min: formatBytes(FIXED_MIN) })
+          : sizeMax !== null && sizeBytes > sizeMax
+            ? m.create_size_too_big({ free: formatBytes(sizeMax), drive: driveName(drive!) })
+            : null,
+  );
+  const step1Ok = $derived(!nameError && !!dir && !exists && !sizeError);
+
+  $effect(() => {
+    if (sizeTouched || sizeMax === null) return;
+    const want = Math.max(Math.min(GIB, down4k(sizeMax / 2)), FIXED_MIN);
+    sizeUnit = unitFor(want);
+    sizeValue = fromBytes(want, sizeUnit);
+  });
+
+  function setUnit(u: SizeUnit) {
+    if (u === sizeUnit) return;
+    sizeTouched = true;
+    const bytes = sizeBytes;
+    sizeUnit = u;
+    if (Number.isFinite(bytes)) sizeValue = fromBytes(bytes, u);
+  }
   const mismatch = $derived(confirm.length > 0 && confirm !== password);
   const step2Ok = $derived(!!strength?.acceptable && password === confirm && !busy);
   const createdOpen = $derived(!!created && vaults.open.some((v) => v.id === created!.id));
@@ -79,7 +117,8 @@
     else if (step === 2 && step2Ok) {
       busy = true;
       try {
-        created = await vaults.createVault(fullPath, password);
+        created = await vaults.createVault(fullPath, password, fixed ? sizeBytes : null);
+        createdSize = fixed ? sizeBytes : null;
         password = confirm = '';
         step = 3;
       } catch (err) {
@@ -157,6 +196,51 @@
               </p>
             {/if}
           </div>
+          <div class="field" data-testid="create-size">
+            <span class="field-label" id="vol-size-label">{m.create_size()}</span>
+            <div
+              class="segmented"
+              role="radiogroup"
+              aria-labelledby="vol-size-label"
+              aria-describedby="vol-size-hint"
+              tabindex="-1"
+              data-testid="create-size-mode"
+              onkeydown={(e) => radioKeys(e, [false, true], fixed, (v) => (fixed = v))}
+            >
+              {#each [false, true] as f (f)}
+                <button type="button" role="radio" aria-checked={fixed === f} tabindex={fixed === f ? 0 : -1} onclick={() => (fixed = f)}>
+                  {f ? m.create_size_fixed() : m.create_size_growing()}
+                </button>
+              {/each}
+            </div>
+            <p id="vol-size-hint" class="hint">{fixed ? m.create_size_fixed_d() : m.create_size_growing_d()}</p>
+            {#if fixed}
+              <div class="size-row">
+                <input
+                  id="vol-size"
+                  class="input num"
+                  type="number"
+                  inputmode="decimal"
+                  min="0"
+                  step="any"
+                  bind:value={sizeValue}
+                  oninput={() => (sizeTouched = true)}
+                  aria-label={m.create_size_amount()}
+                  aria-invalid={!!sizeError}
+                  aria-describedby="vol-size-free"
+                  data-testid="create-size-value"
+                />
+                <div class="segmented unit" role="radiogroup" aria-label={m.rsz_unit()} tabindex="-1" data-testid="create-size-unit" onkeydown={(e) => radioKeys(e, Object.keys(UNIT_BYTES) as SizeUnit[], sizeUnit, setUnit)}>
+                  {#each Object.keys(UNIT_BYTES) as SizeUnit[] as u (u)}
+                    <button type="button" role="radio" aria-checked={sizeUnit === u} tabindex={sizeUnit === u ? 0 : -1} onclick={() => setUnit(u)}>{u}</button>
+                  {/each}
+                </div>
+              </div>
+              <p id="vol-size-free" class={sizeError ? 'error-text' : 'hint'} data-testid="create-size-free">
+                {sizeError ?? (drive ? m.create_size_free({ free: formatBytes(drive.free_bytes), drive: driveName(drive) }) : '')}
+              </p>
+            {/if}
+          </div>
         {:else if step === 2}
           <PasswordField
             bind:value={password}
@@ -186,6 +270,7 @@
             {/if}
             <p class="done-title display">{m.create_done()}</p>
             <p class="hint path">{created?.path}</p>
+            {#if createdSize}<p class="hint" data-testid="create-done-size">{m.create_done_fixed({ size: formatBytes(createdSize) })}</p>{/if}
             <p class="hint">{m.create_done_hint()}</p>
             {#if createdInfo}
               <button type="button" class="btn sm" disabled={!createdOpen} onclick={() => (emblemOpen = true)} data-testid="emblem-open">
@@ -358,6 +443,22 @@
   .body :global(.hint),
   .body :global(.error-text) {
     overflow-wrap: anywhere;
+  }
+  .segmented {
+    align-self: start;
+  }
+  .size-row {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    max-width: 280px;
+  }
+  .size-row .input.num {
+    flex: 1;
+    min-width: 0;
+  }
+  .size-row .unit {
+    flex: none;
   }
   .path {
     font-family: var(--font-mono);

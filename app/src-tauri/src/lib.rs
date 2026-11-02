@@ -10,6 +10,7 @@ pub mod external;
 pub mod fs_events;
 pub mod hardening;
 pub mod jobs;
+pub mod mykey;
 pub mod passwords;
 pub mod pm_icons;
 pub mod preview;
@@ -37,6 +38,8 @@ pub mod tray;
 pub mod mobile;
 #[cfg(any(target_os = "android", test))]
 pub mod docs;
+#[cfg(any(mobile, test))]
+pub mod biometric;
 #[cfg(any(mobile, test))]
 pub mod mobile_paths;
 #[cfg(any(mobile, test))]
@@ -119,6 +122,21 @@ impl browser::Host for BrowserHost {
 
 const UNLOCK_WINDOW: &str = "unlock";
 
+const BOARD_LIGHT: tauri::window::Color = tauri::window::Color(0xd9, 0xd3, 0xc7, 0xff);
+
+fn splash_script(look: Option<(&str, &str)>) -> String {
+    let act = match look {
+        Some((theme, accent)) => {
+            let theme = if theme == "system" { String::new() } else { format!("s.dataset.theme={};", serde_json::json!(theme)) };
+            format!("{theme}s.dataset.accent={};", serde_json::json!(accent))
+        }
+        None => "s.remove();".into(),
+    };
+    format!(
+        "new MutationObserver((_,o)=>{{const s=document.getElementById('nv-splash');if(!s)return;o.disconnect();{act}}}).observe(document,{{childList:true,subtree:true}});"
+    )
+}
+
 #[cfg(desktop)]
 fn compact_unlock(app: &tauri::AppHandle, path: &str) {
     let spec = serde_json::json!({ "kind": "unlock", "path": path });
@@ -139,7 +157,11 @@ fn compact_unlock(app: &tauri::AppHandle, path: &str) {
         .center()
         .focused(true)
         .background_color(tauri::window::Color(0x1b, 0x1a, 0x19, 0xff))
-        .initialization_script(format!("window.__NV_COMPACT__ = {spec};"));
+        .initialization_script(format!("window.__NV_COMPACT__ = {spec};{}", splash_script(None)));
+    #[cfg(target_os = "macos")]
+    let b = b.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+    #[cfg(not(target_os = "macos"))]
+    let b = b.decorations(false);
     if let Ok(w) = b.build() {
         let _ = w.set_focus();
     }
@@ -217,7 +239,20 @@ pub fn run() {
             app.manage(Arc::new(updater::Updater::for_app(config_dir.clone())));
             watch::spawn_sleep_watcher(Arc::downgrade(&state));
             autolock::spawn_ticker(Arc::downgrade(&state));
-            let scale = state::lock_or_recover(&state.store).app_look().2;
+            let (app_theme, app_accent, scale, _) = state::lock_or_recover(&state.store).app_look();
+            if let Some(cfg) = app.config().app.windows.iter().find(|w| w.label == "main") {
+                let w = tauri::WebviewWindowBuilder::from_config(app.handle(), cfg)?
+                    .initialization_script(splash_script(Some((&app_theme, &app_accent))))
+                    .build()?;
+                let light = match app_theme.as_str() {
+                    "light" => true,
+                    "dark" => false,
+                    _ => matches!(w.theme(), Ok(tauri::Theme::Light)),
+                };
+                if light {
+                    let _ = w.set_background_color(Some(BOARD_LIGHT));
+                }
+            }
             if scale != 100
                 && cfg!(desktop)
                 && let Some(w) = app.get_webview_window("main")
@@ -308,6 +343,14 @@ pub fn run() {
             mobile::mobile_save_gallery,
             #[cfg(mobile)]
             mobile::mobile_docs_busy,
+            #[cfg(mobile)]
+            biometric::bio_status,
+            #[cfg(mobile)]
+            biometric::bio_enable,
+            #[cfg(mobile)]
+            biometric::bio_disable,
+            #[cfg(mobile)]
+            biometric::bio_unlock,
             commands::fs_export,
             commands::fs_open_external,
             commands::job_cancel,
@@ -342,6 +385,16 @@ pub fn run() {
             commands::vault_touch,
             commands::autolock_status,
             commands::slot_add_duress,
+            mykey::cmd::my_key_get,
+            mykey::cmd::my_key_create,
+            mykey::cmd::my_key_import,
+            mykey::cmd::my_key_export,
+            mykey::cmd::my_key_export_public,
+            mykey::cmd::my_key_remove,
+            mykey::cmd::recipient_check,
+            mykey::cmd::recipient_read_file,
+            mykey::cmd::slot_add_recipient,
+            mykey::cmd::vault_open_with_key,
             commands::app_settings_get,
             commands::app_settings_set,
             commands::app_info,

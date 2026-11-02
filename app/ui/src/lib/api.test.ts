@@ -43,6 +43,14 @@ describe('api (mock backend)', () => {
     expect(f).toMatchObject({ single_file: true, can_upgrade_format: false });
   });
 
+  it('refuses a fixed size out of range or larger than the drive has free, like vault_create', async () => {
+    await expect(api.vaultCreate(`${STICK}/Piccolo.nvault`, 'pw', 'fast', 1 << 20)).rejects.toMatchObject({ code: 'out_of_range' });
+    const stick = (await api.drivesList()).find((d) => d.mount_path === STICK)!;
+    await expect(api.vaultCreate(`${STICK}/Enorme.nvault`, 'pw', 'fast', stick.free_bytes + (1 << 30))).rejects.toMatchObject({ code: 'no_space' });
+    await api.vaultCreate(`${STICK}/Fisso.nvault`, 'pw', 'fast', 1 << 30);
+    expect((await api.drivesList()).find((d) => d.mount_path === STICK)!.free_bytes).toBe(stick.free_bytes - (1 << 30));
+  });
+
   it('upgrades an older fixed-size volume; a nearly full one only once extended (volume_full)', async () => {
     api.useMock(new MockBackend({ speed: 0, fixed: true }));
     const v = await api.vaultOpen(DOC, MOCK_PASSWORD);

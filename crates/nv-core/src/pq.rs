@@ -65,6 +65,12 @@ impl Identity {
     }
 
     pub fn to_file_with(&self, path: &Path, pw: &SecretString, kdf: KdfPreset) -> nv_fs::Result<()> {
+        let bytes = self.to_bytes_with(pw, kdf);
+        let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(path).map_err(io)?;
+        out.write_all(&bytes).and_then(|_| out.sync_all()).map_err(io)
+    }
+
+    pub fn to_bytes_with(&self, pw: &SecretString, kdf: KdfPreset) -> Vec<u8> {
         let (argon2, salt, kek) = new_password_kek(pw.expose_secret().as_bytes(), kdf);
         let mut secret = Zeroizing::new([0u8; 96]);
         secret[..32].copy_from_slice(self.x25519.bytes());
@@ -74,14 +80,16 @@ impl Identity {
             .encrypt(XNonce::from_slice(&nonce), Payload { msg: &secret[..], aad: &KEY_MAGIC })
             .expect("encrypt");
         let f = KeyFile { magic: KEY_MAGIC, argon2, salt, nonce, wrapped };
-        let bytes = postcard::to_allocvec(&f).expect("serialize");
-        let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(path).map_err(io)?;
-        out.write_all(&bytes).and_then(|_| out.sync_all()).map_err(io)
+        postcard::to_allocvec(&f).expect("serialize")
     }
 
     pub fn from_file(path: &Path, pw: &SecretString) -> Result<Self, OpenError> {
         let bytes = std::fs::read(path).map_err(|e| OpenError::Io(e.to_string()))?;
-        let f: KeyFile = postcard::from_bytes(&bytes).map_err(|_| OpenError::NotAVault)?;
+        Self::from_bytes(&bytes, pw)
+    }
+
+    pub fn from_bytes(bytes: &[u8], pw: &SecretString) -> Result<Self, OpenError> {
+        let f: KeyFile = postcard::from_bytes(bytes).map_err(|_| OpenError::NotAVault)?;
         if f.magic != KEY_MAGIC {
             return Err(OpenError::NotAVault);
         }
@@ -97,6 +105,10 @@ impl Identity {
         let mut seed = Zeroizing::new([0u8; 64]);
         seed.copy_from_slice(&secret[32..]);
         Ok(Identity { x25519: Key32::from_slice(&secret[..32]), mlkem_seed: seed })
+    }
+
+    pub fn is_key_file(bytes: &[u8]) -> bool {
+        bytes.starts_with(&KEY_MAGIC)
     }
 
     pub(crate) fn slot_kek(&self, volume_id: &[u8; 16], eph_pub: &[u8; 32], ct: &[u8]) -> Option<Key32> {
@@ -212,5 +224,18 @@ mod tests {
         let mut broken = s.clone();
         broken.replace_range(10..11, if &s[10..11] == "A" { "B" } else { "A" });
         assert!(Recipient::parse(&broken).is_err());
+    }
+
+    #[test]
+    fn key_bytes_roundtrip() {
+        let id = Identity::generate();
+        let pw = SecretString::from("k");
+        let b = id.to_bytes_with(&pw, KdfPreset::Fast);
+        assert!(Identity::is_key_file(&b));
+        assert!(!Identity::is_key_file(id.recipient().to_string().as_bytes()));
+        let back = Identity::from_bytes(&b, &pw).unwrap();
+        assert_eq!(back.recipient(), id.recipient());
+        assert!(matches!(Identity::from_bytes(&b, &SecretString::from("x")), Err(OpenError::WrongPassword)));
+        assert!(matches!(Identity::from_bytes(b"nvpk1abc", &pw), Err(OpenError::NotAVault)));
     }
 }

@@ -45,7 +45,7 @@
   :global(.app[data-world='locked']) .toasts {
     left: auto;
     right: var(--space-4);
-    top: var(--space-4);
+    top: calc(var(--tb-h) + var(--space-4));
     bottom: auto;
     flex-direction: column;
     align-items: flex-end;

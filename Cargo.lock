@@ -3165,7 +3165,7 @@ dependencies = [
 
 [[package]]
 name = "nicevault-app"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -3299,7 +3299,7 @@ dependencies = [
 
 [[package]]
 name = "nv-bridge"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "libc",
  "serde_json",
@@ -3309,7 +3309,7 @@ dependencies = [
 
 [[package]]
 name = "nv-core"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -3348,7 +3348,7 @@ dependencies = [
 
 [[package]]
 name = "nv-fs"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -3356,7 +3356,7 @@ dependencies = [
 
 [[package]]
 name = "nv-mount"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "async-trait",
  "fuser",

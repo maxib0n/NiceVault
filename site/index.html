@@ -3,12 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NiceVault: encrypted volumes in a single file</title>
-<meta name="description" content="NiceVault keeps your files in one encrypted .nvault file. Copy it, back it up, carry it on a USB stick, open it with a password on Linux, Windows or macOS.">
+<title>NiceVault: encrypted file vault for Linux, Windows and macOS</title>
+<meta name="description" content="Free, open source encrypted vault: your files in one .nvault file you can copy, back up or carry on a USB stick. Built-in file manager, password manager with 2FA, AES-256 encryption. Linux, Windows, macOS.">
+<link rel="canonical" href="https://maxib0n.github.io/NiceVault/">
+<meta name="robots" content="index, follow">
 <meta name="color-scheme" content="light dark">
-<meta property="og:title" content="NiceVault">
-<meta property="og:description" content="Encrypted volumes in a single file. Keep them on a USB stick, open them on any computer.">
+<meta property="og:title" content="NiceVault: encrypted volumes in a single file">
+<meta property="og:description" content="Keep your files in one encrypted file, carry it on a USB stick, open it on Linux, Windows or macOS. Free and open source.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://maxib0n.github.io/NiceVault/">
+<meta property="og:site_name" content="NiceVault">
+<meta property="og:image" content="https://maxib0n.github.io/NiceVault/assets/img/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="NiceVault: an encrypted volume shown as a passport">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"NiceVault","applicationCategory":"SecurityApplication","operatingSystem":"Linux, Windows, macOS","description":"Encrypted file vault: your files in one .nvault file, with a built-in file manager and a password manager with 2FA.","url":"https://maxib0n.github.io/NiceVault/","downloadUrl":"https://github.com/maxib0n/NiceVault/releases/latest","license":"https://www.gnu.org/licenses/gpl-3.0.html","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"author":{"@type":"Person","name":"Max","url":"https://github.com/maxib0n"}}</script>
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/img/icon-192.png">
 <link rel="preload" href="assets/fonts/newsreader-normal-200-800-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -285,7 +295,7 @@
           <tr data-os="macos">
             <th scope="row">macOS<small>universal, ad-hoc signed app in a zip</small></th>
             <td class="mono" data-label="File">NiceVault-macos-universal.zip</td>
-            <td data-label="State"><span class="chip part">Not fully tested</span></td>
+            <td data-label="State"><span class="chip ok">Usable</span></td>
             <td class="act"><a class="btn btn-sm btn-primary" data-asset="NiceVault-macos-universal.zip" href="#downloads">Download</a></td>
           </tr>
         </tbody>
@@ -312,7 +322,7 @@
       <dl>
         <div><dt>Linux</dt><dd><span class="chip ok">Usable</span> The main development platform. File manager, mounting through FUSE, device creation through udisks2.</dd></div>
         <div><dt>Windows</dt><dd><span class="chip ok">Usable</span></dd></div>
-        <div><dt>macOS</dt><dd><span class="chip part">Builds, not fully tested</span> Less exercised than Linux, and not notarized.</dd></div>
+        <div><dt>macOS</dt><dd><span class="chip ok">Usable</span> Not notarized: approve it once in Privacy &amp; Security.</dd></div>
         <div><dt>iOS</dt><dd><span class="chip dev">In development</span> Runs when built from source and sideloaded. Not on the App Store.</dd></div>
         <div><dt>Android</dt><dd><span class="chip dev">In development</span> Runs on the emulator. Not on Google Play.</dd></div>
       </dl>

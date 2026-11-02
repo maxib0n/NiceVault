@@ -44,7 +44,7 @@ fn scrub(e: &mut SlotEntry) {
             *nonce = random();
             fill(wrapped);
         }
-        Slot::Fido2(b) => fill(b),
+        Slot::Ext(b) => fill(b),
     }
     if let Some(l) = &mut e.label {
         l.nonce = random();
@@ -103,7 +103,7 @@ mod tests {
                 Slot::Recipient { mlkem_ct, wrapped, nonce, x25519_eph_pub, .. } => {
                     out.extend([mlkem_ct.clone(), wrapped.clone(), nonce.to_vec(), x25519_eph_pub.to_vec()])
                 }
-                Slot::Fido2(b) => out.push(b.clone()),
+                Slot::Ext(b) => out.push(b.clone()),
             }
             if let Some(l) = &e.label {
                 out.push(l.ct.clone());

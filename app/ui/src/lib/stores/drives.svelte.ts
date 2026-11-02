@@ -1,6 +1,7 @@
 import * as api from '../api';
 import type { Drive } from '../types';
 import { app } from './app.svelte';
+import { m } from '../../paraglide/messages.js';
 
 class Drives {
   list = $state<Drive[]>([]);
@@ -47,4 +48,10 @@ export function driveOf(list: Drive[], path: string): Drive | null {
     if (inside && (!best || root.length > norm(best.mount_path).length)) best = d;
   }
   return best;
+}
+
+export function driveName(d: Drive): string {
+  if (d.system) return m.drive_system();
+  if (d.label) return d.label;
+  return d.mount_path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || d.mount_path;
 }

@@ -27,6 +27,7 @@ let package = Package(
             linkerSettings: [
                 .unsafeFlags(["-L", libs, "-lnicevault_app"]),
                 .linkedFramework("Security"),
+                .linkedFramework("LocalAuthentication"), // NvBiometric.swift
                 .linkedFramework("WebKit"),
                 .linkedFramework("Photos"),
                 .linkedFramework("UIKit"),

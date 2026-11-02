@@ -85,3 +85,50 @@ fn resize_through_the_app() {
     assert_eq!(st.vault_resize(&id, 64 * MIB).unwrap_err().code, "not_fixed");
     st.vault_lock(&id, "user").unwrap();
 }
+
+#[test]
+fn fixed_size_from_the_create_wizard() {
+    let t = tempfile::tempdir().unwrap();
+    let st = AppState::new(Store::new(Locations { exe_dir: None, removable: Some(vec![]), config_dir: None }), Box::new(Rec::default()));
+    let vol = t.path().join("Fisso.nvault");
+    let path = vol.to_str().unwrap();
+
+    let e = st.vault_create_sized(path, pw(), Some("fast"), Some(MIB)).unwrap_err();
+    assert_eq!(e.code, "out_of_range", "{e}");
+    let e = st.vault_create_sized(path, pw(), Some("fast"), Some(1 << 50)).unwrap_err();
+    assert_eq!(e.code, "out_of_range", "{e}");
+    let e = st.vault_create_sized(path, pw(), Some("fast"), Some(8 << 40)).unwrap_err();
+    assert_eq!(e.code, "no_space", "{e}");
+    assert!(!vol.exists());
+
+    let asked = 48 * MIB + 1234;
+    let id = st.vault_create_sized(path, pw(), Some("fast"), Some(asked)).unwrap().id;
+    let want = asked - asked % 4096;
+    assert_eq!(std::fs::metadata(&vol).unwrap().len(), want);
+    let info = st.vault_resize_info(&id).unwrap();
+    assert_eq!((info.capacity, info.file_bytes), (Some(want), want));
+    let v = st.vault(&id).unwrap();
+    let f = v.create(ROOT, "x.bin", Kind::File).unwrap();
+    v.write(f.id, 0, &[9u8; 1 << 16]).unwrap();
+    v.flush().unwrap();
+    drop(v);
+    assert_eq!(std::fs::metadata(&vol).unwrap().len(), want, "a fixed volume does not grow");
+    st.vault_lock(&id, "user").unwrap();
+
+    let id = st.vault_open(path, pw()).unwrap().id;
+    assert_eq!(st.vault_resize_info(&id).unwrap().capacity, Some(want));
+    assert_eq!(st.vault_resize(&id, 64 * MIB).unwrap().capacity, Some(64 * MIB));
+    assert_eq!(std::fs::metadata(&vol).unwrap().len(), 64 * MIB);
+    assert_eq!(st.vault_resize(&id, 32 * MIB).unwrap().capacity, Some(32 * MIB));
+    assert_eq!(std::fs::metadata(&vol).unwrap().len(), 32 * MIB);
+    let v = st.vault(&id).unwrap();
+    let n = v.lookup(ROOT, "x.bin").unwrap();
+    let mut buf = vec![0u8; 1 << 16];
+    let mut off = 0;
+    while off < buf.len() {
+        off += v.read(n.id, off as u64, &mut buf[off..]).unwrap();
+    }
+    assert!(buf.iter().all(|&b| b == 9));
+    drop(v);
+    st.vault_lock(&id, "user").unwrap();
+}

@@ -86,7 +86,7 @@
     display: flex;
     align-items: center;
     flex: 0 1 340px;
-    min-width: 180px;
+    min-width: 130px;
     margin-right: var(--space-2);
   }
   .search-box > :global(.lens) {

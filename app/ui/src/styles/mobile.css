@@ -308,6 +308,31 @@
     --sidebar-w: 0px;
   }
 
+  :root:not([data-platform='mobile']) {
+    --tap: 40px;
+    --flap-h: 62px;
+  }
+  :root:not([data-platform='mobile']) :is(.vault-screen, .passwords) kbd,
+  :root:not([data-platform='mobile']) .vault-screen .sidebar .fold {
+    display: none;
+  }
+  :root:root:not([data-platform='mobile']) .folder-head .actions {
+    flex: none;
+  }
+  :root:root:not([data-platform='mobile']) .folder-head .actions .btn {
+    flex: none;
+  }
+  :root:root:not([data-platform='mobile']) .folder-head .actions .btn.primary {
+    position: static;
+    width: var(--tap);
+    height: var(--tap);
+    border-radius: var(--radius-md, 8px);
+  }
+  :root:root:not([data-platform='mobile']) .folder-head .actions .btn.primary svg {
+    width: 18px;
+    height: 18px;
+  }
+
   :root:root .vault-screen {
     flex-direction: column;
   }
@@ -494,7 +519,7 @@
     bottom: calc(var(--flap-h) + 74px + var(--safe-bottom, 0px));
   }
   :root:root .app:has(.job-tray.open) .toasts {
-    top: calc(var(--safe-top, 0px) + 10px);
+    top: calc(var(--safe-top, 0px) + var(--tb-h) + 10px);
     bottom: auto;
   }
 
@@ -917,7 +942,7 @@
     place-items: center;
   }
   :root:root .unlock .document {
-    --w: calc(100vw - 32px - var(--safe-left, 0px) - var(--safe-right, 0px));
+    --w: calc(100cqw - 32px - var(--safe-left, 0px) - var(--safe-right, 0px));
     aspect-ratio: auto;
     min-height: 0;
     border-radius: 14px;
@@ -962,15 +987,20 @@
     margin-top: 10px;
   }
   :root:root .unlock .facts {
+    display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0 14px;
     margin-top: 16px;
   }
   :root:root .unlock .facts dt {
+    white-space: normal;
     font-size: 9.5px;
     line-height: 1.3;
   }
   :root:root .unlock .facts dd {
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
     margin-top: 5px;
     font-size: 14px;
   }
@@ -1002,6 +1032,12 @@
     margin-top: 14px;
     justify-content: center;
   }
+  :root:root .unlock .bio-key {
+    justify-self: stretch;
+    width: 100%;
+    min-height: 52px;
+    justify-content: center;
+  }
   :root:root .unlock .messages {
     margin-top: 6px;
   }
@@ -1015,7 +1051,8 @@
   :root:root .unlock .reason {
     top: 16px;
     right: 22px;
-    bottom: auto;
+    left: auto;
+    transform: rotate(-6deg);
     font-size: 10px;
   }
   :root:root :is(.unlock, .create) .imprint {

@@ -63,7 +63,8 @@
 
 <style>
   .breadcrumb {
-    min-width: 0;
+    flex-shrink: 0.15;
+    min-width: 5em;
     overflow: hidden;
     display: flex;
     justify-content: flex-start;

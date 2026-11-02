@@ -26,8 +26,10 @@ class AppLook {
   }
 
   private applyScale() {
-    if (api.isTauri || typeof document === 'undefined') return;
+    if (typeof document === 'undefined') return;
     const z = this.scale / 100;
+    document.documentElement.style.setProperty('--ui-zoom', String(z));
+    if (api.isTauri) return;
     if (z === 1) document.documentElement.style.removeProperty('zoom');
     else document.documentElement.style.setProperty('zoom', String(z));
   }

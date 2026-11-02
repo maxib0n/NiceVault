@@ -80,7 +80,7 @@ pub fn web_content_gone(w: tauri::Webview) {
     });
 }
 
-fn bridge(app: &AppHandle) -> ApiResult<PluginHandle<Wry>> {
+pub(crate) fn bridge(app: &AppHandle) -> ApiResult<PluginHandle<Wry>> {
     app.try_state::<Bridge>().and_then(|b| b.0.clone()).ok_or_else(|| ApiError::new("unsupported", "Not available on this device."))
 }
 
@@ -534,7 +534,7 @@ fn decrypt_to(v: &nv_core::Vault, n: &nv_fs::Node, out: &mut impl Write, buf: &m
     r
 }
 
-fn native_err(e: tauri::plugin::mobile::PluginInvokeError) -> ApiError {
+pub(crate) fn native_err(e: tauri::plugin::mobile::PluginInvokeError) -> ApiError {
     match e {
         tauri::plugin::mobile::PluginInvokeError::InvokeRejected(r) => {
             ApiError::new(r.code.as_deref().filter(|c| !c.is_empty()).unwrap_or("io"), r.message.unwrap_or_default())

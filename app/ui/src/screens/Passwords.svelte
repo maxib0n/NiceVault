@@ -671,6 +671,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    container-type: inline-size;
     border-right: 1px solid var(--paper-rule);
   }
   .filters {
@@ -869,6 +870,11 @@
     gap: 6px;
     color: var(--accent);
   }
+  @container (max-width: 250px) {
+    .e-badges .badge {
+      display: none;
+    }
+  }
   .ledger {
     display: flex;
     flex-direction: column;
@@ -989,7 +995,7 @@
   }
   @media (max-width: 900px) {
     .body {
-      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      grid-template-columns: minmax(min(220px, 40%), min(280px, 42%)) minmax(0, 1fr);
     }
     .label-text {
       display: none;

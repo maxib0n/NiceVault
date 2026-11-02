@@ -218,14 +218,26 @@
     gap: var(--space-4);
     min-width: 0;
     max-width: 880px;
+    container-type: inline-size;
+  }
+  @container (max-width: 440px) {
+    .row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      row-gap: 2px;
+    }
+    .row dt {
+      grid-column: 1 / -1;
+    }
   }
   .head {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     justify-content: space-between;
-    gap: var(--space-4);
+    gap: var(--space-3) var(--space-4);
   }
   .title-block {
+    flex: 1 1 12em;
     min-width: 0;
     padding-top: 2px;
   }
@@ -250,9 +262,11 @@
   }
   .actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 4px;
-    flex: none;
+    flex: 0 1 auto;
+    margin-left: auto;
   }
   .edit {
     margin: 0 4px;

@@ -3,7 +3,7 @@ use crate::emblem::{Emblem, EmblemState};
 use crate::error::{ApiError, ApiResult};
 use crate::external::External;
 use crate::store::{RecentEntry, Store};
-use nv_core::{KdfPreset, Vault};
+use nv_core::{Fixed, KdfPreset, Vault};
 use nv_fs::{Fs, Kind, Node, NodeId, ROOT};
 use secrecy::SecretString;
 use serde::Serialize;
@@ -55,6 +55,7 @@ pub struct AppState {
     lifecycle: Mutex<()>,
     open_seq: AtomicU64,
     host_copy_told: std::sync::atomic::AtomicBool,
+    pub(crate) my_key_mem: Mutex<Option<crate::mykey::Stored>>,
     me: Weak<AppState>,
 }
 
@@ -188,6 +189,7 @@ impl AppState {
             lifecycle: Mutex::new(()),
             open_seq: AtomicU64::new(0),
             host_copy_told: Default::default(),
+            my_key_mem: Mutex::default(),
             me: me.clone(),
         })
     }
@@ -282,6 +284,11 @@ impl AppState {
         let _g = lock_or_recover(&self.lifecycle);
         let t0 = Instant::now();
         if let Some(n) = fixed_size
+            && !(Fixed { capacity: n - n % 4096 }).is_valid()
+        {
+            return Err(ApiError::new("out_of_range", format!("The size must be between {} and {} bytes.", Fixed::MIN, Fixed::MAX)));
+        }
+        if let Some(n) = fixed_size
             && let Some(dir) = path.parent()
             && fs4::available_space(dir).is_ok_and(|free| free < n)
         {
@@ -303,18 +310,25 @@ impl AppState {
     }
 
     pub fn vault_open(&self, path: &str, password: SecretString) -> ApiResult<VaultInfo> {
+        self.vault_open_by(path, move |p| {
+            let v = Vault::open(p, &password);
+            drop(password);
+            Ok(v?)
+        })
+    }
+
+    pub(crate) fn vault_open_by(&self, path: &str, open: impl FnOnce(&Path) -> ApiResult<Vault>) -> ApiResult<VaultInfo> {
         let path = abs_path(path)?;
         let _g = lock_or_recover(&self.lifecycle);
-        let open = lock_or_recover(&self.vaults).values().find(|o| o.path == path).map(Self::snap);
-        if let Some(o) = open {
+        let already = lock_or_recover(&self.vaults).values().find(|o| o.path == path).map(Self::snap);
+        if let Some(o) = already {
             return Ok(o.info());
         }
         if !path.is_file() {
             return Err(ApiError::new("not_found", "The volume file is not reachable."));
         }
         let t0 = Instant::now();
-        let v = Vault::open(&path, &password)?;
-        drop(password);
+        let v = open(&path)?;
         let _ = look::sync_header(&v, &file_stem(&path));
         Ok(self.register(path, v, t0.elapsed()))
     }
@@ -785,12 +799,22 @@ impl AppState {
     }
 
     pub fn slot_rotate_key(&self, id: &str, slot: usize, password: SecretString) -> ApiResult<Vec<SlotInfo>> {
-        self.vault(id)?.rotate_master(slot, &password)?;
+        let v = self.vault(id)?;
+        let keep = crate::mykey::known_recipients(&v);
+        v.rotate_master(slot, &password)?;
+        for (r, label) in keep {
+            let _ = v.add_recipient(&r, label.as_deref());
+        }
         self.slots_list(id)
     }
 
     pub fn slot_remove(&self, id: &str, slot: usize) -> ApiResult<Vec<SlotInfo>> {
-        self.vault(id)?.remove_slot(slot)?;
+        let v = self.vault(id)?;
+        let fpr = v.slots().into_iter().find(|s| s.index == slot).and_then(|s| s.fingerprint);
+        v.remove_slot(slot)?;
+        if let Some(f) = fpr {
+            crate::mykey::forget_recipient(&v, &f);
+        }
         self.slots_list(id)
     }
 

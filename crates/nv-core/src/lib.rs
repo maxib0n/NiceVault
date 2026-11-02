@@ -116,6 +116,10 @@ fn norm_label(l: Option<&str>) -> std::result::Result<Option<&str>, SlotError> {
     }
 }
 
+fn is_device(s: &Slot) -> bool {
+    matches!(s, Slot::Ext(b) if matches!(header::ExtSlot::decode(b), Some(header::ExtSlot::Device { .. })))
+}
+
 pub struct Vault {
     path: PathBuf,
     shared: Arc<Shared>,
@@ -720,6 +724,19 @@ impl Vault {
         })
     }
 
+    pub fn open_with_device(path: &Path, slot: usize, kek: &[u8; 32]) -> std::result::Result<Vault, OpenError> {
+        let kek = Key32::from_slice(kek);
+        Self::open_with(path, |h, _, _| {
+            if let Some(Some(SlotEntry { slot: Slot::Ext(b), .. })) = h.body.slots.get(slot)
+                && let Some(header::ExtSlot::Device { nonce, wrapped }) = header::ExtSlot::decode(b)
+                && let Some(m) = header::unwrap(&kek, &nonce, &wrapped, &h.body.volume_id, slot, header::DEVICE_KIND)
+            {
+                return Ok((m, slot));
+            }
+            Err(OpenError::WrongPassword)
+        })
+    }
+
     fn open_with(
         path: &Path,
         unlock: impl Fn(&Header, &File, [u64; 2]) -> std::result::Result<(Key32, usize), OpenError>,
@@ -940,7 +957,8 @@ impl Vault {
                     s @ Slot::Password { argon2, .. } if duress::is_duress(&i.master, vid, index, s) => ("duress", Some(*argon2), None),
                     Slot::Password { argon2, .. } => ("password", Some(*argon2), None),
                     Slot::Recipient { recipient_fpr, .. } => ("recipient", None, Some(pq::hex(recipient_fpr))),
-                    Slot::Fido2(_) => ("fido2", None, None),
+                    s @ Slot::Ext(_) if is_device(s) => ("device", None, None),
+                    Slot::Ext(_) => ("fido2", None, None),
                 };
                 Some(SlotInfo { index, kind, label, kdf, fingerprint, in_use: i.unlocked == Some(index) })
             })
@@ -1113,6 +1131,16 @@ impl Vault {
         Ok(idx)
     }
 
+    pub fn add_device(&self, label: Option<&str>) -> std::result::Result<(usize, Zeroizing<[u8; 32]>), SlotError> {
+        let label = norm_label(label)?;
+        let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let (idx, vid, master) = self.slot_ctx(None)?;
+        let kek = Key32::random();
+        let (nonce, wrapped) = header::wrap(&kek, &master, &vid, idx, header::DEVICE_KIND);
+        self.put_slot(idx, Some(Slot::Ext(header::ExtSlot::Device { nonce, wrapped }.encode())), Some(label))?;
+        Ok((idx, Zeroizing::new(*kek.bytes())))
+    }
+
     pub fn set_slot_label(&self, slot: usize, label: Option<&str>) -> std::result::Result<(), SlotError> {
         let label = norm_label(label)?;
         let _s = self.slot_lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -1126,7 +1154,7 @@ impl Vault {
         let openers_left = self.with(|i| {
             let vid = i.header.body.volume_id;
             Ok(i.header.body.slots.iter().enumerate().filter(|&(j, e)| {
-                j != slot && e.as_ref().is_some_and(|e| !duress::is_duress(&i.master, &vid, j, &e.slot))
+                j != slot && e.as_ref().is_some_and(|e| !duress::is_duress(&i.master, &vid, j, &e.slot) && !is_device(&e.slot))
             }).count())
         })?;
         if openers_left == 0 {
@@ -1379,6 +1407,7 @@ pub struct Peek {
     pub appearance: Option<Appearance>,
     pub password_kdf: Vec<KdfParams>,
     pub recipient_slots: usize,
+    pub recipient_fprs: Vec<[u8; 16]>,
     pub slots: usize,
     pub volume_id: [u8; 16],
     pub unlock_ms: Option<u64>,
@@ -1397,8 +1426,19 @@ pub fn peek(path: &Path) -> std::result::Result<Peek, OpenError> {
             _ => None,
         })
         .collect();
-    let recipient_slots = h.body.slots.iter().flatten().filter(|e| matches!(e.slot, Slot::Recipient { .. })).count();
+    let recipient_fprs: Vec<[u8; 16]> = h
+        .body
+        .slots
+        .iter()
+        .flatten()
+        .filter_map(|e| match &e.slot {
+            Slot::Recipient { recipient_fpr, .. } => Some(*recipient_fpr),
+            _ => None,
+        })
+        .collect();
+    let recipient_slots = recipient_fprs.len();
     Ok(Peek {
+        recipient_fprs,
         appearance: h.appearance.map(|a| a.appearance),
         unlock_ms: password_kdf.first().map(|k| estimate_unlock_ms(*k)),
         password_kdf,

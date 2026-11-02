@@ -3,6 +3,7 @@ import type {
   ApiError,
   AppearanceState,
   AutoLockStatus,
+  BioStatus,
   Backend,
   Drive,
   Emblem,
@@ -34,6 +35,8 @@ import { matchesFilters } from './search';
 import { DeviceMock } from './deviceMock';
 import { StickMock, type StickScenario } from './stickMock';
 import { ResizeMock } from './resizeMock';
+import { FIXED_MAX, FIXED_MIN, down4k } from './resize';
+import { KeyMock, fingerprintOf, samplePublic } from './keyMock';
 import { MOCK_LOG_SIZE, ViewersMock, generatedAsset, runsCode } from '../viewers/viewersMock';
 import { switches } from './switches';
 import { DEMO_DOCUMENTS, DEMO_HOME, DEMO_JOURNAL, DEMO_NAMES, DEMO_SLOTS, DEMO_STICK, DEMO_STICK_LABEL, DEMO_TAX } from './mockDemo';
@@ -209,6 +212,7 @@ interface MockVolume {
   lockedImage: string | null;
   duress: Map<number, string>;
   destroyed: boolean;
+  recipients?: Map<string, string>;
   singleFile?: boolean;
   fixed?: boolean;
   rolledBack?: { seen: number; now: number } | null;
@@ -230,6 +234,10 @@ const DAY = 86_400_000;
 
 function err(code: string, message: string): ApiError {
   return { code, message };
+}
+
+function bioScenario(): string | null {
+  return typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('bio');
 }
 
 const ASSET_BY_EXT: Record<string, string> = {
@@ -536,9 +544,11 @@ export class MockBackend {
   device!: DeviceMock;
   stick!: StickMock;
   private fmtFull = new Set<string>();
+  bio = new Map<string, { slot: number; stale: boolean }>();
   resize!: ResizeMock;
   viewers!: ViewersMock;
   browserLink!: BrowserLinkMock;
+  keys!: KeyMock;
   lastCreate: Record<string, unknown> | null = null;
 
   constructor(opts: Partial<MockOptions> = {}) {
@@ -578,6 +588,7 @@ export class MockBackend {
       },
       wait: (ms) => this.wait(ms),
     });
+    this.keys = new KeyMock({ seed: switches.mykey, installed: this.installed });
     const now = Date.now();
     const D = switches.demo;
     const docName = D ? DEMO_NAMES.documents : 'Documenti';
@@ -604,6 +615,11 @@ export class MockBackend {
       doc.slots.push({ index: 2, kind: 'duress', label: switches.demo ? DEMO_SLOTS.duress : 'Autodistruzione', kdf: { m_kib: 524_288, t: 3, p: 4 }, in_use: false });
       doc.duress.set(2, MOCK_DURESS_PASSWORD);
     }
+    if (switches.mykey === 'shared' && this.keys.mine)
+      for (const v of [doc, arc, dia]) {
+        this.addRecipientSlot(v, this.keys.mine.public, switches.demo ? 'Me' : 'Io');
+        this.addRecipientSlot(v, samplePublic('Anna'), 'Anna');
+      }
     if (!this.opts.empty) {
       const oldShown = forced !== 'hidden' && this.opts.appearance !== 'encrypted';
       this.recents = [
@@ -635,8 +651,9 @@ export class MockBackend {
     }
   }
 
-  private look(vol: MockVolume): Pick<RecentEntry, 'emblem' | 'show_when_locked' | 'accent' | 'emblem_frame' | 'volume_tag' | 'key_slots' | 'kdf'> {
-    const head = { volume_tag: volumeTag(vol.path), key_slots: vol.slots.length, kdf: vol.slots.find((s) => s.kind === 'password')?.kdf ?? null };
+  private look(vol: MockVolume): Pick<RecentEntry, 'emblem' | 'show_when_locked' | 'accent' | 'emblem_frame' | 'volume_tag' | 'key_slots' | 'kdf' | 'recipients'> {
+    const recipients = vol.slots.flatMap((s) => (s.kind === 'recipient' && s.fingerprint ? [s.fingerprint] : []));
+    const head = { volume_tag: volumeTag(vol.path), key_slots: vol.slots.length, kdf: vol.slots.find((s) => s.kind === 'password')?.kdf ?? null, recipients };
     if (!vol.emblem.show_when_locked) return { emblem: null, show_when_locked: false, accent: null, emblem_frame: null, ...head };
     const e = vol.emblem.emblem;
     const emblem: Emblem = e.kind === 'image' ? { kind: 'image', data_base64: vol.lockedImage ?? e.data_base64 } : structuredClone(e);
@@ -816,6 +833,18 @@ export class MockBackend {
     });
   }
 
+  private addRecipientSlot(vol: MockVolume, pub: string, label: string | null): void {
+    const fingerprint = fingerprintOf(pub);
+    if (vol.slots.some((s) => s.fingerprint === fingerprint)) throw err('recipient_exists', 'This person can already open the volume.');
+    if (vol.slots.length >= 8) throw err('slots_full', 'There are already 8 keys.');
+    const used = new Set(vol.slots.map((s) => s.index));
+    let index = 0;
+    while (used.has(index)) index++;
+    vol.slots.push({ index, kind: 'recipient', label: label?.trim() || null, fingerprint, in_use: false });
+    vol.slots.sort((x, y) => x.index - y.index);
+    (vol.recipients ??= new Map()).set(fingerprint, pub);
+  }
+
   private recentEntries(): RecentEntry[] {
     return this.recents.map((r) => {
       const vol = this.volumes.get(r.path);
@@ -989,6 +1018,32 @@ export class MockBackend {
     }
     this.emit('drives-changed', { drives: this.drives.map((x) => ({ ...x })) });
     return d;
+  }
+
+  removeDeviceSlots(path: string) {
+    const vol = this.volumes.get(path);
+    if (vol) vol.slots = vol.slots.filter((s) => s.kind !== 'device');
+  }
+
+  bioStatus(path: string): BioStatus {
+    const s = bioScenario();
+    const vol = this.volumes.get(path);
+    if (!vol) throw err('not_found', 'The volume file is not reachable.');
+    let r = this.bio.get(path);
+    const open = [...this.open.values()].some((o) => o.path === path);
+    if (r && !r.stale && open && !vol.slots.some((x) => x.index === r!.slot && x.kind === 'device')) {
+      this.bio.delete(path);
+      r = undefined;
+    }
+    const available = s !== 'none';
+    return {
+      available,
+      kind: s === 'face' ? 'face' : 'fingerprint',
+      reason: available ? '' : 'none_enrolled',
+      device: s === 'face' ? 'iPhone' : 'Pixel 9 Pro',
+      enabled: !!r && !r.stale,
+      stale: !!r?.stale,
+    };
   }
 
   autolockStatus(now = Date.now()): AutoLockStatus[] {
@@ -1422,6 +1477,13 @@ export class MockBackend {
         if (!path.toLowerCase().endsWith('.nvault')) throw err('invalid_name', 'The file must end in .nvault.');
         if (this.volumes.has(path)) throw err('exists', 'A volume with this name already exists.');
         if (!a.password) throw err('invalid_password', 'A password is needed.');
+        if (a.fixed_size != null) {
+          const n = down4k(Number(a.fixed_size));
+          if (!(n >= FIXED_MIN && n <= FIXED_MAX)) throw err('out_of_range', `The size must be between ${FIXED_MIN} and ${FIXED_MAX} bytes.`);
+          const drive = this.drives.filter((d) => path.startsWith(d.mount_path)).sort((x, y) => y.mount_path.length - x.mount_path.length)[0];
+          if (drive && drive.free_bytes < n) throw err('no_space', 'There is not enough free space for a volume of this size.');
+          if (drive) drive.free_bytes -= n;
+        }
         const vol = this.addVolume(path, [], Date.now());
         this.resize.created(path, a.fixed_size);
         vol.password = String(a.password);
@@ -1634,6 +1696,57 @@ export class MockBackend {
       }
       case 'mobile_docs_busy':
         return false;
+      case 'bio_status':
+        return this.bioStatus(String(a.path));
+      case 'bio_enable': {
+        const { ov, vol } = this.vault(String(a.vault));
+        await this.wait(400);
+        if (bioScenario() === 'cancel') throw err('cancelled', 'Cancelled.');
+        const old = this.bio.get(ov.path);
+        if (old) vol.slots = vol.slots.filter((s) => s.index !== old.slot || s.kind !== 'device');
+        if (vol.slots.length >= 8) throw err('slots_full', 'There are already 8 keys.');
+        const used = new Set(vol.slots.map((s) => s.index));
+        let index = 0;
+        while (used.has(index)) index++;
+        vol.slots.push({ index, kind: 'device', label: String(a.label) || null, in_use: false });
+        vol.slots.sort((x, y) => x.index - y.index);
+        this.bio.set(ov.path, { slot: index, stale: false });
+        return this.bioStatus(ov.path);
+      }
+      case 'bio_disable': {
+        const { ov, vol } = this.vault(String(a.vault));
+        await this.wait(60);
+        const r = this.bio.get(ov.path);
+        if (r) vol.slots = vol.slots.filter((s) => s.index !== r.slot || s.kind !== 'device');
+        this.bio.delete(ov.path);
+        return this.bioStatus(ov.path);
+      }
+      case 'bio_unlock': {
+        const path = String(a.path);
+        const vol = this.volumes.get(path);
+        const r = this.bio.get(path);
+        if (!vol) throw err('not_found', 'The volume file is not reachable.');
+        if (!r || r.stale) throw err('bio_off', 'Biometric unlock is off for this volume.');
+        await this.wait(500);
+        const scenario = bioScenario();
+        if (scenario === 'cancel') throw err('cancelled', 'Cancelled.');
+        if (scenario === 'changed') {
+          r.stale = true;
+          throw err('bio_invalidated', 'Biometrics changed.');
+        }
+        if (vol.destroyed || !vol.slots.some((s) => s.index === r.slot && s.kind === 'device')) {
+          r.stale = true;
+          throw err('bio_revoked', "This phone's key was removed from the volume.");
+        }
+        const already = [...this.open.values()].find((o) => o.path === path);
+        if (already) return this.info(already);
+        const n = ++this.vaultSeq;
+        const ov: OpenVault = { id: `v${n}`, path, mountpoint: null, seq: n, lastActivity: Date.now() };
+        this.open.set(ov.id, ov);
+        vol.slots.forEach((s) => (s.in_use = s.index === r.slot));
+        this.touchRecent(path);
+        return this.info(ov);
+      }
       case 'mobile_export_dir':
         return '/storage/emulated/0/Download/NiceVault';
       case 'mobile_share': {
@@ -1669,6 +1782,39 @@ export class MockBackend {
         return null;
       }
 
+      case 'slot_add_recipient': {
+        await this.wait(120);
+        const { vol } = this.vault(String(a.vault));
+        const pub = (await this.keys.invoke('recipient_check', { text: a.recipient }, (ms) => this.wait(ms))) as { public: string };
+        this.addRecipientSlot(vol, pub.public, (a.label as string) ?? null);
+        return vol.slots.map((s) => ({ ...s }));
+      }
+      case 'vault_open_with_key': {
+        const path = String(a.path);
+        const vol = this.volumes.get(path);
+        const mine = this.keys.mine;
+        if (!mine) throw err('no_key', 'There is no personal key on this computer.');
+        await this.wait(this.opts.unlockMs);
+        if (!vol) throw err('not_found', 'The volume file is not reachable.');
+        if (a.password !== mine.password) throw err('wrong_password', 'Wrong password for your key.');
+        const fpr = fingerprintOf(mine.public);
+        const slot = vol.destroyed ? undefined : vol.slots.find((s) => s.kind === 'recipient' && s.fingerprint === fpr);
+        if (!slot) throw err('not_recipient', 'This volume is not shared with your key.');
+        const already = [...this.open.values()].find((o) => o.path === path);
+        if (already) return this.info(already);
+        const n = ++this.vaultSeq;
+        const ov: OpenVault = {
+          id: `v${n}`,
+          path,
+          mountpoint: this.opts.mounted && !this.opts.mountUnavailable ? `/run/user/1000/nicevault/${vol.name}` : null,
+          seq: n,
+          lastActivity: Date.now(),
+        };
+        this.open.set(ov.id, ov);
+        vol.slots.forEach((s) => (s.in_use = s.index === slot.index));
+        this.touchRecent(path);
+        return this.info(ov);
+      }
       case 'slots_list': {
         const { vol } = this.vault(String(a.vault));
         return vol.slots.map((s) => ({ ...s }));
@@ -1726,8 +1872,10 @@ export class MockBackend {
         if (s.kind !== 'password') throw err('invalid_slot', 'This key is not a password.');
         await this.wait(Math.max(this.opts.unlockMs, 2600));
         if (a.password !== vol.password) throw err('wrong_password', 'Wrong password.');
+        const keep = vol.slots.filter((x) => x.kind === 'recipient' && x.fingerprint && vol.recipients?.has(x.fingerprint));
         vol.slots = [{ ...s, in_use: true }];
         vol.duress.clear();
+        for (const r of keep) this.addRecipientSlot(vol, vol.recipients!.get(r.fingerprint!)!, r.label ?? null);
         return vol.slots.map((x) => ({ ...x }));
       }
       case 'slot_remove': {
@@ -1735,7 +1883,9 @@ export class MockBackend {
         const { vol } = this.vault(String(a.vault));
         const slot = Number(a.slot);
         if (!vol.slots.some((x) => x.index === slot)) throw err('not_found', 'Key not found.');
-        if (!vol.slots.some((x) => x.index !== slot && x.kind !== 'duress')) throw err('last_slot', 'It is the only key: it cannot be removed.');
+        if (!vol.slots.some((x) => x.index !== slot && x.kind !== 'duress' && x.kind !== 'device')) throw err('last_slot', 'It is the only key: it cannot be removed.');
+        const gone = vol.slots.find((x) => x.index === slot);
+        if (gone?.fingerprint) vol.recipients?.delete(gone.fingerprint);
         vol.slots = vol.slots.filter((x) => x.index !== slot);
         vol.duress.delete(slot);
         return vol.slots.map((s) => ({ ...s }));
@@ -1795,6 +1945,7 @@ export class MockBackend {
         if (cmd === 'media_url' || cmd === 'media_release' || cmd === 'fs_open_mounted' || cmd === 'open_link') return this.viewers.invoke(cmd, a);
         if (cmd.startsWith('app_')) return this.global(cmd, a);
         if (cmd.startsWith('browser_')) return this.browserLink.invoke(cmd, a);
+        if (this.keys.handles(cmd)) return this.keys.invoke(cmd, a, (ms) => this.wait(ms));
         throw err('unknown_command', `Unknown command: ${cmd}`);
     }
   }

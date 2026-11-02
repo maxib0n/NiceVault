@@ -99,12 +99,12 @@
         </li>
         <li>
           <span class="t-mark warn" aria-hidden="true"><TriangleAlert size={14} /></span>
-          <span>{m.rot_keeps()}</span>
+          <span>{slots.some((s) => s.kind === 'recipient') ? m.rot_keeps_recipients() : m.rot_keeps()}</span>
         </li>
       </ul>
       {#if !roomy}<p class="error-text" role="alert">{m.rot_no_space()}</p>{/if}
     {:else if step === 2}
-      <p id="rot-what" class="hint">{m.rot_keeps()}</p>
+      <p id="rot-what" class="hint">{slots.some((s) => s.kind === 'recipient') ? m.rot_keeps_recipients() : m.rot_keeps()}</p>
       {#if keepable.length > 1}
         <div class="field">
           <span class="field-label" id="rot-keep">{m.rot_keep()}</span>

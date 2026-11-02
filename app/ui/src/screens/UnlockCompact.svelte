@@ -8,6 +8,8 @@
   import type { RecentEntry } from '../lib/types';
   import { m } from '../paraglide/messages.js';
   import PasswordField from '../components/PasswordField.svelte';
+  import TitleBar from '../components/TitleBar.svelte';
+  import { installFrame } from '../lib/windowFrame.svelte';
 
   let { spec }: { spec: CompactSpec } = $props();
 
@@ -22,6 +24,7 @@
   const name = $derived(recents.find((r) => r.path === path)?.name ?? path.split(/[\\/]/).pop()?.replace(/\.nvault$/i, '') ?? '');
 
   onMount(() => {
+    const disposeFrame = installFrame();
     path = spec.path;
     (window as unknown as { __nvCompactSet: (s: CompactSpec) => void }).__nvCompactSet = (s) => {
       path = s.path;
@@ -40,6 +43,7 @@
       recents = await api.recentList().catch(() => []);
       document.title = m.brw_unlock_title({ name });
     })();
+    return disposeFrame;
   });
 
   async function unlock() {
@@ -66,6 +70,7 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && void cancel()} />
 
+<TitleBar title={m.brw_unlock_title({ name })} compact />
 <main class="compact" data-testid="unlock-compact" data-path={path}>
   <h1 class="display">{m.brw_unlock_title({ name })}</h1>
   <p class="hint">{m.brw_unlock_hint()}</p>
@@ -89,7 +94,8 @@
 
 <style>
   .compact {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);

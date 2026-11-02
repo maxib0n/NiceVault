@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Base64
 import android.webkit.MimeTypeMap
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -55,6 +56,14 @@ class GalleryCloseArgs {
 @InvokeArg
 class PickArgs {
   var multiple: Boolean = true
+}
+
+@InvokeArg
+class BioArgs {
+  lateinit var alias: String
+  var data: String = ""
+  var title: String = ""
+  var cancel: String = ""
 }
 
 @TauriPlugin
@@ -191,6 +200,43 @@ class NvPlugin(private val activity: Activity) : Plugin(activity) {
     } catch (e: Exception) {
       invoke.reject(e.message ?: "gallery failed", "io")
     }
+  }
+
+  @Command
+  fun bioStatus(invoke: Invoke) {
+    val s = NvBiometric.status(activity)
+    val o = JSObject()
+    for ((k, v) in s) o.put(k, v)
+    invoke.resolve(o)
+  }
+
+  @Command
+  fun bioWrap(invoke: Invoke) {
+    val args = invoke.parseArgs(BioArgs::class.java)
+    val secret = Base64.decode(args.data, Base64.NO_WRAP)
+    NvBiometric.wrap(activity, args.alias, secret, args.title, args.cancel) { r -> bioAnswer(invoke, r) }
+  }
+
+  @Command
+  fun bioUnwrap(invoke: Invoke) {
+    val args = invoke.parseArgs(BioArgs::class.java)
+    val blob = Base64.decode(args.data, Base64.NO_WRAP)
+    NvBiometric.unwrap(activity, args.alias, blob, args.title, args.cancel) { r -> bioAnswer(invoke, r) }
+  }
+
+  @Command
+  fun bioDelete(invoke: Invoke) {
+    NvBiometric.delete(invoke.parseArgs(BioArgs::class.java).alias)
+    invoke.resolve()
+  }
+
+  private fun bioAnswer(invoke: Invoke, r: Result<ByteArray>) {
+    r.fold({ b ->
+      invoke.resolve(JSObject().put("data", Base64.encodeToString(b, Base64.NO_WRAP)))
+      b.fill(0)
+    }, { e ->
+      invoke.reject(e.message ?: "biometric failed", (e as? BioError)?.code ?: "bio_failed")
+    })
   }
 
   @Command

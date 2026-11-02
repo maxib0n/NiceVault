@@ -56,6 +56,8 @@ export interface Switches {
   slow_delete: number | null;
   demo: boolean;
   recents: 'long' | null;
+  splash: 'hold' | number | null;
+  mykey: 'mine' | 'shared' | null;
 }
 
 function pick<T extends string>(v: string | null, allowed: readonly T[]): T | null {
@@ -121,6 +123,8 @@ export function parseSwitches(search: string): Switches {
     slow_delete: q.has('slow_delete') ? Number(q.get('slow_delete')) > 0 ? Number(q.get('slow_delete')) : 700 : null,
     demo: flag('demo'),
     recents: pick(q.get('recents'), ['long'] as const),
+    splash: q.get('splash') === 'hold' ? 'hold' : Number(q.get('splash')) > 0 ? Number(q.get('splash')) : null,
+    mykey: pick(q.get('mykey'), ['mine', 'shared'] as const),
     pm: Number.isInteger(Number(q.get('pm'))) && Number(q.get('pm')) > 0 ? Math.min(Number(q.get('pm')), 20000) : null,
   };
 }

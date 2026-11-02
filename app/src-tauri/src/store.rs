@@ -33,6 +33,8 @@ pub struct RecentEntry {
     pub key_slots: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kdf: Option<nv_core::KdfParams>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recipients: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emblem_frame: Option<String>,
 }
@@ -789,6 +791,7 @@ fn entry(p: &Path, source: &'static str, last: Option<u64>, measured: Option<u64
         volume_tag: None,
         key_slots: None,
         kdf: None,
+        recipients: Vec::new(),
         emblem_frame: None,
     };
     let Some(md) = md else { return Some(e) };
@@ -799,6 +802,7 @@ fn entry(p: &Path, source: &'static str, last: Option<u64>, measured: Option<u64
             e.volume_tag = Some(volume_tag(&peek.volume_id));
             e.key_slots = u32::try_from(peek.slots).ok();
             e.kdf = peek.password_kdf.first().copied();
+            e.recipients = peek.recipient_fprs.iter().map(|f| crate::mykey::hex(f)).collect();
             if let Some(a) = &peek.appearance {
                 let (accent, emblem) = crate::appearance::from_header(a);
                 e.accent = accent;

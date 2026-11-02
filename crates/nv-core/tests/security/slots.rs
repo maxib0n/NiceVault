@@ -126,3 +126,41 @@ fn duress_destroys_every_slot_and_keeps_the_shape() {
         assert!(survivors < 4, "{survivors} old 16-byte windows survive (only Argon2 params / tags may)");
     }
 }
+
+#[test]
+fn device_slot_opens_only_with_its_kek_and_stays_readable_by_older_builds() {
+    let t = tempfile::tempdir().unwrap();
+    let (p, _, _) = sample(t.path(), "v.nvault");
+    let v = Vault::open(&p, &pw("pw")).unwrap();
+    let (idx, kek) = v.add_device(Some("Pixel — impronta")).unwrap();
+    assert_eq!(idx, 1);
+    let s = v.slots();
+    assert_eq!((s[1].kind, s[1].label.as_deref()), ("device", Some("Pixel — impronta")));
+    assert!(matches!(v.remove_slot(0), Err(nv_core::SlotError::LastSlot)));
+    v.close().unwrap();
+
+    for c in 0..2 {
+        assert!(matches!(read_copy(&p, c).body.slots[1], Some(SlotEntry { slot: Slot::Fido2(_), .. })));
+    }
+    Vault::open(&p, &pw("pw")).unwrap().close().unwrap();
+    let v = Vault::open_with_device(&p, idx, &kek).unwrap();
+    assert_eq!(v.unlocked_slot(), Some(idx));
+    v.close().unwrap();
+    let mut wrong = *kek;
+    wrong[0] ^= 1;
+    assert_eq!(Vault::open_with_device(&p, idx, &wrong).err(), Some(OpenError::WrongPassword));
+    assert_eq!(Vault::open_with_device(&p, 0, &kek).err(), Some(OpenError::WrongPassword));
+    assert_eq!(Vault::open_with_device(&p, 7, &kek).err(), Some(OpenError::WrongPassword));
+
+    let v = Vault::open(&p, &pw("pw")).unwrap();
+    v.remove_slot(idx).unwrap();
+    v.close().unwrap();
+    assert_eq!(Vault::open_with_device(&p, idx, &kek).err(), Some(OpenError::WrongPassword));
+
+    let v = Vault::open(&p, &pw("pw")).unwrap();
+    let (idx, kek) = v.add_device(None).unwrap();
+    v.add_duress(&pw("panico"), KdfPreset::Fast, None).unwrap();
+    v.close().unwrap();
+    assert_eq!(Vault::open(&p, &pw("panico")).err(), Some(OpenError::WrongPassword));
+    assert_eq!(Vault::open_with_device(&p, idx, &kek).err(), Some(OpenError::WrongPassword));
+}

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { ArrowLeft, LockKeyholeOpen } from '@lucide/svelte';
+  import { ArrowLeft, FingerprintPattern, KeyRound, LockKeyholeOpen, ScanFace } from '@lucide/svelte';
   import { m } from '../paraglide/messages.js';
   import { onDestroy } from 'svelte';
   import { app, lockReasonText } from '../lib/stores/app.svelte';
   import { vaults } from '../lib/stores/vaults.svelte';
+  import { myKey } from '../lib/stores/mykey.svelte';
   import { formatAgo, formatBytes } from '../lib/format';
   import { lidClose, lidOpen } from '../components/ceremony';
   import { lockedFrame, lockedView } from '../lib/emblem';
@@ -22,6 +23,10 @@
   import { mrzLines, placeOf } from '../ornament/document';
   import { hashString } from '../ornament/lathe';
   import { decode } from '../lib/reveal';
+  import * as api from '../lib/api';
+  import { bioTitle } from '../lib/biometric';
+  import { isMobile } from '../lib/platform';
+  import type { BioStatus } from '../lib/types';
 
   let password = $state('');
   let input: HTMLInputElement | undefined = $state();
@@ -29,6 +34,19 @@
   let raf = 0;
 
   const target = $derived(app.unlockTarget);
+  void myKey.load();
+  const keyOffer = $derived(myKey.opens(app.recents.find((r) => r.path === target?.path) ?? target));
+  let withKey = $state(false);
+  $effect(() => {
+    void target?.path;
+    withKey = keyOffer;
+  });
+  function toggleKey() {
+    withKey = !withKey;
+    password = '';
+    vaults.resetUnlock();
+    queueMicrotask(() => input?.focus());
+  }
   const phase = $derived(vaults.unlock.phase);
   const busy = $derived(phase === 'unlocking');
   const gone = $derived.by(() => {
@@ -84,7 +102,24 @@
     e?.preventDefault();
     if (!target || busy || gone || !password) return;
     const pw = password;
-    await vaults.unlockVault(target, pw);
+    await (withKey ? vaults.unlockWithKey(target, pw) : vaults.unlockVault(target, pw));
+  }
+
+  let bio = $state<BioStatus | null>(null);
+  $effect(() => {
+    const path = target?.path;
+    bio = null;
+    if (!isMobile || !path) return;
+    api.bioStatus(path).then(
+      (s) => target?.path === path && (bio = s),
+      () => {},
+    );
+  });
+  async function unlockBio() {
+    if (!target || busy || gone) return;
+    const t = target;
+    const ok = await vaults.unlockBiometric(t);
+    if (!ok && target?.path === t.path) bio = await api.bioStatus(t.path).catch(() => null);
   }
 
   function back() {
@@ -131,7 +166,7 @@
 
         <section class="data-panel">
           <p class="caps kicker">{m.volume_encrypted()}{place ? ` · ${place}` : ''}</p>
-          <h1 id="unlock-title" class="name display">{target?.name ?? m.volume()}</h1>
+          <h1 id="unlock-title" class="name display" style:--len={Math.max(12, target?.name.length ?? 0)}>{target?.name ?? m.volume()}</h1>
           <Microline text="NICEVAULT · {target?.name?.toUpperCase() ?? ''} · {m.volume_encrypted().toUpperCase()} · " />
           <dl class="facts">
             <div>
@@ -148,11 +183,11 @@
             </div>
           </dl>
 
-          <form class="pw-form" onsubmit={submit} aria-busy={busy}>
+          <form class="pw-form" onsubmit={submit} aria-busy={busy} data-with-key={withKey}>
             <PasswordField
               bind:value={password}
               bind:input
-              label={m.password()}
+              label={withKey ? m.unlock_key_password() : m.password()}
               variant="document"
               autofocus
               disabled={busy || gone}
@@ -164,10 +199,21 @@
               {busy ? m.unlock_busy() : m.unlock_submit()}
             </button>
           </form>
+          {#if bio?.enabled}
+            <button type="button" class="btn lg bio-key" onclick={unlockBio} disabled={busy || gone} data-testid="bio-unlock">
+              {#if bio.kind === 'face'}<ScanFace size={18} aria-hidden="true" />{:else}<FingerprintPattern size={18} aria-hidden="true" />{/if}
+              {bioTitle(bio)}
+            </button>
+          {/if}
 
+          {#if keyOffer}
+            <button type="button" class="btn ghost sm key-toggle" onclick={toggleKey} disabled={busy} data-testid="unlock-key-toggle">
+              {#if withKey}<LockKeyholeOpen size={14} aria-hidden="true" /> {m.unlock_with_password()}{:else}<KeyRound size={14} aria-hidden="true" /> {m.unlock_with_key()}{/if}
+            </button>
+          {/if}
           <div class="messages">
             <p class="status" role="status" aria-live="polite">
-              {#if busy}{m.unlock_status()}{:else if gone}{m.unlock_drive_gone()}{/if}
+              {#if busy}{m.unlock_status()}{:else if gone}{m.unlock_drive_gone()}{:else if withKey && phase !== 'error'}{m.unlock_key_hint()}{/if}
             </p>
             {#if phase === 'error' && vaults.unlock.error}
               {#key vaults.unlock.errorSeq}
@@ -182,7 +228,7 @@
           {#if target?.volume_tag}<span class="perforated"><Perforation text={target.volume_tag} /></span>{/if}
         </div>
 
-        <p class="mrz" aria-hidden="true"><span>{mrz[0]}</span><span>{mrz[1]}</span></p>
+        <p class="mrz" aria-hidden="true">{#each mrz as line, i (i)}<span>{#each line as c, j (j)}<i>{c}</i>{/each}</span>{/each}</p>
       </div>
       <Stitch track={docStitch} pitch={docPitch} width={1.5} />
       {#if reasonText}
@@ -200,9 +246,10 @@
     z-index: 2;
     height: 100%;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(max-content, 1fr) auto;
     overflow: auto;
     overflow-x: hidden;
+    container-type: size;
   }
   .board {
     position: fixed;
@@ -226,36 +273,22 @@
   }
 
   .document {
-    --w: min(1240px, calc(100vw - 64px), calc((100vh - 124px) * 1.98));
+    --w: min(1240px, calc(100cqw - 64px), calc((100cqh - 124px) * 1.98));
     width: var(--w);
-    aspect-ratio: 1.98;
+    min-height: calc(var(--w) / 1.98);
     container-type: inline-size;
     border-radius: calc(max(12px, var(--w) * 0.0135) + max(2.5px, var(--w) * 0.0034));
     overflow: hidden;
     box-shadow: var(--shadow-sheet);
   }
   .face {
-    position: absolute;
-    inset: 4.6cqw 4.4cqw 3.4cqw;
+    position: relative;
+    margin: 4.6cqw 4.4cqw 3.4cqw;
+    min-height: calc(var(--w) / 1.98 - 8cqw);
     display: grid;
     grid-template-columns: 29cqw 1.8cqw minmax(0, 1fr) 15cqw;
     grid-template-rows: minmax(0, 1fr) auto;
     column-gap: 0;
-  }
-  @media (max-height: 460px), (max-width: 680px) {
-    .unlock {
-      grid-template-rows: auto minmax(max-content, 1fr) auto;
-    }
-    .document {
-      aspect-ratio: auto;
-      min-height: calc(var(--w) / 1.98);
-    }
-    .face {
-      position: relative;
-      inset: auto;
-      margin: 4.6cqw 4.4cqw 3.4cqw;
-      min-height: calc(var(--w) / 1.98 - 8cqw);
-    }
   }
 
   .seal-panel {
@@ -328,7 +361,7 @@
   }
   .name {
     margin-top: 1.1cqw;
-    font-size: clamp(32px, 6.1cqw, 76px);
+    font-size: clamp(26px, min(6.1cqw, 150cqw / var(--len)), 76px);
     font-weight: 500;
     line-height: 1.02;
     color: var(--title-ink);
@@ -342,18 +375,29 @@
     margin-top: 1.3cqw;
   }
   .facts {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, auto));
-    justify-content: start;
-    gap: 0 3.2cqw;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 3.2cqw;
     margin: 1.5cqw 0 0;
+  }
+  .facts > div {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .facts dt {
+    white-space: nowrap;
   }
   .facts dd {
     margin: 6px 0 0;
     font-size: clamp(13px, 1.3cqw, 15px);
     font-weight: 500;
     color: var(--ink);
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .facts div:first-child dd {
+    max-width: 26ch;
   }
 
   .pw-form {
@@ -393,6 +437,14 @@
     box-shadow:
       inset 0 0 0 1px var(--key-accent-edge),
       inset 0 1px 4px rgb(0 0 0 / 0.35);
+  }
+  .bio-key {
+    justify-self: start;
+    margin-top: 10px;
+  }
+  .key-toggle {
+    align-self: flex-start;
+    margin-top: 6px;
   }
   .messages {
     display: grid;
@@ -436,7 +488,6 @@
   .mrz {
     grid-column: 3 / -1;
     grid-row: 2;
-    container-type: inline-size;
     display: flex;
     flex-direction: column;
     gap: 0.25em;
@@ -450,14 +501,18 @@
     white-space: nowrap;
   }
   .mrz span {
-    letter-spacing: calc((100cqw - 26.4em) / 44);
+    display: flex;
+    justify-content: space-between;
+  }
+  .mrz i {
+    font-style: normal;
   }
 
   .reason {
     position: absolute;
-    right: 24cqw;
-    bottom: 11.5cqw;
-    transform: rotate(-6deg);
+    left: 18cqw;
+    top: 17cqw;
+    transform: translate(-50%, -50%) rotate(-6deg);
     padding: 0.5cqw 1.2cqw;
     border: 2px solid currentColor;
     outline: 1px solid currentColor;

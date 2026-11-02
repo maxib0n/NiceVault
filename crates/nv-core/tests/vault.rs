@@ -625,6 +625,34 @@ fn appearance_peek_without_password() {
 }
 
 #[test]
+fn recipient_share_open_revoke() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("s.nvault");
+    let v = Vault::create(&path, &pw("alice"), KdfPreset::Fast).unwrap();
+    let anna = Identity::generate();
+    let bruno = Identity::generate();
+    let ia = v.add_recipient(&Recipient::parse(&anna.recipient().to_string()).unwrap(), Some("Anna")).unwrap();
+    let ib = v.add_recipient(&bruno.recipient(), Some("Bruno")).unwrap();
+    v.close().unwrap();
+    let p = nv_core::peek(&path).unwrap();
+    assert_eq!(p.recipient_fprs, [anna.recipient().fingerprint(), bruno.recipient().fingerprint()]);
+    assert_eq!(p.recipient_slots, 2);
+
+    let v = Vault::open_with_identity(&path, &anna).unwrap();
+    assert_eq!(v.unlocked_slot(), Some(ia));
+    assert_eq!(v.slots()[ia].label.as_deref(), Some("Anna"));
+    v.close().unwrap();
+    assert_eq!(Vault::open_with_identity(&path, &Identity::generate()).err(), Some(OpenError::WrongPassword), "wrong key");
+
+    let v = Vault::open(&path, &pw("alice")).unwrap();
+    v.remove_slot(ib).unwrap();
+    v.close().unwrap();
+    assert_eq!(Vault::open_with_identity(&path, &bruno).err(), Some(OpenError::WrongPassword), "revoked");
+    assert_eq!(nv_core::peek(&path).unwrap().recipient_fprs, [anna.recipient().fingerprint()]);
+    Vault::open_with_identity(&path, &anna).unwrap().close().unwrap();
+}
+
+#[test]
 fn appearance_tamper_is_detected_on_unlock() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("t.nvault");

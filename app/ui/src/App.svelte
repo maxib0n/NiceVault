@@ -16,6 +16,7 @@
   import { vaults } from './lib/stores/vaults.svelte';
   import { installInk } from './ornament/ink.svelte';
   import { warmUp } from './lib/warm';
+  import { splashReady } from './lib/splash';
   import WarmUp from './components/WarmUp.svelte';
   import { installShellGuards } from './lib/shell';
   import Toasts from './components/Toasts.svelte';
@@ -30,6 +31,8 @@
   import Welcome from './screens/Welcome.svelte';
   import Settings from './screens/Settings.svelte';
   import { i18n, installLang } from './lib/i18n.svelte';
+  import TitleBar from './components/TitleBar.svelte';
+  import { installFrame } from './lib/windowFrame.svelte';
 
   let ready = $state(false);
 
@@ -41,8 +44,9 @@
 
   $effect(() => applyAccent(switches.accent ?? accent.current));
 
+  const title = $derived(vaults.active && app.world === 'open' ? `${vaults.active.name} · NiceVault` : 'NiceVault');
   $effect(() => {
-    document.title = vaults.active && app.world === 'open' ? `${vaults.active.name} · NiceVault` : 'NiceVault';
+    document.title = title;
   });
 
   onMount(() => {
@@ -50,6 +54,7 @@
     warmUp(WarmUp);
     const disposers: (() => void)[] = [];
     disposers.push(installLang());
+    disposers.push(installFrame());
     disposers.push(installShellGuards(window, { app: api.isTauri, devMenu: api.isTauri && import.meta.env.DEV }));
     disposers.push(idle.install(() => void lockAllIdle()));
     (async () => {
@@ -73,6 +78,7 @@
       await app.loadRecents();
       await applySwitches();
       ready = true;
+      splashReady();
       const takePath = () => void app.takeLaunchPath(vaults.open, (id) => vaults.activate(id));
       disposers.push(await api.onOpenPath(takePath));
       takePath();
@@ -107,6 +113,7 @@
   }}
 />
 
+<TitleBar {title} />
 <div class="app" data-world={app.world} data-screen={app.screen} data-ready={ready}>
   {#if app.screen === 'welcome'}
     <Welcome />
@@ -131,7 +138,8 @@
 
 <style>
   .app {
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     display: grid;
     grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     overflow: hidden;

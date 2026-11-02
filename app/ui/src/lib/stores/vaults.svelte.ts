@@ -72,7 +72,15 @@ class Vaults {
     void app.loadRecents();
   }
 
-  async unlockVault(target: RecentEntry, password: string): Promise<boolean> {
+  unlockWithKey(target: RecentEntry, password: string): Promise<boolean> {
+    return this.unlockVault(target, password, api.vaultOpenWithKey);
+  }
+
+  unlockBiometric(target: RecentEntry): Promise<boolean> {
+    return this.unlockVault(target, '', (path) => api.bioUnlock(path, target.name));
+  }
+
+  async unlockVault(target: RecentEntry, password: string, opener: (path: string, password: string) => Promise<VaultInfo> = api.vaultOpen): Promise<boolean> {
     if (this.unlock.phase === 'unlocking') return false;
     const t0 = performance.now();
     this.unlock = {
@@ -84,7 +92,7 @@ class Vaults {
       error: null,
     };
     try {
-      const info = await api.vaultOpen(target.path, password);
+      const info = await opener(target.path, password);
       this.unlock = { ...this.unlock, phase: 'success', tookMs: performance.now() - t0 };
       this.unlockedAt = performance.now();
       this.adopt(info);
@@ -95,6 +103,10 @@ class Vaults {
       return true;
     } catch (e) {
       const code = errorCode(e);
+      if (code === 'cancelled') {
+        this.unlock = { ...this.unlock, phase: 'idle', error: null };
+        return false;
+      }
       if (code === 'wrong_password') play('wrong');
       this.unlock = {
         ...this.unlock,

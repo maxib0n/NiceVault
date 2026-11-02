@@ -4,7 +4,7 @@
   import { m } from '../paraglide/messages.js';
   import * as api from '../lib/api';
   import { formatBytes } from '../lib/format';
-  import { drives } from '../lib/stores/drives.svelte';
+  import { driveName, drives } from '../lib/stores/drives.svelte';
   import type { Drive } from '../lib/types';
 
   interface Props {
@@ -16,12 +16,6 @@
   let selected = $state<string | null>(null);
   let custom = $state<string | null>(null);
   let gone = $state<string | null>(null);
-
-  function driveName(d: Drive): string {
-    if (d.system) return m.drive_system();
-    if (d.label) return d.label;
-    return d.mount_path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || d.mount_path;
-  }
 
   const usedPct = (d: Drive) => (d.total_bytes > 0 ? Math.min(100, Math.max(0, Math.round(((d.total_bytes - d.free_bytes) / d.total_bytes) * 100))) : 0);
 

@@ -10,11 +10,13 @@ import UnlockCompact from './screens/UnlockCompact.svelte';
 import { compactSpec } from './lib/browserLink';
 import { trackModality } from './lib/modality';
 import { installMobile } from './lib/mobile';
+import { installSplash } from './lib/splash';
 
 trackModality();
 installMobile();
 
 const compact = compactSpec();
+installSplash(!!compact);
 const app = compact ? mount(UnlockCompact, { target: document.getElementById('app')!, props: { spec: compact } }) : mount(App, { target: document.getElementById('app')! });
 
 export default app;

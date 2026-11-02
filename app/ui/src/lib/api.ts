@@ -4,6 +4,7 @@ import { switches } from './switches';
 import { isIos, isMobile } from './platform';
 import type {
   PhotoImport,
+  BioStatus,
   ApiError,
   AppearanceState,
   Backend,
@@ -16,6 +17,8 @@ import type {
   JobId,
   Kdf,
   LockReason,
+  MyKey,
+  RecipientCheck,
   NodeId,
   RecentEntry,
   ResizeInfo,
@@ -200,6 +203,12 @@ export const mobileSaveGallery = (vault: VaultId, nodes: NodeId[]) =>
   call<{ saved: NodeId[]; others: NodeId[] }>('mobile_save_gallery', { vault, nodes });
 export const mobileDocsBusy = () => call<boolean>('mobile_docs_busy');
 export const mobilePickFiles = (multiple: boolean) => call<string[]>('mobile_pick_files', { multiple });
+export const bioStatus = (path: string) => call<BioStatus>('bio_status', { path });
+export const bioEnable = (vault: VaultId, label: string) =>
+  call<BioStatus>('bio_enable', { vault, label, prompt: { title: m.bio_prompt_enable(), cancel: m.bio_prompt_cancel() } });
+export const bioDisable = (vault: VaultId) => call<BioStatus>('bio_disable', { vault });
+export const bioUnlock = (path: string, name: string) =>
+  call<VaultInfo>('bio_unlock', { path, prompt: { title: m.bio_prompt_unlock({ name }), cancel: m.bio_prompt_cancel() } });
 export const mediaUrl = (vault: VaultId, node: NodeId) => call<string | null>('media_url', { vault, node });
 export const mediaRelease = (url: string) => call<void>('media_release', { url });
 export const fsOpenMounted = (vault: VaultId, node: NodeId) => call<void>('fs_open_mounted', { vault, node });
@@ -299,6 +308,25 @@ export const vaultTouch = (vault: VaultId) => call<void>('vault_touch', { vault 
 export const autolockStatus = () => call<import('./types').AutoLockStatus[]>('autolock_status');
 export const slotAddDuress = (vault: VaultId, password: string, label?: string) =>
   call<SlotInfo[]>('slot_add_duress', { vault, password, label: label ?? null });
+
+export const myKeyGet = () => call<MyKey>('my_key_get');
+export const myKeyCreate = (password: string) => call<MyKey>('my_key_create', { password });
+export const myKeyImport = (path: string, password: string) => call<MyKey>('my_key_import', { path, password });
+export const myKeyExport = (dest: string) => call<void>('my_key_export', { dest });
+export const myKeyExportPublic = (dest: string) => call<void>('my_key_export_public', { dest });
+export const myKeyRemove = () => call<MyKey>('my_key_remove');
+export const recipientCheck = (text: string) => call<RecipientCheck>('recipient_check', { text });
+export const recipientReadFile = (path: string) => call<RecipientCheck>('recipient_read_file', { path });
+export const slotAddRecipient = (vault: VaultId, recipient: string, label?: string) =>
+  call<SlotInfo[]>('slot_add_recipient', { vault, recipient, label: label ?? null });
+export const vaultOpenWithKey = (path: string, password: string) => call<VaultInfo>('vault_open_with_key', { path, password });
+
+export async function pickSavePath(title: string, name: string, extensions: string[]): Promise<string | null> {
+  if (!isTauri) return `/home/utente/Scaricati/${name}`;
+  const { save } = await import('@tauri-apps/plugin-dialog');
+  const r = await save({ title, defaultPath: name, filters: [{ name: title, extensions }] });
+  return typeof r === 'string' ? r : null;
+}
 
 export interface AppSettings {
   language: string;

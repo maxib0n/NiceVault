@@ -504,6 +504,27 @@
   .file-view-wrap[data-results] {
     --list-cols: var(--row-vis-w, 30px) minmax(0, 1fr) auto minmax(0, 30%) 96px 136px;
   }
+  .file-view-wrap {
+    container-type: inline-size;
+  }
+  @container (max-width: 620px) {
+    :global(:root:not([data-platform='mobile'])) :is(.list-header, .file-view-wrap :global(.file-item[data-layout='list'])) {
+      --list-cols: var(--row-vis-w, 30px) minmax(0, 1fr) auto 88px 120px;
+    }
+    :global(:root:not([data-platform='mobile'])) .list-header .col:is([data-col='type'], [data-col='place']),
+    :global(:root:not([data-platform='mobile'])) .file-view-wrap :global(.file-item[data-layout='list'] > :is(.type, .place)) {
+      display: none;
+    }
+  }
+  @container (max-width: 440px) {
+    :global(:root:not([data-platform='mobile'])) :is(.list-header, .file-view-wrap :global(.file-item[data-layout='list'])) {
+      --list-cols: var(--row-vis-w, 30px) minmax(0, 1fr) auto 80px;
+    }
+    :global(:root:not([data-platform='mobile'])) .list-header .col[data-col='mtime'],
+    :global(:root:not([data-platform='mobile'])) .file-view-wrap :global(.file-item[data-layout='list'] > .mtime) {
+      display: none;
+    }
+  }
   .col.static {
     display: inline-flex;
     cursor: default;

@@ -29,7 +29,23 @@ pub enum Slot {
         nonce: [u8; 24],
         wrapped: Vec<u8>,
     },
-    Fido2(Vec<u8>),
+    Ext(Vec<u8>),
+}
+
+pub const DEVICE_KIND: u8 = 3;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ExtSlot {
+    Device { nonce: [u8; 24], wrapped: Vec<u8> },
+}
+
+impl ExtSlot {
+    pub fn decode(b: &[u8]) -> Option<Self> {
+        postcard::from_bytes(b).ok()
+    }
+    pub fn encode(&self) -> Vec<u8> {
+        postcard::to_allocvec(self).expect("serialize ext slot")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -387,7 +403,7 @@ mod tests {
     use super::*;
 
     fn sample() -> Header {
-        let body = HeaderBody { magic: MAGIC, version: VERSION, volume_id: [7; 16], seq: 3, slots: vec![None, Some(SlotEntry::new(Slot::Fido2(vec![1]), None))] };
+        let body = HeaderBody { magic: MAGIC, version: VERSION, volume_id: [7; 16], seq: 3, slots: vec![None, Some(SlotEntry::new(Slot::Ext(vec![1]), None))] };
         Header { body, header_mac: [9; 32], appearance: None, layout: None, fixed: None, journal: None }
     }
 

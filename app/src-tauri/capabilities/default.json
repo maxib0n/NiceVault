@@ -1,12 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core events/webview APIs and native open/save dialogs.",
+  "description": "Main window: core events/webview APIs, its own title bar (drag, minimize, maximize, close through the close request) and native open/save dialogs.",
   "windows": ["main", "unlock"],
   "permissions": [
     "core:default",
     "core:webview:default",
     "core:window:allow-set-fullscreen",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
     "core:event:default",
     "dialog:allow-open",
     "dialog:allow-save"

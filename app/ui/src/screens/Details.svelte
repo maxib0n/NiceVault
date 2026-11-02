@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { KeyRound, Plus, RotateCcwKey, ShieldAlert } from '@lucide/svelte';
+  import { FingerprintPattern, KeyRound, Plus, RotateCcwKey, ShieldAlert, UserRound } from '@lucide/svelte';
   import * as api from '../lib/api';
   import { backendLabel, backendReason } from '../lib/backends';
   import { errorCode, errorText } from '../lib/errors';
@@ -28,6 +28,10 @@
   import PasswordField from '../components/PasswordField.svelte';
   import StrengthMeter from '../components/StrengthMeter.svelte';
   import ResizeDialog from '../components/ResizeDialog.svelte';
+  import BiometricSwitch from '../components/BiometricSwitch.svelte';
+  import { isMobile } from '../lib/platform';
+  import AddRecipient from '../components/AddRecipient.svelte';
+  import { groupFingerprint, myKey } from '../lib/stores/mykey.svelte';
 
   type DialogKind = 'add-password' | 'change-password' | 'remove-slot' | 'add-duress';
 
@@ -49,6 +53,7 @@
   let emblemOpen = $state(false);
   let rotateOpen = $state(false);
   let resizeOpen = $state(false);
+  let recipientOpen = $state(false);
   let duressStep = $state<1 | 2>(1);
   let duressUnderstood = $state(false);
 
@@ -100,6 +105,7 @@
       toasts.error(e);
     }
     void vaults.loadBackends();
+    void myKey.load();
   }
 
   function openDialogFromSwitch(d: string) {
@@ -116,6 +122,8 @@
       }
     } else if (d === 'emblem') emblemOpen = true;
     else if (d === 'rotate-key') rotateOpen = true;
+    else if (d === 'add-recipient') recipientOpen = true;
+    else if (d === 'remove-recipient') openDialog('remove-slot', slots.find((s) => s.kind === 'recipient') ?? null);
     else if (d === 'resize') resizeOpen = true;
   }
 
@@ -139,6 +147,11 @@
   const mismatch = $derived(pwConfirm.length > 0 && pwConfirm !== pwNew);
   const canSubmitPw = $derived(!!strength?.acceptable && pwNew === pwConfirm && !busy && (dialog !== 'change-password' || pwOld.length > 0));
   const canSubmitDuress = $derived(duressStep === 2 && pwNew.length > 0 && pwNew === pwConfirm && !busy);
+
+  async function removeAndRotate() {
+    await submitDialog();
+    if (dialog === null) rotateOpen = true;
+  }
 
   async function submitDialog(e?: Event) {
     e?.preventDefault();
@@ -190,14 +203,17 @@
   const KIND_LABEL: Record<SlotInfo['kind'], () => string> = {
     password: m.slot_password,
     recipient: m.slot_recipient,
+    device: m.slot_device,
     fido2: m.slot_fido2,
     duress: m.slot_duress,
   };
   const slotKindLabel = (s: SlotInfo) => KIND_LABEL[s.kind]();
+  const isMine = (s: SlotInfo) => s.kind === 'recipient' && !!s.fingerprint && s.fingerprint === myKey.fingerprint;
+  const shortFpr = (s: SlotInfo) => (s.fingerprint ? groupFingerprint(s.fingerprint.slice(0, 16)) + ' …' : '');
   const kdfText = (s: SlotInfo) => (s.kdf && s.kind !== 'duress' ? `Argon2id · ${Math.round(s.kdf.m_kib / 1024)} MiB · t=${s.kdf.t} · p=${s.kdf.p}` : '');
-  const openers = $derived(slots.filter((s) => s.kind !== 'duress'));
+  const openers = $derived(slots.filter((s) => s.kind !== 'duress' && s.kind !== 'device'));
   const onlyOne = $derived(openers.length <= 1);
-  const canRemove = (s: SlotInfo) => s.kind === 'duress' || !onlyOne;
+  const canRemove = (s: SlotInfo) => s.kind === 'duress' || s.kind === 'device' || !onlyOne;
   const minutes = $derived(settings?.auto_lock_minutes ?? 15);
   const mrz = $derived(
     active ? mrzInside(active, { created, files: stats?.file_count ?? null, changed: stats?.modified_ms || null, keys: slots.length || null }) : null,
@@ -258,22 +274,28 @@
       <section class="card slots" aria-labelledby="slots-title" data-testid="slots">
         <div class="card-head">
           <h2 id="slots-title" class="card-title display">{m.det_keys()}</h2>
-          <button type="button" class="btn sm" disabled={slots.length >= 8} onclick={() => openDialog('add-password')} data-testid="add-password">
-            <Plus size={14} aria-hidden="true" /> {m.det_add_password()}
-          </button>
+          <div class="head-keys">
+            <button type="button" class="btn sm" disabled={slots.length >= 8} onclick={() => openDialog('add-password')} data-testid="add-password">
+              <Plus size={14} aria-hidden="true" /> {m.det_add_password()}
+            </button>
+            <button type="button" class="btn sm" disabled={slots.length >= 8 || !active} onclick={() => (recipientOpen = true)} data-testid="add-recipient">
+              <UserRound size={14} aria-hidden="true" /> {m.rcp_add()}
+            </button>
+          </div>
         </div>
         <p class="hint">{m.det_keys_hint()}</p>
         <ul class="slot-list">
           {#each slots as s (s.index)}
             <li class="slot" data-kind={s.kind} data-in-use={s.in_use} data-testid="slot">
-              <span class="slot-glyph" aria-hidden="true">{#if s.kind === 'duress'}<ShieldAlert size={15} />{:else}<KeyRound size={15} />{/if}</span>
+              <span class="slot-glyph" aria-hidden="true">{#if s.kind === 'duress'}<ShieldAlert size={15} />{:else if s.kind === 'recipient'}<UserRound size={15} />{:else if s.kind === 'device'}<FingerprintPattern size={15} />{:else}<KeyRound size={15} />{/if}</span>
               <div class="slot-main">
                 <p class="slot-title">
                   {s.label || slotKindLabel(s)}
                   {#if s.in_use}<span class="badge">{m.det_in_use()}</span>{/if}
+                  {#if isMine(s)}<span class="badge" data-testid="slot-mine">{m.rcp_you()}</span>{/if}
                 </p>
                 <p class="slot-meta">
-                  {#if s.kind === 'duress'}{m.duress_kind_hint()}{:else}{slotKindLabel(s)}{/if} · {m.det_slot({ n: String(s.index + 1) })}{#if kdfText(s)}{' · '}<span class="mono">{kdfText(s)}</span>{/if}
+                  {#if s.kind === 'duress'}{m.duress_kind_hint()}{:else}{slotKindLabel(s)}{/if} · {m.det_slot({ n: String(s.index + 1) })}{#if kdfText(s)}{' · '}<span class="mono">{kdfText(s)}</span>{/if}{#if s.kind === 'recipient' && s.fingerprint}{' · '}<span class="mono" title={groupFingerprint(s.fingerprint)} data-testid="slot-fingerprint">{shortFpr(s)}</span>{/if}
                 </p>
               </div>
               {#if s.kind === 'password'}
@@ -293,6 +315,7 @@
           {/each}
         </ul>
         {#if onlyOne}<p class="hint" id="last-slot-note">{m.det_only_key()}</p>{/if}
+        {#if isMobile && active}<BiometricSwitch vault={active} {slots} onslots={(s) => (slots = s)} />{/if}
         <button type="button" class="btn sm ghost duress-add" disabled={slots.length >= 8} onclick={() => openDialog('add-duress')} data-testid="add-duress">
           <ShieldAlert size={14} aria-hidden="true" /> {m.duress_add()}
         </button>
@@ -520,6 +543,7 @@
       void api.vaultStats(active.id).then((s) => (stats = s), () => {});
     }}
   />
+  <AddRecipient open={recipientOpen} vault={active.id} {slots} onclose={() => (recipientOpen = false)} onadded={(sl) => (slots = sl)} />
   <ResizeDialog open={resizeOpen} vault={active.id} onclose={() => (resizeOpen = false)} onresized={() => api.vaultStats(active.id).then((s) => (stats = s), () => {})} />
   <EmblemPicker
     open={emblemOpen}
@@ -534,6 +558,9 @@
   <p id="remove-desc">
     {#if slotTarget?.kind === 'duress'}
       {m.duress_remove_desc({ name: slotTarget.label || m.slot_duress() })}
+    {:else if slotTarget?.kind === 'recipient'}
+      {m.rcp_remove_desc({ name: slotTarget.label || m.slot_recipient() })}
+      {#if slotTarget.in_use}{m.det_remove_in_use()}{/if}
     {:else}
       {m.det_remove_desc({ name: slotTarget?.label || (slotTarget ? slotKindLabel(slotTarget) : '') })}
       {#if slotTarget?.in_use}{m.det_remove_in_use()}{/if}
@@ -542,7 +569,10 @@
   {#if dialogError}<p class="error-text" role="alert">{dialogError}</p>{/if}
   {#snippet actions()}
     <button type="button" class="btn" onclick={closeDialog} disabled={busy}>{m.action_cancel()}</button>
-    <button type="button" class="btn danger" onclick={() => submitDialog()} disabled={busy}>{m.action_remove()}</button>
+    {#if slotTarget?.kind === 'recipient' && slots.some((s) => s.kind === 'password')}
+      <button type="button" class="btn" onclick={removeAndRotate} disabled={busy} data-testid="remove-rotate">{m.rcp_remove_rotate()}</button>
+    {/if}
+    <button type="button" class="btn danger" onclick={() => submitDialog()} disabled={busy} data-testid="remove-confirm">{m.action_remove()}</button>
   {/snippet}
 </Dialog>
 
@@ -629,6 +659,12 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-3);
+  }
+  .head-keys {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
   }
   .card-title {
     font-size: var(--display-s);

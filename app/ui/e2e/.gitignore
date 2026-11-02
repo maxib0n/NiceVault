@@ -1,2 +1,4 @@
 .results/
 real/out/
+.results-scimmia/
+.scimmia-dist/

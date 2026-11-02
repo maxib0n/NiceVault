@@ -23,6 +23,7 @@
   import InkChip from '../components/InkChip.svelte';
   import Stitch from '../ornament/Stitch.svelte';
   import BrowserSettings from '../components/BrowserSettings.svelte';
+  import MyKeySettings from '../components/MyKeySettings.svelte';
 
   let settings = $state<AppSettings | null>(null);
   let info = $state<AppInfo | null>(null);
@@ -291,6 +292,11 @@
           <button type="button" class="switch" role="switch" aria-checked={settings?.site_icons ?? true} aria-labelledby="set-icons" aria-describedby="set-icons-hint" disabled={!settings} onclick={() => setSiteIcons(!(settings?.site_icons ?? true))} data-testid="site-icons"><span class="knob"></span></button>
         </div>
         <p class="hint" id="set-icons-hint">{m.set_site_icons_hint()}</p>
+      </section>
+
+      <section class="block" aria-labelledby="set-mykey" data-testid="settings-mykey">
+        <h2 id="set-mykey" class="block-title display"><span class="mark" aria-hidden="true"><KeyRound size={15} strokeWidth={1.6} /></span>{m.mk_title()}</h2>
+        <div><MyKeySettings /></div>
       </section>
 
       {#if !isMobile}

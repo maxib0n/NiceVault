@@ -1,0 +1,329 @@
+@property --nv-splash-o {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+@property --nv-splash-word-o {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+.nv-splash {
+  --sp-ground: #e6e1d7;
+  --sp-ground-hi: #f1ede6;
+  --sp-ground-lo: #d9d3c7;
+  --sp-ink: #9c1730;
+  --sp-word: #1d1719;
+  --sp-glint: #a8531f;
+  --sp-glint: oklch(from var(--sp-ink) calc(l + 0.06) calc(c * 1.4) calc(h + 62));
+  --sp-relief-lo: rgb(60 36 30 / 0.3);
+  --sp-relief-hi: rgb(255 255 255 / 0.8);
+}
+@media (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light']) {
+    --sp-ground: #252423;
+    --sp-ground-hi: #2e2d2b;
+    --sp-ground-lo: #1b1a19;
+    --sp-ink: #f26873;
+    --sp-word: #efece8;
+    --sp-glint: #f6c27a;
+    --sp-glint: oklch(from var(--sp-ink) calc(l + 0.06) c calc(h + 62));
+    --sp-relief-lo: rgb(0 0 0 / 0.62);
+    --sp-relief-hi: rgb(255 246 238 / 0.1);
+  }
+}
+.nv-splash[data-theme='dark'] {
+  --sp-ground: #252423;
+  --sp-ground-hi: #2e2d2b;
+  --sp-ground-lo: #1b1a19;
+  --sp-ink: #f26873;
+  --sp-word: #efece8;
+  --sp-glint: #f6c27a;
+  --sp-glint: oklch(from var(--sp-ink) calc(l + 0.06) c calc(h + 62));
+  --sp-relief-lo: rgb(0 0 0 / 0.62);
+  --sp-relief-hi: rgb(255 246 238 / 0.1);
+}
+
+.nv-splash[data-accent='prugna'] {
+  --sp-ground: #ebdede;
+  --sp-ground-hi: #f6eaeb;
+  --sp-ground-lo: #ddd0cf;
+  --sp-ink: #8e2050;
+}
+.nv-splash[data-accent='prussia'] {
+  --sp-ground: #dde2e8;
+  --sp-ground-hi: #e9eef5;
+  --sp-ground-lo: #d0d4d9;
+  --sp-ink: #1f3d66;
+}
+.nv-splash[data-accent='bottiglia'] {
+  --sp-ground: #dbe5d9;
+  --sp-ground-hi: #e7f1e6;
+  --sp-ground-lo: #ced7ca;
+  --sp-ink: #1d5a3d;
+}
+.nv-splash[data-accent='seppia'] {
+  --sp-ground: #ecdfd2;
+  --sp-ground-hi: #f7ebe0;
+  --sp-ground-lo: #ded1c4;
+  --sp-ink: #7f4422;
+}
+.nv-splash[data-accent='ardesia'] {
+  --sp-ground: #dae3e7;
+  --sp-ground-hi: #e6eff4;
+  --sp-ground-lo: #cdd5d8;
+  --sp-ink: #3d4752;
+}
+.nv-splash[data-accent='ottanio'] {
+  --sp-ground: #d8e5e2;
+  --sp-ground-hi: #e4f1f0;
+  --sp-ground-lo: #cbd7d3;
+  --sp-ink: #0e5a60;
+}
+@media (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light'])[data-accent='prugna'] {
+    --sp-ground: #2c1c23;
+    --sp-ground-hi: #35242c;
+    --sp-ground-lo: #221219;
+    --sp-ink: #e26da1;
+    }
+}
+.nv-splash[data-theme='dark'][data-accent='prugna'] {
+  --sp-ground: #2c1c23;
+  --sp-ground-hi: #35242c;
+  --sp-ground-lo: #221219;
+  --sp-ink: #e26da1;
+}
+@media (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light'])[data-accent='prussia'] {
+    --sp-ground: #18212e;
+    --sp-ground-hi: #212a37;
+    --sp-ground-lo: #0f1723;
+    --sp-ink: #6997d4;
+    }
+}
+.nv-splash[data-theme='dark'][data-accent='prussia'] {
+  --sp-ground: #18212e;
+  --sp-ground-hi: #212a37;
+  --sp-ground-lo: #0f1723;
+  --sp-ink: #6997d4;
+}
+@media (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light'])[data-accent='bottiglia'] {
+    --sp-ground: #16261d;
+    --sp-ground-hi: #1f2f25;
+    --sp-ground-lo: #0c1c13;
+    --sp-ink: #4aa676;
+    }
+}
+.nv-splash[data-theme='dark'][data-accent='bottiglia'] {
+  --sp-ground: #16261d;
+  --sp-ground-hi: #1f2f25;
+  --sp-ground-lo: #0c1c13;
+  --sp-ink: #4aa676;
+}
+@media (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light'])[data-accent='seppia'] {
+    --sp-ground: #2b2017;
+    --sp-ground-hi: #35291f;
+    --sp-ground-lo: #21160d;
+    --sp-ink: #d08154;
+    }
+}
+.nv-splash[data-theme='dark'][data-accent='seppia'] {
+  --sp-ground: #2b2017;
+  --sp-ground-hi: #35291f;
+  --sp-ground-lo: #21160d;
+  --sp-ink: #d08154;
+}
+@media (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light'])[data-accent='ardesia'] {
+    --sp-ground: #1f262b;
+    --sp-ground-hi: #282f34;
+    --sp-ground-lo: #151c21;
+    --sp-ink: #8b9aa9;
+    }
+}
+.nv-splash[data-theme='dark'][data-accent='ardesia'] {
+  --sp-ground: #1f262b;
+  --sp-ground-hi: #282f34;
+  --sp-ground-lo: #151c21;
+  --sp-ink: #8b9aa9;
+}
+@media (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light'])[data-accent='ottanio'] {
+    --sp-ground: #102629;
+    --sp-ground-hi: #192f32;
+    --sp-ground-lo: #061c1e;
+    --sp-ink: #2ea3a9;
+    }
+}
+.nv-splash[data-theme='dark'][data-accent='ottanio'] {
+  --sp-ground: #102629;
+  --sp-ground-hi: #192f32;
+  --sp-ground-lo: #061c1e;
+  --sp-ink: #2ea3a9;
+}
+
+.nv-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  padding-bottom: 4vh;
+  background-color: var(--sp-ground);
+  background-image:
+    radial-gradient(140% 110% at 0% 0%, var(--sp-ground-hi) 0%, transparent 70%),
+    linear-gradient(158deg, transparent 40%, var(--sp-ground-lo) 100%);
+  color: var(--sp-ink);
+  opacity: var(--nv-splash-o);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+}
+.nv-splash-mark {
+  display: grid;
+  justify-items: center;
+  gap: clamp(16px, 3.2vmin, 26px);
+}
+.nv-splash-seal {
+  display: block;
+  width: clamp(132px, 27vmin, 212px);
+  height: auto;
+  overflow: visible;
+}
+.nv-light stop {
+  stop-color: var(--sp-ink);
+  animation: nv-splash-glint 240ms ease-in-out both;
+}
+.nv-light stop:nth-child(1) { animation-delay: 380ms; }
+.nv-light stop:nth-child(2) { animation-delay: 442ms; }
+.nv-light stop:nth-child(3) { animation-delay: 504ms; }
+.nv-light stop:nth-child(4) { animation-delay: 566ms; }
+.nv-light stop:nth-child(5) { animation-delay: 628ms; }
+.nv-light stop:nth-child(6) { animation-delay: 690ms; }
+.nv-light stop:nth-child(7) { animation-delay: 752ms; }
+.nv-light stop:nth-child(8) { animation-delay: 814ms; }
+.nv-light stop:nth-child(9) { animation-delay: 876ms; }
+@keyframes nv-splash-glint {
+  from,
+  to {
+    stop-color: var(--sp-ink);
+  }
+  50% {
+    stop-color: var(--sp-glint);
+  }
+}
+.nv-splash .nv-relief-lo {
+  flood-color: var(--sp-relief-lo);
+}
+.nv-splash .nv-relief-hi {
+  flood-color: var(--sp-relief-hi);
+}
+
+@media (max-resolution: 1.4dppx) {
+  .nv-splash:not([data-theme='dark']) .nv-heavy { stroke-width: 0.86; }
+  .nv-splash:not([data-theme='dark']) .nv-fine { stroke-width: 0.64; }
+  .nv-splash:not([data-theme='dark']) .nv-mark { stroke-width: 0.72; }
+  .nv-splash:not([data-theme='dark']) .nv-lathe-a,
+  .nv-splash:not([data-theme='dark']) .nv-lathe-b { stroke-width: 0.66; }
+}
+@media (max-resolution: 1.4dppx) and (prefers-color-scheme: dark) {
+  .nv-splash:not([data-theme='light']) .nv-heavy { stroke-width: 0.72; }
+  .nv-splash:not([data-theme='light']) .nv-fine { stroke-width: 0.5; }
+  .nv-splash:not([data-theme='light']) .nv-mark { stroke-width: 0.6; }
+  .nv-splash:not([data-theme='light']) .nv-lathe-a,
+  .nv-splash:not([data-theme='light']) .nv-lathe-b { stroke-width: 0.52; }
+}
+
+.nv-lathe-a,
+.nv-lathe-b {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: nv-splash-lathe 680ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.nv-lathe-a {
+  --sp-turn: -30deg;
+}
+.nv-lathe-b {
+  --sp-turn: 30deg;
+  animation-delay: 40ms;
+}
+@keyframes nv-splash-lathe {
+  from {
+    transform: rotate(var(--sp-turn));
+    opacity: 0.25;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.nv-splash-word {
+  margin: 0;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: clamp(19px, 2.9vmin, 23px);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: var(--sp-word);
+  opacity: var(--nv-splash-word-o);
+}
+.nv-splash-word i {
+  margin-left: 0.1em;
+  font-family: 'Newsreader', Georgia, serif;
+  font-size: 0.947em;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  color: var(--sp-ink);
+}
+.nv-splash-word {
+  animation: nv-splash-word 300ms cubic-bezier(0.23, 1, 0.32, 1) 160ms forwards;
+}
+@keyframes nv-splash-word {
+  from {
+    --nv-splash-word-o: 0;
+  }
+  to {
+    --nv-splash-word-o: 1;
+  }
+}
+
+.nv-splash.out {
+  pointer-events: none;
+  animation: nv-splash-out 260ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.nv-splash.out.skip {
+  animation-duration: 140ms;
+}
+@keyframes nv-splash-out {
+  from {
+    --nv-splash-o: 1;
+  }
+  to {
+    --nv-splash-o: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nv-lathe-a,
+  .nv-lathe-b,
+  .nv-light stop {
+    animation: none;
+  }
+  .nv-seal-print {
+    stroke: currentColor;
+  }
+  .nv-splash-word {
+    animation: none;
+    --nv-splash-word-o: 1;
+  }
+  .nv-splash.out,
+  .nv-splash.out.skip {
+    animation-duration: 160ms;
+  }
+}
